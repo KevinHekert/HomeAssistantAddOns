@@ -1,0 +1,149 @@
+title: Minecraft Server
+config:
+  name: Minecraft Server
+  description: Minecraft Bedrock Server for Home Assistant
+
+configuration:
+  general:
+    name: General
+    description: Core server configuration.
+    fields:
+      server_name:
+        name: Display name
+        description: Name shown to players in their server list.
+      server_port:
+        name: Port (IPv4)
+        description: UDP port for IPv4 connections (default 19132).
+      server_port_v6:
+        name: Port (IPv6)
+        description: UDP port for IPv6 connections (default 19133).
+      online_mode:
+        name: Online verification
+        description: Require Microsoft/Xbox Live sign-in. Disable for offline/LAN testing.
+      emit_server_telemetry:
+        name: Send telemetry
+        description: Allow the server to send usage/telemetry data.
+      enable_lan_visibility:
+        name: LAN visibility
+        description: Advertise the server on the local network (broadcast). Disable when using custom ports or if discovery causes confusion.
+
+  world:
+    name: World
+    description: World identity, generation and rules.
+    fields:
+      level_name:
+        name: World name
+        description: Folder name and in-game world name.
+      level_seed:
+        name: World seed
+        description: Seed used for world generation. Leave empty for random.
+      level_type:
+        name: World type
+        description: Generation preset.
+        options:
+          DEFAULT: "Default"
+          FLAT: "Flat (Superflat)"
+          LEGACY: "Legacy"
+      gamemode:
+        name: Game mode
+        description: Default game mode for players.
+        options:
+          survival: "Survival"
+          creative: "Creative"
+          adventure: "Adventure"
+      difficulty:
+        name: Difficulty
+        description: Global difficulty setting.
+        options:
+          peaceful: "Peaceful"
+          easy: "Easy"
+          normal: "Normal"
+          hard: "Hard"
+      allow_cheats:
+        name: Allow cheats
+        description: Permit commands like /tp and /gamemode without operator rights.
+
+  players:
+    name: Players
+    description: Access control and default permissions.
+    fields:
+      role_assignments:
+        name: Roles by XUID
+        description: Add entries to grant a specific role to a given XUID.
+        fields:
+          xuid:
+            name: XUID
+            description: Xbox Live user ID (numbers only).
+          role:
+            name: Role
+            description: Permission to grant to this XUID.
+            options:
+              operator: Operator
+              member: Member
+              visitor: Visitor
+      max_players:
+        name: Max players
+        description: Maximum number of concurrent players.
+      white_list:
+        name: Enforce whitelist
+        description: Only allow players listed in the whitelist to join.
+      allow_list:
+        name: Use allowlist file
+        description: Enable the allowlist.json format.
+      default_player_permission_level:
+        name: Default permission
+        description: Permission level for new players.
+        options:
+          visitor: "Visitor"
+          member: "Member"
+          operator: "Operator"
+      texturepack_required:
+        name: Require texture pack
+        description: Force clients to download and use the server’s resource pack.
+
+  performance:
+    name: Performance
+    description: View distance, ticking and threading.
+    fields:
+      view_distance:
+        name: View distance
+        description: Chunks sent to clients around each player (higher = more CPU/bandwidth).
+      tick_distance:
+        name: Simulation distance
+        description: Radius (in chunks) for game simulation around players.
+      player_idle_timeout:
+        name: Idle timeout (minutes)
+        description: Disconnect players after this many minutes of inactivity (0 = disabled).
+      max_threads:
+        name: Max threads
+        description: 0 = auto. Limits the number of worker threads.
+      compression_threshold:
+        name: Compression threshold
+        description: Minimum packet size (bytes) before compression is applied.
+
+  anti_cheat:
+    name: Anti-cheat & movement
+    description: Server-authoritative movement and thresholds.
+    fields:
+      server_authoritative_movement:
+        name: Movement authority
+        description: Who validates player movement.
+        options:
+          server-auth: "Server authoritative"
+          client-auth: "Client authoritative"
+          server-auth-with-rewind: "Server authoritative with rewind"
+      server_authoritative_block_breaking:
+        name: Authoritative block breaking
+        description: Validate block breaking on the server to prevent cheating.
+      player_movement_score_threshold:
+        name: Movement score threshold
+        description: Sensitivity threshold for movement validation.
+      player_movement_distance_threshold:
+        name: Movement distance threshold
+        description: Maximum tolerated position delta between client and server.
+      player_movement_duration_threshold_in_ms:
+        name: Movement duration threshold (ms)
+        description: Time window used for movement validation.
+      correct_player_movement:
+        name: Correct player movement
+        description: Server corrects client position when invalid movement is detected.

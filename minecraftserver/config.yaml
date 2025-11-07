@@ -1,10 +1,93 @@
-name: "Minecraft Server"
-description: "Hekert - Server addon - Bedrock"
+name: "Minecraft Server Beta"
+description: "Minecraft Bedrock Server for Home Assistant Beta"
 version: "1.0.0"
-slug: "minecraft_server"
+slug: "minecraft_server_exp_beta"
 init: false
+startup: application
+host_network: true
 arch:
   - amd64
-startup: application
-ports:
-  19132/udp: 19132
+map:
+  - share:rw
+
+options:
+  general:
+    server_name: "HomeAssistantMinecraftServer"
+    server_port: 19132
+    server_port_v6: 19133
+    online_mode: true
+    emit_server_telemetry: false
+    enable_lan_visibility: true
+
+  world:
+    level_name: "HomeAssistant"
+    level_seed: "-1251937210"
+    level_type: "DEFAULT"               # DEFAULT|FLAT|LEGACY
+    gamemode: "survival"                # survival|creative|adventure
+    difficulty: "normal"                # peaceful|easy|normal|hard
+    allow_cheats: false
+
+  players:
+    max_players: 20
+    white_list: false
+    allow_list: false
+    default_player_permission_level: "visitor"  # visitor|member|operator
+    texturepack_required: false
+    role_assignments: []
+
+  performance:
+    view_distance: 32
+    tick_distance: 12
+    player_idle_timeout: 0
+    max_threads: 0
+    compression_threshold: 1
+
+  anti_cheat:
+    server_authoritative_movement: "server-auth-with-rewind"  # server-auth|client-auth|server-auth-with-rewind
+    server_authoritative_block_breaking: true
+    player_movement_score_threshold: 20
+    player_movement_distance_threshold: 0.3
+    player_movement_duration_threshold_in_ms: 500
+    correct_player_movement: false
+
+schema:
+  general:
+    server_name: "str?"
+    server_port: "int?"
+    server_port_v6: "int?"
+    online_mode: "bool?"
+    emit_server_telemetry: "bool?"
+    enable_lan_visibility: "bool?"
+
+  world:
+    level_name: "str?"
+    level_seed: "str?"
+    level_type: "list(DEFAULT|FLAT|LEGACY)"
+    gamemode: "list(survival|creative|adventure)"
+    difficulty: "list(peaceful|easy|normal|hard)"
+    allow_cheats: "bool?"
+
+  players:
+    max_players: "int?"
+    white_list: "bool?"
+    allow_list: "bool?"
+    default_player_permission_level: "list(visitor|member|operator)"
+    texturepack_required: "bool?"
+    role_assignments:
+      - xuid: str
+        role: list(operator|member|visitor)
+
+  performance:
+    view_distance: "int?"
+    tick_distance: "int?"
+    player_idle_timeout: "int?"
+    max_threads: "int?"
+    compression_threshold: "int?"
+
+  anti_cheat:
+    server_authoritative_movement: "list(server-auth|client-auth|server-auth-with-rewind)"
+    server_authoritative_block_breaking: "bool?"
+    player_movement_score_threshold: "int?"
+    player_movement_distance_threshold: "float?"
+    player_movement_duration_threshold_in_ms: "int?"
+    correct_player_movement: "bool?"

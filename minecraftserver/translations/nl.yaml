@@ -1,0 +1,148 @@
+title: Minecraft Server
+config:
+  name: Minecraft Server
+  description: Minecraft Bedrock Server voor Home Assistant
+
+configuration:
+  general:
+    name: Algemeen
+    description: Basis serverconfiguratie.
+    fields:
+      server_name:
+        name: Weergavenaam
+        description: Naam die spelers zien in hun serverlijst.
+      server_port:
+        name: Poort (IPv4)
+        description: UDP-poort voor IPv4-verbindingen (standaard 19132).
+      server_port_v6:
+        name: Poort (IPv6)
+        description: UDP-poort voor IPv6-verbindingen (standaard 19133).
+      online_mode:
+        name: Online verificatie
+        description: Vereist Microsoft/Xbox-aanmelding. Zet uit voor offline/LAN-testen.
+      emit_server_telemetry:
+        name: Telemetrie verzenden
+        description: Sta toe dat de server gebruiks-/telemetriegegevens verstuurt.
+      enable_lan_visibility:
+        name: LAN-zichtbaarheid
+        description: Adverteer de server op het lokale netwerk (broadcast). Uitschakelen bij custom poorten of wanneer discovery verwarring geeft.
+
+  world:
+    name: Wereld
+    description: Wereldnaam, generatie en regels.
+    fields:
+      level_name:
+        name: Wereldnaam
+        description: Mapnaam en in-game naam van de wereld.
+      level_seed:
+        name: Wereld-seed
+        description: Seed voor wereldgeneratie. Leeg laten voor willekeurig.
+      level_type:
+        name: Wereldtype
+        description: Voorinstelling voor generatie.
+        options:
+          DEFAULT: "Standaard"
+          FLAT: "Plat (Superflat)"
+          LEGACY: "Legacy"
+      gamemode:
+        name: Spelmodus
+        description: Standaard spelmodus voor spelers. Kies "survival" voor overleving, "creative" voor creatieve modus en "adventure" voor avontuur.
+        options:
+          survival: "Survival"
+          creative: "Creatief"
+          adventure: "Avontuur"
+      difficulty:
+        name: Moeilijkheidsgraad
+        description: Globale moeilijkheid. Kies "peaceful" voor geen vijanden, "easy" voor milde mobs, "nomral" voor een normale ervaring en "hard" voor de moeilijkste ervaring.
+        options:
+          peaceful: "Vredig"
+          easy: "Makkelijk"
+          normal: "Normaal"
+          hard: "Moeilijk"
+      allow_cheats:
+        name: Cheats toestaan
+        description: Sta commando’s toe zoals /tp en /gamemode zonder operatorrechten.
+
+  players:
+    name: Spelers
+    description: Toegang en standaardrechten.
+    fields:
+      role_assignments:
+        name: Rollen per XUID
+        description: Voeg regels toe om een rol toe te kennen aan een XUID.
+        xuid:
+          name: XUID
+          description: Xbox Live gebruikers-ID (alleen cijfers).
+        role:
+          name: Rol
+          description: Rechtenniveau voor deze XUID.
+          options:
+            operator: Operator
+            member: Lid
+            visitor: Bezoeker
+      max_players:
+        name: Max. spelers
+        description: Maximum aantal gelijktijdige spelers.
+      white_list:
+        name: Whitelist afdwingen
+        description: Alleen spelers op de whitelist mogen joinen.
+      allow_list:
+        name: Allowlist gebruiken
+        description: Schakel het formaat allowlist.json in.
+      default_player_permission_level:
+        name: Standaardrechten
+        description: Rechtenniveau voor nieuwe spelers. Kies "visitor" voor bezoeker, "member" voor lid en "operator" voor operator.
+        options:
+          visitor: "Bezoeker"
+          member: "Lid"
+          operator: "Operator"
+      texturepack_required:
+        name: Texturepack verplichten
+        description: Forceer dat clients het resourcepack van de server downloaden en gebruiken.
+
+  performance:
+    name: Prestaties
+    description: Kijkafstand, simulatie en threading.
+    fields:
+      view_distance:
+        name: Kijkafstand
+        description: Aantal chunks rond elke speler (hoger = meer CPU/bandbreedte).
+      tick_distance:
+        name: Simulatie-afstand
+        description: Radius (in chunks) voor spel-simulatie rond spelers.
+      player_idle_timeout:
+        name: Inactiviteits-timeout (min)
+        description: Verbind spelers na dit aantal minuten inactiviteit (0 = uit).
+      max_threads:
+        name: Max. threads
+        description: 0 = automatisch. Beperkt het aantal workerthreads.
+      compression_threshold:
+        name: Compressiedrempel
+        description: Minimale pakketgrootte (bytes) voordat compressie wordt toegepast.
+
+  anti_cheat:
+    name: Anti-cheat & beweging
+    description: Server-autoritatieve beweging en drempels.
+    fields:
+      server_authoritative_movement:
+        name: Bewegings-autoriteit
+        description: Wie valideert spelerbeweging. Kies "server-auth" voor server-autoritatief, "client-auth" voor client-autoritatief, of "server-auth-with-rewind" voor server-autoritatief met rewind.
+        options:
+          server-auth: "Server-autoritatief"
+          client-auth: "Client-autoritatief"
+          server-auth-with-rewind: "Server-autoritatief met rewind"
+      server_authoritative_block_breaking:
+        name: Autoritatief blokbreken
+        description: Valideer blokbreekacties op de server om valsspelen te voorkomen.
+      player_movement_score_threshold:
+        name: Bewegingsscore-drempel
+        description: Gevoeligheidsdrempel voor bewegingsvalidatie.
+      player_movement_distance_threshold:
+        name: Bewegingsafstand-drempel
+        description: Maximaal toegestane positiedelta tussen client en server.
+      player_movement_duration_threshold_in_ms:
+        name: Bewegingsduur-drempel (ms)
+        description: Tijdsvenster voor bewegingsvalidatie.
+      correct_player_movement:
+        name: Beweging corrigeren
+        description: Server corrigeert de clientpositie bij ongeldige beweging.

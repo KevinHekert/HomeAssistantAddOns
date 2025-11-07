@@ -1,7 +1,6 @@
 name: Check Bedrock upstream & bump (minecraftserver)
 
 on:
-  workflow_dispatch:
   schedule:
     - cron: "00,15,30,45 * * * *"
 

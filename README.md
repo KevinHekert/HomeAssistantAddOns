@@ -10,4 +10,4 @@ https://github.com/KevinHekert/HomeAssistantAddOns
 ```
 
 ## Add-ons in this repository
- - **[Miner](/miner/README.md)**: Monerod miner.
+ - **[Minecraft Server](/minecraftserver/README.md)**: Minecraft server add-on for Home Assistant.

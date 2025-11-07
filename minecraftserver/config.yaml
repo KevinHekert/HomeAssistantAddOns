@@ -1,6 +1,6 @@
 name: "Minecraft Server by Kevin"
 description: "Minecraft Bedrock Server tailored for Home Assistant"
-version: "1.0.8"
+version: "1.0.9"
 slug: "minecraft_server_exp_beta"
 init: false
 startup: application

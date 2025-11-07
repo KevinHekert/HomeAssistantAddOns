@@ -70,10 +70,7 @@ RUN chmod +x /opt/bedrock-entry.sh
 
 # ===== Download & uitpakken tijdens build =====
 # (1) Downloaden
-RUN set -eux; \
-    mkdir -p /data/worlds; \
-    chown -R root:root /data; \
-    chmod 0777 /data/worlds
+RUN set -eux;
 RUN test -n "${BDS_VERSION}" && test -n "${BDS_URL}"
 RUN echo "📦 Downloading Bedrock Server version ${BDS_VERSION}..."
 #RUN curl -fsSL -o /tmp/bedrock.zip "${BDS_URL}"
@@ -91,6 +88,8 @@ RUN chmod +x bedrock_server && mv bedrock_server "bedrock_server-${BDS_VERSION}"
 
 # (4) Bewaar versie-info voor runtime
 RUN echo "${BDS_VERSION}" > /etc/bds-version
+
+RUN mkdir -p /data/worlds
 
 RUN ln -sfn /data/worlds            /opt/bds/worlds && \
     ln -sfn /data/server.properties /opt/bds/server.properties && \

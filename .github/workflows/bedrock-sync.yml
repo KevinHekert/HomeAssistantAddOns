@@ -98,15 +98,17 @@ jobs:
           } > "${CHANGELOG_PATH}.new"
           mv "${CHANGELOG_PATH}.new" "$CHANGELOG_PATH"
 
+
       - name: Commit changes to default branch
         if: steps.decide.outputs.update_needed == 'true'
         run: |
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add minecraftserver/build.yaml minecraftserver/config.yaml CHANGELOG.md
+          git add minecraftserver/build.yaml minecraftserver/config.yaml minecraftserver/CHANGELOG.md
           git commit -m "chore(release): ${{ steps.bump.outputs.new_addon_version }} (Bedrock ${{ steps.upstream.outputs.latest_bds_version }})"
           git push
+
 
       - name: Create tag v<config.yaml version>
         if: steps.decide.outputs.update_needed == 'true'

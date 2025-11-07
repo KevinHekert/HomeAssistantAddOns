@@ -3,19 +3,19 @@ name: Check Bedrock upstream & bump add-on
 on:
   workflow_dispatch:
   schedule:
-    - cron: "20 * * * *"  # elk uur om :17
+    - cron: "35 * * * *"  # elk uur om :35
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   check:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # nodig voor tags en release notes
 
       - name: Install tools (jq, yq)
         run: |
@@ -32,10 +32,7 @@ jobs:
           LATEST_URL="$(curl -s "$API" \
             | jq -r '.result.links[] | select(.downloadType=="serverBedrockLinux") | .downloadUrl')"
           test -n "$LATEST_URL" && [ "$LATEST_URL" != "null" ] || { echo "No Linux URL found"; exit 1; }
-
           echo "latest_url=$LATEST_URL" >> "$GITHUB_OUTPUT"
-
-          # versie uit bestandsnaam
           if [[ "$LATEST_URL" =~ bedrock-server-([0-9.]+)\.zip ]]; then
             echo "latest_bds_version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
           else
@@ -73,7 +70,7 @@ jobs:
           yq -i ".args.BDS_URL = \"${NEW_URL}\"" minecraftserver/build.yaml
           yq -i ".args.BDS_VERSION = \"${NEW_BDS_VER}\"" minecraftserver/build.yaml
 
-          # Bump patchversie
+          # Bump patchversie in config.yaml
           CUR_ADDON_VER='${{ steps.current.outputs.addon_version }}'
           IFS='.' read -r MAJ MIN PAT <<< "$CUR_ADDON_VER"
           PAT=$((PAT+1))
@@ -82,14 +79,49 @@ jobs:
 
           echo "new_addon_version=$NEW_ADDON_VER" >> "$GITHUB_OUTPUT"
 
-      - name: Create PR with changes
+      - name: Update CHANGELOG.md (prepend entry)
         if: steps.decide.outputs.update_needed == 'true'
-        uses: peter-evans/create-pull-request@v6
+        run: |
+          set -e
+          VER='${{ steps.bump.outputs.new_addon_version }}'
+          BDS='${{ steps.upstream.outputs.latest_bds_version }}'
+          NOW="$(TZ=Europe/Amsterdam date +%Y-%m-%d)"
+          {
+            echo "## ${VER} - ${NOW}"
+            echo "- New version Bedrock Server package installed: ${BDS}"
+            echo "- Updated \`minecraftserver/build.yaml\` (BDS_URL & BDS_VERSION)"
+            echo "- Bumped add-on version in \`minecraftserver/config.yaml\` to ${VER}"
+            echo
+            if [ -f CHANGELOG.md ]; then cat CHANGELOG.md; else echo "# Changelog"; fi
+          } > CHANGELOG.md.new
+          mv CHANGELOG.md.new CHANGELOG.md
+
+      - name: Commit changes to default branch
+        if: steps.decide.outputs.update_needed == 'true'
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add minecraftserver/build.yaml minecraftserver/config.yaml CHANGELOG.md
+          git commit -m "chore(release): ${{ steps.bump.outputs.new_addon_version }} (Bedrock ${{ steps.upstream.outputs.latest_bds_version }})"
+          git push
+
+      - name: Create tag v<config.yaml version>
+        if: steps.decide.outputs.update_needed == 'true'
+        run: |
+          set -e
+          TAG="v${{ steps.bump.outputs.new_addon_version }}"
+          git tag -a "$TAG" -m "Release $TAG (Bedrock ${{ steps.upstream.outputs.latest_bds_version }})"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        if: steps.decide.outputs.update_needed == 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          commit-message: "chore: update Bedrock to ${{ steps.upstream.outputs.latest_bds_version }} & bump add-on to ${{ steps.bump.outputs.new_addon_version }}"
-          title: "Update Bedrock ${{ steps.upstream.outputs.latest_bds_version }} / Add-on ${{ steps.bump.outputs.new_addon_version }}"
+          tag_name: v${{ steps.bump.outputs.new_addon_version }}
+          name: v${{ steps.bump.outputs.new_addon_version }}
+          generate_release_notes: true
           body: |
-            - Updated `minecraftserver/build.yaml` (BDS_URL & BDS_VERSION)
-            - Bumped `minecraftserver/config.yaml` patch version
-          branch: chore/auto-bedrock-${{ steps.upstream.outputs.latest_bds_version }}
-          delete-branch: true
+            Bedrock Server updated to ${{ steps.upstream.outputs.latest_bds_version }}.
+            Add-on version: ${{ steps.bump.outputs.new_addon_version }}.
+            Changes applied automatically: updated build.yaml (BDS_URL, BDS_VERSION) and bumped config.yaml.

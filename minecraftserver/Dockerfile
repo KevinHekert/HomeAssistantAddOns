@@ -66,7 +66,7 @@ COPY bedrock-entry.sh /opt/bedrock-entry.sh
 COPY *.mcpack /opt/addons/
 COPY property-definitions.json /etc/bds-property-definitions.json
 COPY bin/* /usr/local/bin/
-RUN chmod +x /etc/bds-property-definitions.json
+RUN chmod +x /opt/bedrock-entry.sh
 
 # ===== Download & uitpakken tijdens build =====
 # (1) Downloaden

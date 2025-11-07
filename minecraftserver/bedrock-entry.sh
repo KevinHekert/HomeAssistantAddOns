@@ -9,6 +9,14 @@ set -eo pipefail
 #  - Starts pre-bundled binary at /opt/bds/bedrock_server-${VERSION}
 # =========================
 
+# --- Ensure /data/worlds exists ---
+if [ ! -d /data/worlds ]; then
+  echo "📁 Creating /data/worlds..."
+  mkdir -p /data/worlds
+  chmod 0777 /data/worlds
+fi
+
+
 # ---------- helpers ----------
 isTrue() { case "${1,,}" in true|on|1|yes) return 0 ;; *) return 1 ;; esac; }
 lower_bool() { case "${1,,}" in true|1|on|yes) echo "true" ;; *) echo "false" ;; esac; }

@@ -1,0 +1,95 @@
+name: Check Bedrock upstream & bump add-on
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 * * * *"  # elk uur om :17
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools (jq, yq)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          curl -sSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+            -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: Query Mojang API for latest Linux Bedrock URL
+        id: upstream
+        run: |
+          API="https://net-secondary.web.minecraft-services.net/api/v1.0/download/links"
+          LATEST_URL="$(curl -s "$API" \
+            | jq -r '.result.links[] | select(.downloadType=="serverBedrockLinux") | .downloadUrl')"
+          test -n "$LATEST_URL" && [ "$LATEST_URL" != "null" ] || { echo "No Linux URL found"; exit 1; }
+
+          echo "latest_url=$LATEST_URL" >> "$GITHUB_OUTPUT"
+
+          # versie uit bestandsnaam
+          if [[ "$LATEST_URL" =~ bedrock-server-([0-9.]+)\.zip ]]; then
+            echo "latest_bds_version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Could not parse version from: $LATEST_URL"; exit 1
+          fi
+
+      - name: Read current addon files
+        id: current
+        run: |
+          CUR_URL="$(yq -r '.args.BDS_URL' minecraftserver/build.yaml)"
+          CUR_BDS_VERSION="$(yq -r '.args.BDS_VERSION' minecraftserver/build.yaml)"
+          ADDON_VERSION="$(yq -r '.version' minecraftserver/config.yaml)"
+          echo "cur_url=$CUR_URL" >> "$GITHUB_OUTPUT"
+          echo "cur_bds_version=$CUR_BDS_VERSION" >> "$GITHUB_OUTPUT"
+          echo "addon_version=$ADDON_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Decide if update is needed
+        id: decide
+        run: |
+          if [ "${{ steps.upstream.outputs.latest_url }}" = "${{ steps.current.outputs.cur_url }}" ]; then
+            echo "update_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "update_needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update build.yaml & bump config.yaml (patch)
+        if: steps.decide.outputs.update_needed == 'true'
+        id: bump
+        run: |
+          set -e
+          NEW_URL='${{ steps.upstream.outputs.latest_url }}'
+          NEW_BDS_VER='${{ steps.upstream.outputs.latest_bds_version }}'
+
+          # Update build.yaml
+          yq -i ".args.BDS_URL = \"${NEW_URL}\"" minecraftserver/build.yaml
+          yq -i ".args.BDS_VERSION = \"${NEW_BDS_VER}\"" minecraftserver/build.yaml
+
+          # Bump patchversie
+          CUR_ADDON_VER='${{ steps.current.outputs.addon_version }}'
+          IFS='.' read -r MAJ MIN PAT <<< "$CUR_ADDON_VER"
+          PAT=$((PAT+1))
+          NEW_ADDON_VER="${MAJ}.${MIN}.${PAT}"
+          yq -i ".version = \"${NEW_ADDON_VER}\"" minecraftserver/config.yaml
+
+          echo "new_addon_version=$NEW_ADDON_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR with changes
+        if: steps.decide.outputs.update_needed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: update Bedrock to ${{ steps.upstream.outputs.latest_bds_version }} & bump add-on to ${{ steps.bump.outputs.new_addon_version }}"
+          title: "Update Bedrock ${{ steps.upstream.outputs.latest_bds_version }} / Add-on ${{ steps.bump.outputs.new_addon_version }}"
+          body: |
+            - Updated `minecraftserver/build.yaml` (BDS_URL & BDS_VERSION)
+            - Bumped `minecraftserver/config.yaml` patch version
+          branch: chore/auto-bedrock-${{ steps.upstream.outputs.latest_bds_version }}
+          delete-branch: true

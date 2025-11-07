@@ -4,8 +4,8 @@ build_from:
   armv7: ghcr.io/home-assistant/armv7-base-debian:trixie
 
 args:
-  BDS_VERSION: "1.21.121"
-  BDS_URL: "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.21.121.1.zip"
+  BDS_VERSION: "1.20.81.01"
+  BDS_URL: "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.20.81.01.zip"
   EASY_ADD_VERSION: "0.8.11"
   ENTRYPOINT_DEMOTER_VERSION: "0.4.0"
   SET_PROPERTY_VERSION: "0.1.1"

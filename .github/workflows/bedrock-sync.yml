@@ -3,7 +3,7 @@ name: Check Bedrock upstream & bump add-on
 on:
   workflow_dispatch:
   schedule:
-    - cron: "35 * * * *"  # elk uur om :17
+    - cron: "20 * * * *"  # elk uur om :17
 
 permissions:
   contents: write

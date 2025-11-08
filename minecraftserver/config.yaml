@@ -2,7 +2,7 @@ name: "Minecraft Server by Kevin"
 description: "Minecraft Bedrock Server tailored for Home Assistant"
 version: "1.0.2"
 slug: "minecraft_server_for_ha"
-https://github.com/KevinHekert/HomeAssistantAddOns/blob/main/minecraftserver/README.md
+url: https://github.com/KevinHekert/HomeAssistantAddOns/blob/main/minecraftserver/README.md
 init: false
 startup: application
 host_network: true

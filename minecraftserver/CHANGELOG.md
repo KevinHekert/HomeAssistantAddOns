@@ -1,3 +1,6 @@
+## 1.0.3 - 2025-11-08
+- Added url to config
+
 ## 1.0.2 - 2025-11-07
 - Changed slug to final version
 

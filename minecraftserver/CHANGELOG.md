@@ -1,3 +1,8 @@
+## 1.0.4 - 2025-11-10
+- New version Bedrock Server package installed: 1.21.122.2
+- Updated `minecraftserver/build.yaml` (BDS_URL & BDS_VERSION)
+- Bumped add-on version in `minecraftserver/config.yaml` to 1.0.4
+
 ## 1.0.3 - 2025-11-08
 - Added url to config
 

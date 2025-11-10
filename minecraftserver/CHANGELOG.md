@@ -1,3 +1,9 @@
+## 1.0.5 - 2025-11-10
+- Updated Entrypoint Demoter to latest stable
+- Updated MC Monitor to latest stable
+- Updated Set-property to latest stable
+- Updated Restify to latest stable
+
 ## 1.0.4 - 2025-11-10
 - New version Bedrock Server package installed: 1.21.122.2
 - Updated `minecraftserver/build.yaml` (BDS_URL & BDS_VERSION)

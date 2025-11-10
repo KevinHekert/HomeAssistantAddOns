@@ -1,8 +1,9 @@
 ## 1.0.5 - 2025-11-10
-- Updated Entrypoint Demoter to latest stable
-- Updated MC Monitor to latest stable
-- Updated Set-property to latest stable
-- Updated Restify to latest stable
+- Updated Entrypoint Demoter to latest stable `0.4.9`
+- Updated MC Monitor to latest stable `0.15.8`
+- Updated Set-property to latest stable `0.1.5`
+- Updated Restify to latest stable `1.7.11`
+- Updated Easy Add to latest stable `0.8.11`
 
 ## 1.0.4 - 2025-11-10
 - New version Bedrock Server package installed: 1.21.122.2

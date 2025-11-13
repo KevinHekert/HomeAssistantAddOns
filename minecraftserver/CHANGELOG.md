@@ -1,3 +1,7 @@
+## 1.0.6 - 2025-11-13
+- New version Bedrock Server package available: 1.21.123.2
+- Updated installation parameters in `minecraftserver/build.yaml` (BDS_URL & BDS_VERSION)
+
 ## 1.0.5 - 2025-11-10
 - Updated Entrypoint Demoter to latest stable `0.4.9`
 - Updated MC Monitor to latest stable `0.15.8`

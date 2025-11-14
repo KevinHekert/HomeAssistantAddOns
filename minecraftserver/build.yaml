@@ -4,7 +4,7 @@ build_from:
 args:
   BDS_VERSION: "1.21.123.2"
   BDS_URL: "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.21.123.2.zip"
-  EASY_ADD_VERSION: "0.8.11"
+  EASY_ADD_VERSION: "0.8.10"
   ENTRYPOINT_DEMOTER_VERSION: "0.4.9"
   SET_PROPERTY_VERSION: "0.1.5"
   RESTIFY_VERSION: "1.7.11"

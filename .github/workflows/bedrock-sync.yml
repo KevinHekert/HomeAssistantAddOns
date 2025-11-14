@@ -193,32 +193,54 @@ jobs:
           yq -i ".version = \"${NEW_ADDON_VER}\"" "$ADDIR/config.yaml"
           echo "new_addon_version=$NEW_ADDON_VER" >> "$GITHUB_OUTPUT"
 
-      # Stap 7: Update CHANGELOG
-      - name: Update CHANGELOG
-        if: steps.decide_any.outputs.update_needed == 'true'
-        run: |
-          ADDIR='minecraftserver'
-          VER="${{ steps.bump.outputs.new_addon_version }}"
-          NOW="$(TZ=Europe/Amsterdam date +%Y-%m-%d)"
-          CHANGELOG_PATH="$ADDIR/CHANGELOG.md"
+# =====================
+# Step 7: Update CHANGELOG
+# =====================
+- name: Update CHANGELOG
+  if: steps.decide_any.outputs.update_needed == 'true'
+  run: |
+    set -e
+    ADDIR='minecraftserver'
+    VER='${{ steps.bump.outputs.new_addon_version }}'
+    NOW="$(TZ=Europe/Amsterdam date +%Y-%m-%d)"
+    CHANGELOG_PATH="$ADDIR/CHANGELOG.md"
 
-          # Bedrock entry
-          BEDROCK_ENTRY=""
-          if [ "${{ steps.old_versions.outputs.bds_old }}" != "${{ steps.new_versions.outputs.bds_new }}" ]; then
-            BEDROCK_ENTRY="- Updated Bedrock Server from \`${{ steps.old_versions.outputs.bds_old }}\` to \`${{ steps.new_versions.outputs.bds_new }}\`"
-          fi
+    # =====================
+    # Bedrock entry (alleen bij update)
+    # =====================
+    CUR_BDS='${{ steps.current.outputs.cur_bds_version }}'
+    LATEST_BDS='${{ steps.upstream.outputs.latest_bds_version }}'
+    BEDROCK_ENTRY=""
+    if [ "$CUR_BDS" != "$LATEST_BDS" ]; then
+      BEDROCK_ENTRY="- Updated Bedrock Server from \`$CUR_BDS\` to \`$LATEST_BDS\`"
+    fi
 
-          # Addons changelog entries van check_addons output
-          ADDONS_CHANGES="${{ steps.check_addons.outputs.addons_changelog }}"
+    # =====================
+    # Add-ons changelog entries
+    # =====================
+    ADDONS_CHANGES=""
+    for addon in EASY_ADD ENTRYPOINT_DEMOTER SET_PROPERTY RESTIFY MC_MONITOR; do
+      CUR_VER_VAR="steps.current.outputs.${addon,,}"
+      LATEST_VER_VAR="steps.check_addons.outputs.${addon}_latest"
+      CUR_VER="${{ steps.current.outputs[addon,,] }}"
+      LATEST_VER="${{ steps.check_addons.outputs[addon]_latest }}"
+      if [ "$CUR_VER" != "$LATEST_VER" ]; then
+        ADDONS_CHANGES="${ADDONS_CHANGES}- Updated $addon from \`$CUR_VER\` to \`$LATEST_VER\`\n"
+      fi
+    done
 
-          {
-            echo "## ${VER} - ${NOW}"
-            [ -n "$BEDROCK_ENTRY" ] && echo "$BEDROCK_ENTRY"
-            [ -n "$ADDONS_CHANGES" ] && echo -e "$ADDONS_CHANGES"
-            echo
-            if [ -f "$CHANGELOG_PATH" ]; then cat "$CHANGELOG_PATH"; else echo "# Changelog"; fi
-          } > "${CHANGELOG_PATH}.new"
-          mv "${CHANGELOG_PATH}.new" "$CHANGELOG_PATH"
+    # =====================
+    # Schrijf changelog
+    # =====================
+    {
+      echo "## ${VER} - ${NOW}"
+      [ -n "$BEDROCK_ENTRY" ] && echo "$BEDROCK_ENTRY"
+      [ -n "$ADDONS_CHANGES" ] && echo -e "$ADDONS_CHANGES"
+      echo
+      if [ -f "$CHANGELOG_PATH" ]; then cat "$CHANGELOG_PATH"; else echo "# Changelog"; fi
+    } > "${CHANGELOG_PATH}.new"
+
+    mv "${CHANGELOG_PATH}.new" "$CHANGELOG_PATH"
 
       # Stap 8: Commit & Push changes
       - name: Commit changes

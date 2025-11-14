@@ -1,4 +1,4 @@
-name: "Minecraft Server by Kevin"
+name: "Minecraft Server for HA"
 description: "Minecraft Bedrock Server tailored for Home Assistant"
 version: "1.0.6"
 slug: "minecraft_server_for_ha"

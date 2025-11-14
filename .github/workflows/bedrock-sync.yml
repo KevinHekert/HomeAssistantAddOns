@@ -3,6 +3,8 @@ name: Check Bedrock upstream & bump (minecraftserver)
 on:
   schedule:
     - cron: "00,15,30,45 * * * *"
+  workflow_dispatch:
+    
 
 permissions:
   contents: write

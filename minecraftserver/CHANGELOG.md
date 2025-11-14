@@ -1,3 +1,6 @@
+## 1.0.8 - 2025-11-14
+- Add-ons updated
+
 ## 1.0.7 - 2025-11-14
 - Changed naming to final. No first name references.
 

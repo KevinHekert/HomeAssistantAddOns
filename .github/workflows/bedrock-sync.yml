@@ -98,8 +98,14 @@ jobs:
           )
 
           for ADDON in "${!ADDONS[@]}"; do
-            LATEST=$(curl -s https://api.github.com/repos/itzg/${ADDON,,}/releases/latest | jq -r '.tag_name | ltrimstr("v")')
+            REPO_NAME="${ADDON,,}"
+            if [ "$REPO_NAME" = "set_property" ]; then REPO_NAME="set-property"; fi
+            LATEST=$(curl -s https://api.github.com/repos/itzg/$REPO_NAME/releases/latest | jq -r '.tag_name | ltrimstr("v")')
             CURRENT="${ADDONS[$ADDON]}"
+            if [ -z "$LATEST" ]; then
+              echo "No latest release found for $ADDON, aborting."
+              exit 1
+            fi
             if [ "$LATEST" != "$CURRENT" ]; then
               yq -i ".args.${ADDON}_VERSION = \"$LATEST\"" "$ADDIR/build.yaml"
               UPDATED=true

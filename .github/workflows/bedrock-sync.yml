@@ -92,9 +92,8 @@ jobs:
           mkdir -p "$ADDIR"
           {
             echo "## ${VER} - ${NOW}"
-            echo "- New version Bedrock Server package installed: ${BDS}"
-            echo "- Updated \`$ADDIR/build.yaml\` (BDS_URL & BDS_VERSION)"
-            echo "- Bumped add-on version in \`$ADDIR/config.yaml\` to ${VER}"
+            echo "- New version Bedrock Server package available: ${BDS}"
+            echo "- Updated installation parameters in \`$ADDIR/build.yaml\` (BDS_URL & BDS_VERSION)"
             echo
             if [ -f "$CHANGELOG_PATH" ]; then cat "$CHANGELOG_PATH"; else echo "# Changelog"; fi
           } > "${CHANGELOG_PATH}.new"

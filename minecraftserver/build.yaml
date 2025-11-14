@@ -3,13 +3,13 @@ build_from:
   aarch64: ghcr.io/home-assistant/aarch64-base-debian:trixie
   armv7: ghcr.io/home-assistant/armv7-base-debian:trixie
 args:
-  BDS_VERSION: "1.21.121.1"
-  BDS_URL: "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.21.121.1.zip"
+  BDS_VERSION: "1.21.123.2"
+  BDS_URL: "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.21.123.2.zip"
   EASY_ADD_VERSION: "0.8.11"
-  ENTRYPOINT_DEMOTER_VERSION: "0.4.0"
-  SET_PROPERTY_VERSION: "0.1.1"
-  RESTIFY_VERSION: "1.6.1"
-  MC_MONITOR_VERSION: "0.5.0"
+  ENTRYPOINT_DEMOTER_VERSION: "0.4.9"
+  SET_PROPERTY_VERSION: "0.1.5"
+  RESTIFY_VERSION: "1.7.11"
+  MC_MONITOR_VERSION: "0.15.8"
 labels:
   org.opencontainers.image.title: "Minecraft Bedrock Beta (HA Add-on)"
   org.opencontainers.image.description: "Bedrock server gebundeld"

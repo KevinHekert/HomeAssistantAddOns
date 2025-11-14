@@ -1,3 +1,7 @@
+## 1.0.13 - 2025-11-14
+- Updated EASY_ADD from  to 
+
+
 ## 1.0.12 - 2025-11-14
 - Updated EASY_ADD from  to 
 - Updated Entrypoint Demoter from  to 

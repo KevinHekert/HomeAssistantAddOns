@@ -1,3 +1,7 @@
+## 1.0.9 - 2025-11-14
+- Updated Entrypoint Demoter from  to 
+
+
 ## 1.0.8 - 2025-11-14
 - Add-ons updated
 

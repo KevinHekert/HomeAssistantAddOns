@@ -14,7 +14,6 @@ This add-on is designed for **simplicity**, **performance**, and **zero-maintena
 | 🔄 Auto-version detection | Automatically downloads the latest Bedrock version |
 | 🌍 World configuration | Seeds, world type, difficulty, gamemode & cheats |
 | 👥 Player management | Whitelist/allowlist, default permissions, max player limit |
-| 📦 MCPack support | Automatically installs `.mcpack` addons on startup |
 | 🚀 Performance tuning | View distance, tick distance, multithreading, compression |
 | 🧱 Anti-cheat controls | Server authoritative movement & validation thresholds |
 | 🧠 Easy UI | Configuration through HA UI with friendly labels & dropdowns |
@@ -108,8 +107,4 @@ Server authoritative movement ensures fair gameplay and prevents hacked clients.
 | Correct movement | Fixes illegal movement via teleport |
 
 ---
-
-## 📦 MCPack Add-on Support
-
-Place `.mcpack` files in:
 

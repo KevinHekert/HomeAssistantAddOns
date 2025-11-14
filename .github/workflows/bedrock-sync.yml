@@ -1,4 +1,4 @@
-name: Check Bedrock & Addons upstream & bump
+name: Check Bedrock upstream & bump (minecraftserver)
 
 on:
   schedule:
@@ -44,55 +44,29 @@ jobs:
           CUR_URL="$(yq -r '.args.BDS_URL' "$ADDIR/build.yaml")"
           CUR_BDS_VERSION="$(yq -r '.args.BDS_VERSION' "$ADDIR/build.yaml")"
           ADDON_VERSION="$(yq -r '.version' "$ADDIR/config.yaml")"
+          # Addon versions
+          EASY_ADD_VERSION="$(yq -r '.args.EASY_ADD_VERSION' "$ADDIR/build.yaml")"
+          ENTRYPOINT_DEMOTER_VERSION="$(yq -r '.args.ENTRYPOINT_DEMOTER_VERSION' "$ADDIR/build.yaml")"
+          SET_PROPERTY_VERSION="$(yq -r '.args.SET_PROPERTY_VERSION' "$ADDIR/build.yaml")"
+          RESTIFY_VERSION="$(yq -r '.args.RESTIFY_VERSION' "$ADDIR/build.yaml")"
+          MC_MONITOR_VERSION="$(yq -r '.args.MC_MONITOR_VERSION' "$ADDIR/build.yaml")"
+
           echo "cur_url=$CUR_URL" >> "$GITHUB_OUTPUT"
           echo "cur_bds_version=$CUR_BDS_VERSION" >> "$GITHUB_OUTPUT"
           echo "addon_version=$ADDON_VERSION" >> "$GITHUB_OUTPUT"
+          echo "easy_add=$EASY_ADD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "entrypoint_demoter=$ENTRYPOINT_DEMOTER_VERSION" >> "$GITHUB_OUTPUT"
+          echo "set_property=$SET_PROPERTY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "restify=$RESTIFY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "mc_monitor=$MC_MONITOR_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Check GitHub releases for addons
-        id: check_addons
-        run: |
-          set -e
-          ADDIR='minecraftserver'
-          declare -A ADDONS=(
-            ["EASY_ADD"]="EASY_ADD_VERSION"
-            ["ENTRYPOINT_DEMOTER"]="ENTRYPOINT_DEMOTER_VERSION"
-            ["SET_PROPERTY"]="SET_PROPERTY_VERSION"
-            ["RESTIFY"]="RESTIFY_VERSION"
-            ["MC_MONITOR"]="MC_MONITOR_VERSION"
-          )
-
-          UPDATED=false
-
-          for APP in "${!ADDONS[@]}"; do
-            VAR_NAME="${ADDONS[$APP]}"
-            CUR_VER="$(yq -r ".args.$VAR_NAME" "$ADDIR/build.yaml")"
-
-            # Fetch latest release tag from GitHub
-            if [ "$APP" == "EASY_ADD" ]; then
-              LATEST_VER="$(curl -s "https://api.github.com/repos/itzg/easy-add/releases/latest" | jq -r '.tag_name' | sed 's/^v//')"
-            else
-              LATEST_VER="$(curl -s "https://api.github.com/repos/itzg/$APP/releases/latest" | jq -r '.tag_name' | sed 's/^v//')"
-            fi
-
-            echo "Checking $APP: current=$CUR_VER latest=$LATEST_VER"
-
-            if [ "$LATEST_VER" != "$CUR_VER" ]; then
-              echo "Updating $VAR_NAME to $LATEST_VER"
-              yq -i ".args.$VAR_NAME = \"$LATEST_VER\"" "$ADDIR/build.yaml"
-              UPDATED=true
-            fi
-          done
-
-          echo "addons_updated=$UPDATED" >> "$GITHUB_OUTPUT"
-
-      - name: Decide if update is needed
+      - name: Decide if Bedrock update is needed
         id: decide
         run: |
-          if [ "${{ steps.upstream.outputs.latest_url }}" != "${{ steps.current.outputs.cur_url }}" ] || \
-             [ "${{ steps.check_addons.outputs.addons_updated }}" == "true" ]; then
-            echo "update_needed=true" >> "$GITHUB_OUTPUT"
-          else
+          if [ "${{ steps.upstream.outputs.latest_url }}" = "${{ steps.current.outputs.cur_url }}" ]; then
             echo "update_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "update_needed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Update build.yaml & bump config.yaml (patch)
@@ -130,14 +104,8 @@ jobs:
           mkdir -p "$ADDIR"
           {
             echo "## ${VER} - ${NOW}"
-            echo "- Bedrock Server updated to ${BDS}"
-            echo "- Addons updated:"
-            echo "  - EASY_ADD: $(yq -r '.args.EASY_ADD_VERSION' "$ADDIR/build.yaml")"
-            echo "  - ENTRYPOINT_DEMOTER: $(yq -r '.args.ENTRYPOINT_DEMOTER_VERSION' "$ADDIR/build.yaml")"
-            echo "  - SET_PROPERTY: $(yq -r '.args.SET_PROPERTY_VERSION' "$ADDIR/build.yaml")"
-            echo "  - RESTIFY: $(yq -r '.args.RESTIFY_VERSION' "$ADDIR/build.yaml")"
-            echo "  - MC_MONITOR: $(yq -r '.args.MC_MONITOR_VERSION' "$ADDIR/build.yaml")"
-            echo "- Updated installation parameters in \`$ADDIR/build.yaml\`"
+            echo "- New version Bedrock Server package available: ${BDS}"
+            echo "- Updated installation parameters in \`$ADDIR/build.yaml\` (BDS_URL & BDS_VERSION)"
             echo
             if [ -f "$CHANGELOG_PATH" ]; then cat "$CHANGELOG_PATH"; else echo "# Changelog"; fi
           } > "${CHANGELOG_PATH}.new"
@@ -161,6 +129,21 @@ jobs:
           git tag -a "$TAG" -m "Release $TAG (Bedrock ${{ steps.upstream.outputs.latest_bds_version }})"
           git push origin "$TAG"
 
+      - name: Read final addon versions
+        id: final_addons
+        run: |
+          ADDIR='minecraftserver'
+          EASY_ADD_VER="$(yq -r '.args.EASY_ADD_VERSION' "$ADDIR/build.yaml")"
+          ENTRYPOINT_VER="$(yq -r '.args.ENTRYPOINT_DEMOTER_VERSION' "$ADDIR/build.yaml")"
+          SET_PROP_VER="$(yq -r '.args.SET_PROPERTY_VERSION' "$ADDIR/build.yaml")"
+          RESTIFY_VER="$(yq -r '.args.RESTIFY_VERSION' "$ADDIR/build.yaml")"
+          MC_MONITOR_VER="$(yq -r '.args.MC_MONITOR_VERSION' "$ADDIR/build.yaml")"
+          echo "easy_add=$EASY_ADD_VER" >> "$GITHUB_OUTPUT"
+          echo "entrypoint_demoter=$ENTRYPOINT_VER" >> "$GITHUB_OUTPUT"
+          echo "set_property=$SET_PROP_VER" >> "$GITHUB_OUTPUT"
+          echo "restify=$RESTIFY_VER" >> "$GITHUB_OUTPUT"
+          echo "mc_monitor=$MC_MONITOR_VER" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         if: steps.decide.outputs.update_needed == 'true'
         uses: softprops/action-gh-release@v2
@@ -171,10 +154,10 @@ jobs:
           body: |
             Bedrock Server updated to ${{ steps.upstream.outputs.latest_bds_version }}.
             Add-on versions:
-            - EASY_ADD: ${{ steps.check_addons.outputs.addons_updated && yq -r '.args.EASY_ADD_VERSION' 'minecraftserver/build.yaml' || 'unchanged' }}
-            - ENTRYPOINT_DEMOTER: $(yq -r '.args.ENTRYPOINT_DEMOTER_VERSION' minecraftserver/build.yaml)
-            - SET_PROPERTY: $(yq -r '.args.SET_PROPERTY_VERSION' minecraftserver/build.yaml)
-            - RESTIFY: $(yq -r '.args.RESTIFY_VERSION' minecraftserver/build.yaml)
-            - MC_MONITOR: $(yq -r '.args.MC_MONITOR_VERSION' minecraftserver/build.yaml)
+            - EASY_ADD: ${{ steps.final_addons.outputs.easy_add }}
+            - ENTRYPOINT_DEMOTER: ${{ steps.final_addons.outputs.entrypoint_demoter }}
+            - SET_PROPERTY: ${{ steps.final_addons.outputs.set_property }}
+            - RESTIFY: ${{ steps.final_addons.outputs.restify }}
+            - MC_MONITOR: ${{ steps.final_addons.outputs.mc_monitor }}
             Add-on version: ${{ steps.bump.outputs.new_addon_version }}.
             See changelog in minecraftserver/CHANGELOG.md

@@ -1,3 +1,6 @@
+## 1.0.7 - 2025-11-14
+- Changed naming to final. No first name references.
+
 ## 1.0.6 - 2025-11-13
 - New version Bedrock Server package available: 1.21.123.2
 - Updated installation parameters in `minecraftserver/build.yaml` (BDS_URL & BDS_VERSION)

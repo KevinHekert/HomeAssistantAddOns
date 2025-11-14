@@ -100,6 +100,9 @@ jobs:
           for ADDON in "${!ADDONS[@]}"; do
             REPO_NAME="${ADDON,,}"
             if [ "$REPO_NAME" = "set_property" ]; then REPO_NAME="set-property"; fi
+            if [ "$REPO_NAME" = "easy_add" ]; then REPO_NAME="easy-add"; fi
+
+            
             LATEST=$(curl -s https://api.github.com/repos/itzg/$REPO_NAME/releases/latest | jq -r '.tag_name | ltrimstr("v")')
             CURRENT="${ADDONS[$ADDON]}"
 

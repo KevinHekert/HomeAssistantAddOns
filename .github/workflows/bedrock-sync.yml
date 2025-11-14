@@ -84,53 +84,58 @@ jobs:
       # =====================
       - name: Check for add-on updates
         id: check_addons
+        env:
+          EASY_ADD_CURRENT: ${{ steps.current.outputs.easy_add }}
+          ENTRYPOINT_CURRENT: ${{ steps.current.outputs.entrypoint_demoter }}
+          SET_PROPERTY_CURRENT: ${{ steps.current.outputs.set_property }}
+          RESTIFY_CURRENT: ${{ steps.current.outputs.restify }}
+          MC_MONITOR_CURRENT: ${{ steps.current.outputs.mc_monitor }}
         run: |
           ADDIR='minecraftserver'
           UPDATED=false
           CHANGELOG_ENTRIES=""
 
-          # EASY_ADD
           LATEST_EASY_ADD=$(curl -s https://api.github.com/repos/itzg/easy-add/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          if [ "$LATEST_EASY_ADD" != "${{ steps.current.outputs.easy_add }}" ]; then
+          if [ "$LATEST_EASY_ADD" != "$EASY_ADD_CURRENT" ]; then
             yq -i ".args.EASY_ADD_VERSION = \"$LATEST_EASY_ADD\"" "$ADDIR/build.yaml"
             UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated EASY_ADD from \`${{ steps.current.outputs.easy_add }}\` to \`${LATEST_EASY_ADD}\`\n"
+            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated EASY_ADD from \`${EASY_ADD_CURRENT}\` to \`${LATEST_EASY_ADD}\`\n"
           fi
 
-          # ENTRYPOINT_DEMOTER
           LATEST_ENTRYPOINT=$(curl -s https://api.github.com/repos/itzg/entrypoint-demoter/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          if [ "$LATEST_ENTRYPOINT" != "${{ steps.current.outputs.entrypoint_demoter }}" ]; then
+          if [ "$LATEST_ENTRYPOINT" != "$ENTRYPOINT_CURRENT" ]; then
             yq -i ".args.ENTRYPOINT_DEMOTER_VERSION = \"$LATEST_ENTRYPOINT\"" "$ADDIR/build.yaml"
             UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Entrypoint Demoter from \`${{ steps.current.outputs.entrypoint_demoter }}\` to \`${LATEST_ENTRYPOINT}\`\n"
+            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Entrypoint Demoter from \`${ENTRYPOINT_CURRENT}\` to \`${LATEST_ENTRYPOINT}\`\n"
           fi
 
-          # SET_PROPERTY
           LATEST_SET_PROPERTY=$(curl -s https://api.github.com/repos/itzg/set-property/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          if [ "$LATEST_SET_PROPERTY" != "${{ steps.current.outputs.set_property }}" ]; then
+          if [ "$LATEST_SET_PROPERTY" != "$SET_PROPERTY_CURRENT" ]; then
             yq -i ".args.SET_PROPERTY_VERSION = \"$LATEST_SET_PROPERTY\"" "$ADDIR/build.yaml"
             UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Set Property from \`${{ steps.current.outputs.set_property }}\` to \`${LATEST_SET_PROPERTY}\`\n"
+            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Set Property from \`${SET_PROPERTY_CURRENT}\` to \`${LATEST_SET_PROPERTY}\`\n"
           fi
 
-          # RESTIFY
           LATEST_RESTIFY=$(curl -s https://api.github.com/repos/itzg/restify/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          if [ "$LATEST_RESTIFY" != "${{ steps.current.outputs.restify }}" ]; then
+          if [ "$LATEST_RESTIFY" != "$RESTIFY_CURRENT" ]; then
             yq -i ".args.RESTIFY_VERSION = \"$LATEST_RESTIFY\"" "$ADDIR/build.yaml"
             UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Restify from \`${{ steps.current.outputs.restify }}\` to \`${LATEST_RESTIFY}\`\n"
+            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Restify from \`${RESTIFY_CURRENT}\` to \`${LATEST_RESTIFY}\`\n"
           fi
 
-          # MC_MONITOR
           LATEST_MC_MONITOR=$(curl -s https://api.github.com/repos/itzg/mc-monitor/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          if [ "$LATEST_MC_MONITOR" != "${{ steps.current.outputs.mc_monitor }}" ]; then
+          if [ "$LATEST_MC_MONITOR" != "$MC_MONITOR_CURRENT" ]; then
             yq -i ".args.MC_MONITOR_VERSION = \"$LATEST_MC_MONITOR\"" "$ADDIR/build.yaml"
             UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated MC Monitor from \`${{ steps.current.outputs.mc_monitor }}\` to \`${LATEST_MC_MONITOR}\`\n"
+            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated MC Monitor from \`${MC_MONITOR_CURRENT}\` to \`${LATEST_MC_MONITOR}\`\n"
           fi
 
           echo "addons_updated=$UPDATED" >> "$GITHUB_OUTPUT"
-          echo "addons_changelog=$CHANGELOG_ENTRIES" >> "$GITHUB_OUTPUT"
+
+          # Multiline output via here-doc
+          echo "addons_changelog<<EOF" >> "$GITHUB_OUTPUT"
+          echo -e "$CHANGELOG_ENTRIES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       # =====================
       # Step 5: Decide if any update is needed
@@ -165,22 +170,27 @@ jobs:
       # =====================
       - name: Update CHANGELOG
         if: steps.decide_any.outputs.update_needed == 'true'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_addon_version }}
+          CUR_BDS_VERSION: ${{ steps.current.outputs.cur_bds_version }}
+          LATEST_BDS_VERSION: ${{ steps.upstream.outputs.latest_bds_version }}
+          ADDONS_CHANGELOG: ${{ steps.check_addons.outputs.addons_changelog }}
+          BDS_UPDATE_NEEDED: ${{ steps.decide_bds.outputs.bds_update_needed }}
         run: |
           ADDIR='minecraftserver'
-          VER='${{ steps.bump.outputs.new_addon_version }}'
+          VER="$NEW_VERSION"
           NOW="$(TZ=Europe/Amsterdam date +%Y-%m-%d)"
           CHANGELOG_PATH="$ADDIR/CHANGELOG.md"
 
-          # Bedrock entry
           BEDROCK_ENTRY=""
-          if [ "${{ steps.decide_bds.outputs.bds_update_needed }}" = "true" ]; then
-            BEDROCK_ENTRY="- Updated Bedrock Server from \`${{ steps.current.outputs.cur_bds_version }}\` to \`${{ steps.upstream.outputs.latest_bds_version }}\`"
+          if [ "$BDS_UPDATE_NEEDED" = "true" ]; then
+            BEDROCK_ENTRY="- Updated Bedrock Server from \`${CUR_BDS_VERSION}\` to \`${LATEST_BDS_VERSION}\`"
           fi
 
           {
             echo "## ${VER} - ${NOW}"
             [ -n "$BEDROCK_ENTRY" ] && echo "$BEDROCK_ENTRY"
-            [ -n "${{ steps.check_addons.outputs.addons_changelog }}" ] && echo -e "${{ steps.check_addons.outputs.addons_changelog }}"
+            [ -n "$ADDONS_CHANGELOG" ] && echo -e "$ADDONS_CHANGELOG"
             echo
             if [ -f "$CHANGELOG_PATH" ]; then cat "$CHANGELOG_PATH"; else echo "# Changelog"; fi
           } > "${CHANGELOG_PATH}.new"

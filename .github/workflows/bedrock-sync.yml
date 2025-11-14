@@ -48,21 +48,24 @@ jobs:
         id: current
         run: |
           ADDIR='minecraftserver'
+          CUR_URL="$(yq -r '.args.BDS_URL' "$ADDIR/build.yaml")"
           CUR_BDS_VERSION="$(yq -r '.args.BDS_VERSION' "$ADDIR/build.yaml")"
-          CUR_BDS_URL="$(yq -r '.args.BDS_URL' "$ADDIR/build.yaml")"
-          CUR_EASY_ADD="$(yq -r '.args.EASY_ADD_VERSION' "$ADDIR/build.yaml")"
-          CUR_ENTRYPOINT="$(yq -r '.args.ENTRYPOINT_DEMOTER_VERSION' "$ADDIR/build.yaml")"
-          CUR_SET_PROPERTY="$(yq -r '.args.SET_PROPERTY_VERSION' "$ADDIR/build.yaml")"
-          CUR_RESTIFY="$(yq -r '.args.RESTIFY_VERSION' "$ADDIR/build.yaml")"
-          CUR_MC_MONITOR="$(yq -r '.args.MC_MONITOR_VERSION' "$ADDIR/build.yaml")"
-          
+          ADDON_VERSION="$(yq -r '.version' "$ADDIR/config.yaml")"
+
+          EASY_ADD="$(yq -r '.args.EASY_ADD_VERSION' "$ADDIR/build.yaml")"
+          ENTRYPOINT_DEMOTER="$(yq -r '.args.ENTRYPOINT_DEMOTER_VERSION' "$ADDIR/build.yaml")"
+          SET_PROPERTY="$(yq -r '.args.SET_PROPERTY_VERSION' "$ADDIR/build.yaml")"
+          RESTIFY="$(yq -r '.args.RESTIFY_VERSION' "$ADDIR/build.yaml")"
+          MC_MONITOR="$(yq -r '.args.MC_MONITOR_VERSION' "$ADDIR/build.yaml")"
+
+          echo "cur_url=$CUR_URL" >> "$GITHUB_OUTPUT"
           echo "cur_bds_version=$CUR_BDS_VERSION" >> "$GITHUB_OUTPUT"
-          echo "cur_bds_url=$CUR_BDS_URL" >> "$GITHUB_OUTPUT"
-          echo "cur_easy_add=$CUR_EASY_ADD" >> "$GITHUB_OUTPUT"
-          echo "cur_entrypoint=$CUR_ENTRYPOINT" >> "$GITHUB_OUTPUT"
-          echo "cur_set_property=$CUR_SET_PROPERTY" >> "$GITHUB_OUTPUT"
-          echo "cur_restify=$CUR_RESTIFY" >> "$GITHUB_OUTPUT"
-          echo "cur_mc_monitor=$CUR_MC_MONITOR" >> "$GITHUB_OUTPUT"
+          echo "addon_version=$ADDON_VERSION" >> "$GITHUB_OUTPUT"
+          echo "easy_add=$EASY_ADD" >> "$GITHUB_OUTPUT"
+          echo "entrypoint_demoter=$ENTRYPOINT_DEMOTER" >> "$GITHUB_OUTPUT"
+          echo "set_property=$SET_PROPERTY" >> "$GITHUB_OUTPUT"
+          echo "restify=$RESTIFY" >> "$GITHUB_OUTPUT"
+          echo "mc_monitor=$MC_MONITOR" >> "$GITHUB_OUTPUT"
 
       # =====================
       # Step 3: Decide if Bedrock update needed
@@ -70,14 +73,14 @@ jobs:
       - name: Decide if Bedrock update is needed
         id: decide_bds
         run: |
-          if [ "${{ steps.upstream.outputs.latest_url }}" = "${{ steps.current.outputs.cur_bds_url }}" ]; then
+          if [ "${{ steps.upstream.outputs.latest_url }}" = "${{ steps.current.outputs.cur_url }}" ]; then
             echo "bds_update_needed=false" >> "$GITHUB_OUTPUT"
           else
             echo "bds_update_needed=true" >> "$GITHUB_OUTPUT"
           fi
 
       # =====================
-      # Step 4: Check add-ons updates & update build.yaml
+      # Step 4: Check add-ons updates
       # =====================
       - name: Check for add-on updates
         id: check_addons
@@ -86,53 +89,26 @@ jobs:
           UPDATED=false
           CHANGELOG_ENTRIES=""
 
-          # EASY_ADD
-          LATEST_EASY_ADD=$(curl -s https://api.github.com/repos/itzg/easy-add/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          CUR_EASY_ADD="$(yq -r '.args.EASY_ADD_VERSION' "$ADDIR/build.yaml")"
-          if [ "$LATEST_EASY_ADD" != "$CUR_EASY_ADD" ]; then
-            yq -i ".args.EASY_ADD_VERSION = \"$LATEST_EASY_ADD\"" "$ADDIR/build.yaml"
-            UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Easy Add from \`$CUR_EASY_ADD\` to \`$LATEST_EASY_ADD\`\n"
-          fi
+          declare -A ADDONS=(
+            ["EASY_ADD"]="${{ steps.current.outputs.easy_add }}"
+            ["ENTRYPOINT_DEMOTER"]="${{ steps.current.outputs.entrypoint_demoter }}"
+            ["SET_PROPERTY"]="${{ steps.current.outputs.set_property }}"
+            ["RESTIFY"]="${{ steps.current.outputs.restify }}"
+            ["MC_MONITOR"]="${{ steps.current.outputs.mc_monitor }}"
+          )
 
-          # ENTRYPOINT_DEMOTER
-          LATEST_ENTRYPOINT=$(curl -s https://api.github.com/repos/itzg/entrypoint-demoter/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          CUR_ENTRYPOINT="$(yq -r '.args.ENTRYPOINT_DEMOTER_VERSION' "$ADDIR/build.yaml")"
-          if [ "$LATEST_ENTRYPOINT" != "$CUR_ENTRYPOINT" ]; then
-            yq -i ".args.ENTRYPOINT_DEMOTER_VERSION = \"$LATEST_ENTRYPOINT\"" "$ADDIR/build.yaml"
-            UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Entrypoint Demoter from \`$CUR_ENTRYPOINT\` to \`$LATEST_ENTRYPOINT\`\n"
-          fi
-
-          # SET_PROPERTY
-          LATEST_SET_PROPERTY=$(curl -s https://api.github.com/repos/itzg/set-property/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          CUR_SET_PROPERTY="$(yq -r '.args.SET_PROPERTY_VERSION' "$ADDIR/build.yaml")"
-          if [ "$LATEST_SET_PROPERTY" != "$CUR_SET_PROPERTY" ]; then
-            yq -i ".args.SET_PROPERTY_VERSION = \"$LATEST_SET_PROPERTY\"" "$ADDIR/build.yaml"
-            UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Set Property from \`$CUR_SET_PROPERTY\` to \`$LATEST_SET_PROPERTY\`\n"
-          fi
-
-          # RESTIFY
-          LATEST_RESTIFY=$(curl -s https://api.github.com/repos/itzg/restify/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          CUR_RESTIFY="$(yq -r '.args.RESTIFY_VERSION' "$ADDIR/build.yaml")"
-          if [ "$LATEST_RESTIFY" != "$CUR_RESTIFY" ]; then
-            yq -i ".args.RESTIFY_VERSION = \"$LATEST_RESTIFY\"" "$ADDIR/build.yaml"
-            UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Restify from \`$CUR_RESTIFY\` to \`$LATEST_RESTIFY\`\n"
-          fi
-
-          # MC_MONITOR
-          LATEST_MC_MONITOR=$(curl -s https://api.github.com/repos/itzg/mc-monitor/releases/latest | jq -r '.tag_name | ltrimstr("v")')
-          CUR_MC_MONITOR="$(yq -r '.args.MC_MONITOR_VERSION' "$ADDIR/build.yaml")"
-          if [ "$LATEST_MC_MONITOR" != "$CUR_MC_MONITOR" ]; then
-            yq -i ".args.MC_MONITOR_VERSION = \"$LATEST_MC_MONITOR\"" "$ADDIR/build.yaml"
-            UPDATED=true
-            CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated MC Monitor from \`$CUR_MC_MONITOR\` to \`$LATEST_MC_MONITOR\`\n"
-          fi
+          for ADDON in "${!ADDONS[@]}"; do
+            LATEST=$(curl -s https://api.github.com/repos/itzg/${ADDON,,}/releases/latest | jq -r '.tag_name | ltrimstr("v")')
+            CURRENT="${ADDONS[$ADDON]}"
+            if [ "$LATEST" != "$CURRENT" ]; then
+              yq -i ".args.${ADDON}_VERSION = \"$LATEST\"" "$ADDIR/build.yaml"
+              UPDATED=true
+              CHANGELOG_ENTRIES="$CHANGELOG_ENTRIES- Updated $ADDON from '$CURRENT' to '$LATEST'\n"
+            fi
+          done
 
           echo "addons_updated=$UPDATED" >> "$GITHUB_OUTPUT"
-          echo "addons_changelog=$CHANGELOG_ENTRIES" >> "$GITHUB_OUTPUT"
+          echo -e "addons_changelog=$CHANGELOG_ENTRIES" >> "$GITHUB_OUTPUT"
 
       # =====================
       # Step 5: Decide if any update is needed
@@ -147,14 +123,15 @@ jobs:
           fi
 
       # =====================
-      # Step 6: Bump addon version
+      # Step 6: Bump addon version if needed
       # =====================
       - name: Update addon version (patch bump)
         if: steps.decide_any.outputs.update_needed == 'true'
         id: bump
         run: |
+          set -e
           ADDIR='minecraftserver'
-          CUR_ADDON_VER=$(yq -r '.version' "$ADDIR/config.yaml")
+          CUR_ADDON_VER='${{ steps.current.outputs.addon_version }}'
           IFS='.' read -r MAJ MIN PAT <<< "$CUR_ADDON_VER"
           PAT=$((PAT+1))
           NEW_ADDON_VER="${MAJ}.${MIN}.${PAT}"
@@ -168,16 +145,13 @@ jobs:
         if: steps.decide_any.outputs.update_needed == 'true'
         run: |
           ADDIR='minecraftserver'
-          VER="${{ steps.bump.outputs.new_addon_version }}"
+          VER='${{ steps.bump.outputs.new_addon_version }}'
           NOW="$(TZ=Europe/Amsterdam date +%Y-%m-%d)"
           CHANGELOG_PATH="$ADDIR/CHANGELOG.md"
 
-          # Bedrock entry
-          CUR_BDS_VERSION="$(yq -r '.args.BDS_VERSION' "$ADDIR/build.yaml")"
-          LATEST_BDS_VERSION="${{ steps.upstream.outputs.latest_bds_version }}"
           BEDROCK_ENTRY=""
-          if [ "$CUR_BDS_VERSION" != "$LATEST_BDS_VERSION" ]; then
-            BEDROCK_ENTRY="- Updated Bedrock Server from \`$CUR_BDS_VERSION\` to \`$LATEST_BDS_VERSION\`"
+          if [ "${{ steps.decide_bds.outputs.bds_update_needed }}" = "true" ]; then
+            BEDROCK_ENTRY="- Updated Bedrock Server from '${{ steps.current.outputs.cur_bds_version }}' to '${{ steps.upstream.outputs.latest_bds_version }}'"
           fi
 
           ADDONS_CHANGES="${{ steps.check_addons.outputs.addons_changelog }}"
@@ -197,6 +171,7 @@ jobs:
       - name: Commit changes
         if: steps.decide_any.outputs.update_needed == 'true'
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add minecraftserver/build.yaml minecraftserver/config.yaml minecraftserver/CHANGELOG.md
@@ -209,6 +184,7 @@ jobs:
       - name: Create tag
         if: steps.decide_any.outputs.update_needed == 'true'
         run: |
+          set -e
           TAG="minecraftserver-v${{ steps.bump.outputs.new_addon_version }}"
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"

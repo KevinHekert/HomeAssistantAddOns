@@ -1,0 +1,148 @@
+title: Minecraft-Server
+config:
+  name: Minecraft-Server
+  description: Minecraft Bedrock Server für Home Assistant
+
+configuration:
+  general:
+    name: Allgemein
+    description: Basis-Serverkonfiguration.
+    fields:
+      server_name:
+        name: Anzeigename
+        description: Name, den Spieler in ihrer Serverliste sehen.
+      server_port:
+        name: Port (IPv4)
+        description: UDP-Port für IPv4-Verbindungen (Standard 19132).
+      server_port_v6:
+        name: Port (IPv6)
+        description: UDP-Port für IPv6-Verbindungen (Standard 19133).
+      online_mode:
+        name: Online-Verifizierung
+        description: Erfordert Microsoft/Xbox-Anmeldung. Für Offline/LAN-Tests deaktivieren.
+      emit_server_telemetry:
+        name: Telemetrie senden
+        description: Erlaubt dem Server, Nutzungs-/Telemetriedaten zu senden.
+      enable_lan_visibility:
+        name: LAN-Sichtbarkeit
+        description: Server im lokalen Netzwerk (Broadcast) ankündigen. Deaktivieren bei benutzerdefinierten Ports oder wenn Discovery Probleme verursacht.
+
+  world:
+    name: Welt
+    description: Weltname, Generierung und Regeln.
+    fields:
+      level_name:
+        name: Weltname
+        description: Ordnername und In-Game-Name der Welt.
+      level_seed:
+        name: Welt-Seed
+        description: Seed für die Weltgenerierung. Leer lassen für zufällig.
+      level_type:
+        name: Welttyp
+        description: Voreinstellung für die Generierung.
+        options:
+          DEFAULT: "Standard"
+          FLAT: "Flach (Superflat)"
+          LEGACY: "Legacy"
+      gamemode:
+        name: Spielmodus
+        description: Standardmodus für Spieler. „survival“ = Überleben, „creative“ = Kreativ, „adventure“ = Abenteuer.
+        options:
+          survival: "Überleben"
+          creative: "Kreativ"
+          adventure: "Abenteuer"
+      difficulty:
+        name: Schwierigkeitsgrad
+        description: Globaler Schwierigkeitsgrad. „peaceful“ = friedlich, „easy“ = einfach, „normal“ = normal, „hard“ = schwer.
+        options:
+          peaceful: "Friedlich"
+          easy: "Einfach"
+          normal: "Normal"
+          hard: "Schwer"
+      allow_cheats:
+        name: Cheats erlauben
+        description: Erlaubt Befehle wie /tp und /gamemode ohne Operatorrechte.
+
+  players:
+    name: Spieler
+    description: Zugriff und Standardberechtigungen.
+    fields:
+      role_assignments:
+        name: Rollen pro XUID
+        description: Regeln hinzufügen, um einer XUID eine Rolle zuzuweisen.
+        xuid:
+          name: XUID
+          description: Xbox Live Benutzer-ID (nur Zahlen).
+        role:
+          name: Rolle
+          description: Berechtigungsstufe für diese XUID.
+          options:
+            operator: Operator
+            member: Mitglied
+            visitor: Besucher
+      max_players:
+        name: Max. Spieler
+        description: Maximale Anzahl gleichzeitiger Spieler.
+      white_list:
+        name: Whitelist erzwingen
+        description: Nur Spieler auf der Whitelist dürfen beitreten.
+      allow_list:
+        name: Allowlist verwenden
+        description: Aktiviert das Format allowlist.json.
+      default_player_permission_level:
+        name: Standardberechtigungen
+        description: Berechtigungsniveau für neue Spieler. „visitor“ = Besucher, „member“ = Mitglied, „operator“ = Operator.
+        options:
+          visitor: "Besucher"
+          member: "Mitglied"
+          operator: "Operator"
+      texturepack_required:
+        name: Texturpaket erforderlich
+        description: Erzwingt, dass Clients das Resourcepack des Servers herunterladen und nutzen.
+
+  performance:
+    name: Leistung
+    description: Sichtweite, Simulation und Threading.
+    fields:
+      view_distance:
+        name: Sichtweite
+        description: Anzahl der Chunks um jeden Spieler herum (höher = mehr CPU/Bandbreite).
+      tick_distance:
+        name: Simulationsdistanz
+        description: Radius (in Chunks) der Spielsimulation um Spieler.
+      player_idle_timeout:
+        name: Inaktivitäts-Timeout (Min)
+        description: Trennt Spieler nach dieser Anzahl Minuten Inaktivität (0 = aus).
+      max_threads:
+        name: Max. Threads
+        description: 0 = automatisch. Begrenzung der Anzahl an Worker-Threads.
+      compression_threshold:
+        name: Kompressionsschwelle
+        description: Minimale Paketgröße (Bytes), bevor Kompression angewendet wird.
+
+  anti_cheat:
+    name: Anti-Cheat & Bewegung
+    description: Server-autoritative Bewegung und Schwellenwerte.
+    fields:
+      server_authoritative_movement:
+        name: Bewegungs-Autorität
+        description: Wer Spielerbewegung validiert. „server-auth“ = Server, „client-auth“ = Client, „server-auth-with-rewind“ = Server mit Rewind.
+        options:
+          server-auth: "Server-autoritativ"
+          client-auth: "Client-autoritativ"
+          server-auth-with-rewind: "Server-autoritativ mit Rewind"
+      server_authoritative_block_breaking:
+        name: Autoritatives Blockabbauen
+        description: Validiert Blockabbau auf dem Server, um Cheating zu verhindern.
+      player_movement_score_threshold:
+        name: Bewegungsscore-Schwelle
+        description: Empfindlichkeitsschwelle für Bewegungsvalidierung.
+      player_movement_distance_threshold:
+        name: Bewegungsdistanz-Schwelle
+        description: Maximal erlaubte Positionsdifferenz zwischen Client und Server.
+      player_movement_duration_threshold_in_ms:
+        name: Bewegungsdauer-Schwelle (ms)
+        description: Zeitfenster für die Bewegungsvalidierung.
+      correct_player_movement:
+        name: Bewegung korrigieren
+        description: Server korrigiert die Clientposition bei ungültiger Bewegung.

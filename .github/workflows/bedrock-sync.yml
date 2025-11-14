@@ -3,7 +3,6 @@ name: Check Bedrock & Add-ons upstream & bump (minecraftserver)
 on:
   schedule:
     - cron: "0,15,30,45 * * * *"
-  workflow_dispatch:
 
 permissions:
   contents: write

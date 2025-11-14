@@ -48,15 +48,15 @@ jobs:
         id: current
         run: |
           ADDIR='minecraftserver'
-          CUR_URL="$(yq -r '.args.BDS_URL' "$ADDIR/build.yaml")"
-          CUR_BDS_VERSION="$(yq -r '.args.BDS_VERSION' "$ADDIR/build.yaml")"
-          ADDON_VERSION="$(yq -r '.version' "$ADDIR/config.yaml")"
+          CUR_URL="$(yq -r '.args.BDS_URL // "unknown"' "$ADDIR/build.yaml")"
+          CUR_BDS_VERSION="$(yq -r '.args.BDS_VERSION // "unknown"' "$ADDIR/build.yaml")"
+          ADDON_VERSION="$(yq -r '.version // "unknown"' "$ADDIR/config.yaml")"
 
-          EASY_ADD="$(yq -r '.args.EASY_ADD_VERSION' "$ADDIR/build.yaml")"
-          ENTRYPOINT_DEMOTER="$(yq -r '.args.ENTRYPOINT_DEMOTER_VERSION' "$ADDIR/build.yaml")"
-          SET_PROPERTY="$(yq -r '.args.SET_PROPERTY_VERSION' "$ADDIR/build.yaml")"
-          RESTIFY="$(yq -r '.args.RESTIFY_VERSION' "$ADDIR/build.yaml")"
-          MC_MONITOR="$(yq -r '.args.MC_MONITOR_VERSION' "$ADDIR/build.yaml")"
+          EASY_ADD="$(yq -r '.args.EASY_ADD_VERSION // "unknown"' "$ADDIR/build.yaml")"
+          ENTRYPOINT_DEMOTER="$(yq -r '.args.ENTRYPOINT_DEMOTER_VERSION // "unknown"' "$ADDIR/build.yaml")"
+          SET_PROPERTY="$(yq -r '.args.SET_PROPERTY_VERSION // "unknown"' "$ADDIR/build.yaml")"
+          RESTIFY="$(yq -r '.args.RESTIFY_VERSION // "unknown"' "$ADDIR/build.yaml")"
+          MC_MONITOR="$(yq -r '.args.MC_MONITOR_VERSION // "unknown"' "$ADDIR/build.yaml")"
 
           echo "cur_url=$CUR_URL" >> "$GITHUB_OUTPUT"
           echo "cur_bds_version=$CUR_BDS_VERSION" >> "$GITHUB_OUTPUT"
@@ -80,68 +80,63 @@ jobs:
           fi
 
       # =====================
-      # Step 4: Check add-on updates
+      # Step 4: Check add-ons updates
       # =====================
       - name: Check for add-on updates
         id: check_addons
-        env:
-          EASY_ADD_CURRENT: ${{ steps.current.outputs.easy_add }}
-          ENTRYPOINT_CURRENT: ${{ steps.current.outputs.entrypoint_demoter }}
-          SET_PROPERTY_CURRENT: ${{ steps.current.outputs.set_property }}
-          RESTIFY_CURRENT: ${{ steps.current.outputs.restify }}
-          MC_MONITOR_CURRENT: ${{ steps.current.outputs.mc_monitor }}
         run: |
           ADDIR='minecraftserver'
           UPDATED=false
           CHANGELOG_ENTRIES=""
 
+          # Load current versions for fallback
+          EASY_ADD_CURRENT="${{ steps.current.outputs.easy_add }}"
+          ENTRYPOINT_CURRENT="${{ steps.current.outputs.entrypoint_demoter }}"
+          SET_PROPERTY_CURRENT="${{ steps.current.outputs.set_property }}"
+          RESTIFY_CURRENT="${{ steps.current.outputs.restify }}"
+          MC_MONITOR_CURRENT="${{ steps.current.outputs.mc_monitor }}"
+
           get_latest_version() {
             local repo=$1
-            local version=$(curl -s "https://api.github.com/repos/$repo/releases/latest" | jq -r '.tag_name // empty' | sed 's/^v//')
+            local fallback=$2
+            local version
+            version=$(curl -s "https://api.github.com/repos/$repo/releases/latest" | jq -r '.tag_name // empty' | sed 's/^v//')
             if [ -z "$version" ] || [ "$version" = "null" ]; then
-              echo "WARNING: no valid tag_name found for $repo, setting version to current"
-              case $repo in
-                itzg/easy-add) echo "$EASY_ADD_CURRENT" ;;
-                itzg/entrypoint-demoter) echo "$ENTRYPOINT_CURRENT" ;;
-                itzg/set-property) echo "$SET_PROPERTY_CURRENT" ;;
-                itzg/restify) echo "$RESTIFY_CURRENT" ;;
-                itzg/mc-monitor) echo "$MC_MONITOR_CURRENT" ;;
-                *) echo "" ;;
-              esac
+              echo "$fallback"
             else
               echo "$version"
             fi
           }
 
-          LATEST_EASY_ADD=$(get_latest_version itzg/easy-add)
+          LATEST_EASY_ADD=$(get_latest_version itzg/easy-add "$EASY_ADD_CURRENT")
           if [ "$LATEST_EASY_ADD" != "$EASY_ADD_CURRENT" ]; then
             yq -i ".args.EASY_ADD_VERSION = \"$LATEST_EASY_ADD\"" "$ADDIR/build.yaml"
             UPDATED=true
             CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated EASY_ADD from \`${EASY_ADD_CURRENT}\` to \`${LATEST_EASY_ADD}\`\n"
           fi
 
-          LATEST_ENTRYPOINT=$(get_latest_version itzg/entrypoint-demoter)
+          LATEST_ENTRYPOINT=$(get_latest_version itzg/entrypoint-demoter "$ENTRYPOINT_CURRENT")
           if [ "$LATEST_ENTRYPOINT" != "$ENTRYPOINT_CURRENT" ]; then
             yq -i ".args.ENTRYPOINT_DEMOTER_VERSION = \"$LATEST_ENTRYPOINT\"" "$ADDIR/build.yaml"
             UPDATED=true
             CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Entrypoint Demoter from \`${ENTRYPOINT_CURRENT}\` to \`${LATEST_ENTRYPOINT}\`\n"
           fi
 
-          LATEST_SET_PROPERTY=$(get_latest_version itzg/set-property)
+          LATEST_SET_PROPERTY=$(get_latest_version itzg/set-property "$SET_PROPERTY_CURRENT")
           if [ "$LATEST_SET_PROPERTY" != "$SET_PROPERTY_CURRENT" ]; then
             yq -i ".args.SET_PROPERTY_VERSION = \"$LATEST_SET_PROPERTY\"" "$ADDIR/build.yaml"
             UPDATED=true
             CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Set Property from \`${SET_PROPERTY_CURRENT}\` to \`${LATEST_SET_PROPERTY}\`\n"
           fi
 
-          LATEST_RESTIFY=$(get_latest_version itzg/restify)
+          LATEST_RESTIFY=$(get_latest_version itzg/restify "$RESTIFY_CURRENT")
           if [ "$LATEST_RESTIFY" != "$RESTIFY_CURRENT" ]; then
             yq -i ".args.RESTIFY_VERSION = \"$LATEST_RESTIFY\"" "$ADDIR/build.yaml"
             UPDATED=true
             CHANGELOG_ENTRIES="${CHANGELOG_ENTRIES}- Updated Restify from \`${RESTIFY_CURRENT}\` to \`${LATEST_RESTIFY}\`\n"
           fi
 
-          LATEST_MC_MONITOR=$(get_latest_version itzg/mc-monitor)
+          LATEST_MC_MONITOR=$(get_latest_version itzg/mc-monitor "$MC_MONITOR_CURRENT")
           if [ "$LATEST_MC_MONITOR" != "$MC_MONITOR_CURRENT" ]; then
             yq -i ".args.MC_MONITOR_VERSION = \"$LATEST_MC_MONITOR\"" "$ADDIR/build.yaml"
             UPDATED=true
@@ -149,10 +144,7 @@ jobs:
           fi
 
           echo "addons_updated=$UPDATED" >> "$GITHUB_OUTPUT"
-
-          echo "addons_changelog<<EOF" >> "$GITHUB_OUTPUT"
-          echo -e "$CHANGELOG_ENTRIES" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "addons_changelog=$CHANGELOG_ENTRIES" >> "$GITHUB_OUTPUT"
 
       # =====================
       # Step 5: Decide if any update is needed
@@ -193,15 +185,21 @@ jobs:
           NOW="$(TZ=Europe/Amsterdam date +%Y-%m-%d)"
           CHANGELOG_PATH="$ADDIR/CHANGELOG.md"
 
+          # Bedrock entry
           BEDROCK_ENTRY=""
           if [ "${{ steps.decide_bds.outputs.bds_update_needed }}" = "true" ]; then
-            BEDROCK_ENTRY="- Updated Bedrock Server from \`${{ steps.current.outputs.cur_bds_version }}\` to \`${{ steps.upstream.outputs.latest_bds_version }}\`"
+            OLD="${{ steps.current.outputs.cur_bds_version }}"
+            NEW="${{ steps.upstream.outputs.latest_bds_version }}"
+            OLD="${OLD:-unknown}"
+            NEW="${NEW:-unknown}"
+            BEDROCK_ENTRY="- Updated Bedrock Server from \`${OLD}\` to \`${NEW}\`"
           fi
 
           {
             echo "## ${VER} - ${NOW}"
             [ -n "$BEDROCK_ENTRY" ] && echo "$BEDROCK_ENTRY"
-            [ -n "${{ steps.check_addons.outputs.addons_changelog }}" ] && echo -e "${{ steps.check_addons.outputs.addons_changelog }}"
+            # Output addons changelog, fallback to empty string to avoid 'null'
+            echo -e "${{ steps.check_addons.outputs.addons_changelog }}" | sed '/^null$/d'
             echo
             if [ -f "$CHANGELOG_PATH" ]; then cat "$CHANGELOG_PATH"; else echo "# Changelog"; fi
           } > "${CHANGELOG_PATH}.new"

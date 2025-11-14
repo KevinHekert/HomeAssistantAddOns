@@ -1,3 +1,6 @@
+## 1.0.14 - 2025-11-14
+- Updated ENTRYPOINT_DEMOTER from '0.4.8' to '0.4.9'
+
 ## 1.0.13 - 2025-11-14
 - Updated EASY_ADD from  to 
 

@@ -1,3 +1,11 @@
+## 1.0.11 - 2025-11-14
+- Updated EASY_ADD from  to 
+- Updated Entrypoint Demoter from  to 
+- Updated Set Property from  to 
+- Updated Restify from  to 
+- Updated MC Monitor from  to 
+
+
 ## 1.0.10 - 2025-11-14
 - Updated EASY_ADD from `0.8.10` to `null`
 - Updated Entrypoint Demoter from `0.4.8` to `null`

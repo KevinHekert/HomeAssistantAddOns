@@ -66,6 +66,7 @@ RUN easy-add --var version=${MC_MONITOR_VERSION} --var app=mc-monitor --file {{.
 
 # Bestanden naar container kopiëren
 COPY bedrock-entry.sh /opt/bedrock-entry.sh
+COPY start.sh /opt/start.sh
 COPY *.mcpack /opt/addons/
 COPY property-definitions.json /etc/bds-property-definitions.json
 COPY web/app.py /opt/flask/app.py

@@ -12,6 +12,8 @@ app = Flask(
     static_url_path="/static",
 )
 app.secret_key = "minecraftserver-for-ha"  # alleen voor flash-messages, mag random zijn
+SESSION_COOKIE_NAME="mcserver_ha_session"  # ⬅️ ander cookie-naampje
+
 
 PERMISSIONS_FILE = "/opt/bds/permissions.json"
 CONFIG_DIR = "/data/config"

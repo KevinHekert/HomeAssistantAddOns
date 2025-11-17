@@ -298,8 +298,7 @@ TEMPLATE = r"""
   <title>Minecraft Server for HA</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet"
-        integrity="sha384-cuUg3EDeQz7jr3qjvEihQ/HVbUaz2bmiFjCwXTlzAIXazhbugzuDUFc1lYIYyFkN" crossorigin="anonymous">
+    <link href="{{ url_for('static', filename='bootstrap.min.css') }}" rel="stylesheet">
 </head>
 <body class="bg-dark text-light">
 <nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-3">
@@ -560,9 +559,7 @@ TEMPLATE = r"""
 </div>
 
 <!-- Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-kenU1KFdBIe4zVF0s0G1M5b4hcpxyD9F7jL+0I/EjzYjz13DY1Yj0vjBqj0IVy5n"
-        crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
 </body>
 </html>
 """

@@ -313,7 +313,7 @@ def index():
 
             save_config(config)
             flash("Configuration saved. Restart the add-on to apply changes.", "success")
-            return redirect(url_for("index"))
+            return redirect(request.path)
 
         except Exception as exc:
             error = f"Error while saving configuration: {exc}"
@@ -659,6 +659,47 @@ TEMPLATE = r"""
       <button type="submit" class="btn btn-success btn-sm px-4">Save configuration</button>
     </div>
   </form>
+</div>
+
+<!-- Modal voor toevoegen/bewerken van permissions -->
+<div class="modal fade" id="permissionsModal" tabindex="-1" aria-labelledby="permissionsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-light border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="permissionsModalLabel">Manage player permissions</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="permissionsForm" onsubmit="return false;">
+          <!-- 👇 deze is belangrijk -->
+          <input type="hidden" id="edit_index" value="-1">
+
+          <div class="mb-3">
+            <label for="perm_name" class="form-label">Name (optional)</label>
+            <input type="text" class="form-control form-control-sm bg-black text-light" id="perm_name" placeholder="Player name">
+          </div>
+
+          <div class="mb-3">
+            <label for="perm_xuid" class="form-label">XUID</label>
+            <input type="text" class="form-control form-control-sm bg-black text-light" id="perm_xuid" placeholder="e.g. 1234567890123456">
+          </div>
+
+          <div class="mb-3">
+            <label for="perm_role" class="form-label">Role</label>
+            <select class="form-select form-select-sm bg-black text-light" id="perm_role">
+              <option value="visitor">Visitor</option>
+              <option value="member">Member</option>
+              <option value="operator">Operator</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-success" onclick="savePermissionFromModal()">Save</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Bootstrap JS -->

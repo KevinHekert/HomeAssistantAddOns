@@ -3,7 +3,6 @@ set -eo pipefail
 
 # =========================
 #  Bedrock STARTER (no download)
-#  - Reads options from /data/options.json
 #  - Applies server.properties via set-property
 #  - Builds permissions/allowlist (from options + env fallbacks)
 #  - Starts pre-bundled binary at /opt/bds/bedrock_server-${VERSION}
@@ -148,24 +147,93 @@ export CORRECT_PLAYER_MOVEMENT="$(lower_bool "${CORRECT_PLAYER_MOVEMENT:-$(first
 # ---------- Build permissions.json from UI (role_assignments) + env fallbacks ----------
 ensure_permissions_file() {
   if [[ ! -f permissions.json ]] || ! jq -e . permissions.json >/dev/null 2>&1; then
+    echo "Created empty permissions.json"
     echo "[]" > permissions.json
   fi
 }
 
+# ---------- Bidirectionele sync: config <-> permissions.json ----------
 
-if [ -f permissions.json ] && [ -f "$OPT_FILE" ]; then
-    echo "🔄 Syncing permissions.json → config role_assignments..."
+PERM_FILE="permissions.json"   # door symlink is dit /opt/bds/permissions.json
 
-    tmp_cfg="$(mktemp)"
+# Safe lees helpers: geef altijd geldige JSON terug
+config_ra_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
+perms_json="$(cat "$PERM_FILE" 2>/dev/null || echo '[]')"
 
-    jq --slurpfile perms permissions.json '
-      .players.role_assignments =
-        ( $perms[0] | map({
-            xuid: (.xuid | tostring),
-            role: (.permission | tostring)
-        }) )
-    ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
-fi
+merged_json="$(
+  jq -c '
+    def norm_level(r):
+      (r|tostring|ascii_downcase) as $r
+      | if   $r == "operator" or $r == "op"    then 3
+        elif $r == "member"  or $r == "default" then 2
+        else 1
+        end;
+
+    def level_to_role(n):
+      if   n >= 3 then "operator"
+      elif n >= 2 then "member"
+      else "visitor"
+      end;
+
+    # config: [{xuid, role}]
+    def cfg_pairs(list):
+      [ list[]? | { xuid: (.xuid|tostring), lvl: norm_level(.role) } ];
+
+    # perms: [{xuid, permission}]
+    def perm_pairs(list):
+      [ list[]? | { xuid: (.xuid|tostring), lvl: norm_level(.permission) } ];
+
+    . as $in
+    | ($in.config_ra // [])  as $cfg_list
+    | ($in.perms     // [])  as $perm_list
+
+    | (cfg_pairs($cfg_list) + perm_pairs($perm_list))
+      | group_by(.xuid)
+      | map({
+          xuid: .[0].xuid,
+          lvl:  ( map(.lvl) | max )
+        })
+      as $merged
+
+    | {
+        merged_for_config:  ($merged | map({ xuid, role: level_to_role(.lvl) })),
+        merged_for_perms:   ($merged | map({ xuid, permission: level_to_role(.lvl) }))
+      }
+  ' <<< "{\"config_ra\":$config_ra_json,\"perms\":$perms_json}"
+)"
+
+# Haal twee arrays uit het merge-resultaat
+cfg_out="$(echo "$merged_json" | jq '.merged_for_config')"
+perms_out="$(echo "$merged_json" | jq '.merged_for_perms')"
+
+echo "🔄 Merged $(echo "$cfg_out" | jq 'length') entries voor config & permissions..."
+
+# 1) Schrijf terug naar config: .players.role_assignments = cfg_out
+tmp_cfg="$(mktemp)"
+jq --argjson ra "$cfg_out" '
+  .players.role_assignments = $ra
+' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
+
+# 2) Schrijf terug naar permissions.json
+tmp_perm="$(mktemp)"
+echo "$perms_out" | jq '.' > "$tmp_perm" && mv "$tmp_perm" "$PERM_FILE"
+
+echo "✅ Bidirectionele sync voltooid."
+
+
+# if [ -f permissions.json ] && [ -f "$OPT_FILE" ]; then
+#     echo "🔄 Syncing permissions.json → config role_assignments..."
+
+#     tmp_cfg="$(mktemp)"
+
+#     jq --slurpfile perms permissions.json '
+#       .players.role_assignments =
+#         ( $perms[0] | map({
+#             xuid: (.xuid | tostring),
+#             role: (.permission | tostring)
+#         }) )
+#     ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
+# fi
 
 assignments_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
 

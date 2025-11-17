@@ -154,15 +154,17 @@ ensure_permissions_file() {
 
 
 if [ -f permissions.json ] && [ -f "$OPT_FILE" ]; then
-  echo "🔄 Syncing permissions.json → config role_assignments..."
-  tmp_cfg="$(mktemp)"
-  jq --version
-  jq --argfile perms permissions.json '
-    .players.role_assignments = (
-      $perms
-      | map({xuid, role: .permission})
-    )
-  ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
+    echo "🔄 Syncing permissions.json → config role_assignments..."
+
+    tmp_cfg="$(mktemp)"
+
+    jq --slurpfile perms permissions.json '
+      .players.role_assignments =
+        ( $perms[0] | map({
+            xuid: (.xuid | tostring),
+            role: (.permission | tostring)
+        }) )
+    ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
 fi
 
 assignments_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"

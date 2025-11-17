@@ -140,24 +140,47 @@ def to_float(value, default=None):
 def api_permissions():
     """
     Read-only endpoint: returns the current contents of permissions.json
-    as JSON (or [] if missing/invalid).
+    as JSON (or [] if missing/invalid), wrapped in an object.
     """
-    path = PERMISSIONS_FILE
-    alt_path = "/data/permissions.json"
-
+    paths = [PERMISSIONS_FILE, "/data/permissions.json"]
     data = []
-    for p in (path, alt_path):
-        if os.path.exists(p):
-            try:
+    error = None
+    used_path = None
+
+    try:
+        for p in paths:
+            if os.path.exists(p):
+                used_path = p
                 with open(p, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                break
-            except Exception:
-                # invalid JSON -> laat data gewoon []
-                data = []
+                    raw = f.read().strip()
+
+                if not raw:
+                    # Leeg bestand -> lege lijst
+                    data = []
+                else:
+                    try:
+                        data = json.loads(raw)
+                    except Exception as e:
+                        # Ongeldige JSON in file
+                        error = f"Invalid JSON in {p}: {e}"
+                        data = []
                 break
 
-    return jsonify(data)
+        if used_path is None:
+            # Geen bestand gevonden
+            data = []
+            error = None
+
+    except Exception as e:
+        error = f"Unexpected error reading permissions.json: {e}"
+        data = []
+
+    return jsonify({
+        "ok": error is None,
+        "path": used_path,
+        "error": error,
+        "data": data,
+    })
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -603,10 +626,14 @@ TEMPLATE = r"""
     const el = document.getElementById('runtime_permissions');
     if (!el) return;
 
-    fetch("{{ url_for('api_permissions') }}")
+    fetch("api/permissions")
       .then(resp => resp.json())
-      .then(data => {
-        el.textContent = JSON.stringify(data, null, 2);
+      .then(payload => {
+        if (!payload.ok) {
+          el.textContent = "Error: " + (payload.error || "unknown error");
+          return;
+        }
+        el.textContent = JSON.stringify(payload.data, null, 2);
       })
       .catch(err => {
         el.textContent = "Error reading permissions.json: " + err;

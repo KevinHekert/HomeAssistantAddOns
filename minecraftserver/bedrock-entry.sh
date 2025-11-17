@@ -9,6 +9,32 @@ set -eo pipefail
 #  - Starts pre-bundled binary at /opt/bds/bedrock_server-${VERSION}
 # =========================
 
+#Check symlinks
+
+LINKS=(
+  "/opt/bds/worlds:/data/worlds"
+  "/opt/bds/server.properties:/data/server.properties"
+  "/opt/bds/allowlist.json:/data/allowlist.json"
+  "/opt/bds/whitelist.json:/data/whitelist.json"
+  "/opt/bds/permissions.json:/data/permissions.json"
+)
+
+echo "🔗 Checking Bedrock symlinks..."
+
+for entry in "${LINKS[@]}"; do
+  target="${entry%%:*}"     # Left of :
+  source="${entry##*:}"     # Right of :
+
+  if [ -L "$target" ]; then
+    echo "✔️ Symlink exists: $target → $(readlink "$target")"
+  else
+    echo "➕ Creating symlink: $target → $source"
+    ln -s "$source" "$target"
+  fi
+done
+
+echo "✨ Symlink check complete."
+
 # --- Ensure /data/worlds exists ---
 if [ ! -d /data/worlds ]; then
   echo "📁 Creating /data/worlds..."

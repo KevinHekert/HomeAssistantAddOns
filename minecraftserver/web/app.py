@@ -4,7 +4,13 @@ from copy import deepcopy
 
 from flask import Flask, request, redirect, url_for, render_template_string, flash, jsonify
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(
+    __name__,
+    static_folder=os.path.join(BASE_DIR, "static"),
+    static_url_path="/static",
+)
 app.secret_key = "minecraftserver-for-ha"  # alleen voor flash-messages, mag random zijn
 
 PERMISSIONS_FILE = "/opt/bds/permissions.json"
@@ -130,6 +136,7 @@ def to_float(value, default=None):
 
 
 # ---- Routes ----
+@app.route("/api/permissions", methods=["GET"])
 def api_permissions():
     """
     Read-only endpoint: returns the current contents of permissions.json
@@ -319,7 +326,7 @@ TEMPLATE = r"""
   <title>Minecraft Server for HA</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Bootstrap CSS -->
-    <link href="{{ url_for('static', filename='bootstrap.min.css') }}" rel="stylesheet">
+  <link href="static/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-dark text-light">
 <nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-3">
@@ -590,7 +597,7 @@ TEMPLATE = r"""
 </div>
 
 <!-- Bootstrap JS -->
-  <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
+  <script src="static/bootstrap.bundle.min.js"></script>
   <script>
   (function() {
     const el = document.getElementById('runtime_permissions');
@@ -605,7 +612,7 @@ TEMPLATE = r"""
         el.textContent = "Error reading permissions.json: " + err;
       });
   })();
-</script>
+  </script>
 
 </body>
 </html>

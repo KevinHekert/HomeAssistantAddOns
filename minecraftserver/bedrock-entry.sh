@@ -48,7 +48,7 @@ isTrue() { case "${1,,}" in true|on|1|yes) return 0 ;; *) return 1 ;; esac; }
 lower_bool() { case "${1,,}" in true|1|on|yes) echo "true" ;; *) echo "false" ;; esac; }
 
 # JSON helpers
-OPT_FILE="/data/options.json"
+OPT_FILE="/data/config/bedrock_for_ha_config.json"
 optn() { jq -r "$1 // empty" "$OPT_FILE" 2>/dev/null; }                       # nested path, e.g. '.world.gamemode'
 optf() { jq -r --arg k "$1" '.[$k] // empty' "$OPT_FILE" 2>/dev/null; }       # flat key, e.g. 'gamemode'
 first_nonempty() { for v in "$@"; do [[ -n "$v" ]] && { echo "$v"; return; }; done; echo ""; }
@@ -151,6 +151,18 @@ ensure_permissions_file() {
     echo "[]" > permissions.json
   fi
 }
+
+
+if [ -f permissions.json ] && [ -f "$OPT_FILE" ]; then
+  echo "🔄 Syncing permissions.json → config role_assignments..."
+  tmp_cfg="$(mktemp)"
+  jq --argfile perms permissions.json '
+    .players.role_assignments = (
+      $perms
+      | map({xuid, role: .permission})
+    )
+  ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
+fi
 
 assignments_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
 

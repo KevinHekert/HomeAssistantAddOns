@@ -2,11 +2,12 @@ import json
 import os
 from copy import deepcopy
 
-from flask import Flask, request, redirect, url_for, render_template_string, flash
+from flask import Flask, request, redirect, url_for, render_template_string, flash, jsonify
 
 app = Flask(__name__)
 app.secret_key = "minecraftserver-for-ha"  # alleen voor flash-messages, mag random zijn
 
+PERMISSIONS_FILE = "/opt/bds/permissions.json"
 CONFIG_DIR = "/data/config"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "bedrock_for_ha_config.json")
 WORLDS_DIR = "/data/worlds"
@@ -129,7 +130,27 @@ def to_float(value, default=None):
 
 
 # ---- Routes ----
+def api_permissions():
+    """
+    Read-only endpoint: returns the current contents of permissions.json
+    as JSON (or [] if missing/invalid).
+    """
+    path = PERMISSIONS_FILE
+    alt_path = "/data/permissions.json"
 
+    data = []
+    for p in (path, alt_path):
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                break
+            except Exception:
+                # invalid JSON -> laat data gewoon []
+                data = []
+                break
+
+    return jsonify(data)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -468,6 +489,16 @@ TEMPLATE = r"""
               Example: <code>[{"xuid":"123","role":"operator"}]</code>
             </div>
           </div>
+          <div class="mb-3">
+            <label class="form-label">Runtime permissions (permissions.json)</label>
+            <pre id="runtime_permissions"
+                class="form-control form-control-sm bg-black text-light"
+                style="min-height: 120px; white-space: pre; overflow-x: auto;"></pre>
+            <div class="form-text text-muted">
+              Read-only view of the current <code>permissions.json</code> used by Bedrock.
+              This may change during runtime (e.g. via <code>/op</code> commands).
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -560,6 +591,22 @@ TEMPLATE = r"""
 
 <!-- Bootstrap JS -->
   <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
+  <script>
+  (function() {
+    const el = document.getElementById('runtime_permissions');
+    if (!el) return;
+
+    fetch("{{ url_for('api_permissions') }}")
+      .then(resp => resp.json())
+      .then(data => {
+        el.textContent = JSON.stringify(data, null, 2);
+      })
+      .catch(err => {
+        el.textContent = "Error reading permissions.json: " + err;
+      });
+  })();
+</script>
+
 </body>
 </html>
 """

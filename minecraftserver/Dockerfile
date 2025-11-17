@@ -70,6 +70,7 @@ COPY start.sh /opt/start.sh
 COPY *.mcpack /opt/addons/
 COPY property-definitions.json /etc/bds-property-definitions.json
 COPY web/app.py /opt/flask/app.py
+COPY web/static /opt/flask/static
 COPY bin/* /usr/local/bin/
 
 # Maak scripts uitvoerbaar

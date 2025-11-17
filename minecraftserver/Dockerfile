@@ -24,7 +24,7 @@ ARG MC_MONITOR_VERSION
 # Tools installeren en up to date maken
 RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip jq
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-flask
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-flask python3-waitress
 RUN apt-get clean
 RUN rm -rf /var/lib/apt/lists/*
 

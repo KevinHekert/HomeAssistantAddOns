@@ -2,7 +2,7 @@ import json
 import os
 from copy import deepcopy
 
-from flask import Flask, request, redirect, url_for, render_template_string, flash, jsonify
+from flask import Flask, request, redirect, url_for, render_template_string, jsonify
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -11,7 +11,6 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, "static"),
     static_url_path="/static",
 )
-app.secret_key = "minecraftserver-for-ha"  # alleen voor flash-messages, mag random zijn
 SESSION_COOKIE_NAME="mcserver_ha_session"  # ⬅️ ander cookie-naampje
 
 
@@ -312,12 +311,11 @@ def index():
             )
 
             save_config(config)
-            flash("Configuration saved. Restart the add-on to apply changes.", "success")
+            message = "Configuration saved. Restart the add-on to apply changes."
             return redirect(request.path)
 
         except Exception as exc:
             error = f"Error while saving configuration: {exc}"
-            flash(error, "error")
 
     # Voor role_assignments textarea
     role_assignments_json = json.dumps(
@@ -365,15 +363,16 @@ TEMPLATE = r"""
 </nav>
 
 <div class="container pb-5">
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, msg in messages %}
-        <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-sm" role="alert">
-          {{ msg }}
+    {% if message %}
+        <div class="alert alert-success alert-sm" role="alert">
+          {{ message }}
         </div>
-      {% endfor %}
     {% endif %}
-  {% endwith %}
+    {% if error %}
+        <div class="alert alert-danger alert-sm" role="alert">
+          {{ error }}
+        </div>
+    {% endif %}
 
   <form method="post" class="row g-3">
     <!-- General -->

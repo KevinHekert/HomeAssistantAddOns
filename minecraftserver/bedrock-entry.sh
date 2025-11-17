@@ -146,11 +146,69 @@ export CORRECT_PLAYER_MOVEMENT="$(lower_bool "${CORRECT_PLAYER_MOVEMENT:-$(first
 
 # ---------- Build permissions.json from UI (role_assignments) + env fallbacks ----------
 ensure_permissions_file() {
-  if [[ ! -f permissions.json ]] || ! jq -e . permissions.json >/dev/null 2>&1; then
-    echo "Created empty permissions.json"
-    echo "[]" > permissions.json
+  if [[ ! -f "$PERM_FILE" ]] || ! jq -e . "$PERM_FILE" >/dev/null 2>&1; then
+    echo "[]" > "$PERM_FILE"
   fi
 }
+
+sync_permissions_and_config() {
+  # Als er nog geen config is, kunnen we niets syncen
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "⚠️ Config file $CONFIG_FILE not found, skipping permissions sync"
+    return 0
+  fi
+
+  ensure_permissions_file
+
+  # 1) role_assignments uit config lezen (altijd array)
+  local cfg_ra_json
+  cfg_ra_json="$(jq -c '.players.role_assignments // []' "$CONFIG_FILE" 2>/dev/null || echo '[]')"
+
+  # 2) permissions.json normaliseren naar array van {xuid, permission}
+  local perm_json
+  perm_json="$(jq -c '
+    ( . // [] ) |
+    map({
+      xuid:       (.xuid       | tostring),
+      permission: (.permission | tostring)
+    })
+  ' "$PERM_FILE" 2>/dev/null || echo '[]')"
+
+  # 3) config ➜ permissions (union op xuid)
+  local new_perm_json
+  new_perm_json="$(jq -c --argjson cfg "$cfg_ra_json" --argjson perms "$perm_json" '
+    ($perms // []) as $perms
+    | ($cfg   // []) as $cfg
+    | reduce $cfg[] as $c ($perms;
+        if any(.xuid == $c.xuid) then
+          map(if .xuid == $c.xuid then .permission = $c.role else . end)
+        else
+          . + [{xuid:$c.xuid, permission:$c.role}]
+        end
+      )
+  ' <<< '{}')"  # dummy stdin omdat jq iets nodig heeft
+
+  echo "${new_perm_json:-[]}" > "$PERM_FILE"
+
+  # 4) permissions ➜ config (altijd terugschrijven naar config)
+  local final_perm_json
+  final_perm_json="$(cat "$PERM_FILE")"
+
+  local tmp_cfg
+  tmp_cfg="$(mktemp)"
+
+  jq --argjson perms "$final_perm_json" '
+    .players.role_assignments = (
+      $perms | map({
+        xuid: ( .xuid       | tostring ),
+        role: ( .permission | tostring )
+      })
+    )
+  ' "$CONFIG_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$CONFIG_FILE"
+
+  echo "✅ Synced permissions.json ↔ config.players.role_assignments"
+}
+
 
 # ---------- Bidirectionele sync: config <-> permissions.json ----------
 
@@ -234,6 +292,8 @@ echo "✅ Bidirectionele sync voltooid."
 #         }) )
 #     ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
 # fi
+
+sync_permissions_and_config
 
 assignments_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
 

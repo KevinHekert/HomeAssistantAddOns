@@ -323,6 +323,8 @@ def index():
     role_assignments_json = json.dumps(
         config["players"].get("role_assignments", []), indent=2
     )
+    role_assignments_list = config["players"].get("role_assignments", [])
+
 
     current_world = config["world"].get("level_name") or DEFAULT_CONFIG["world"][
         "level_name"
@@ -338,6 +340,7 @@ def index():
         worlds=worlds,
         current_world=current_world,
         role_assignments_json=role_assignments_json,
+        role_assignments=role_assignments_list,
     )
 
 
@@ -513,24 +516,61 @@ TEMPLATE = r"""
                    {% if config.players.texturepack_required %}checked{% endif %}>
             <label class="form-check-label" for="texturepack_required">Require texture pack</label>
           </div>
+          <!-- Hidden field die uiteindelijk naar de backend gaat -->
+          <input type="hidden"
+                id="role_assignments_json"
+                name="role_assignments_json"
+                value="{{ role_assignments_json|e }}">
+
           <div class="mb-3">
-            <label for="role_assignments_json" class="form-label">Role assignments (JSON)</label>
-            <textarea class="form-control form-control-sm bg-black text-light" id="role_assignments_json" name="role_assignments_json">{{ role_assignments_json }}</textarea>
-            <div class="form-text text-muted">
-              Array of objects with <code>xuid</code> and <code>role</code>.
-              Example: <code>[{"xuid":"123","role":"operator"}]</code>
+            <div class="d-flex justify-content-between align-items-center">
+              <label class="form-label mb-0">Configured player permissions</label>
+              <button type="button"
+                      class="btn btn-sm btn-outline-light"
+                      data-bs-toggle="modal"
+                      data-bs-target="#permissionsModal">
+                Manage permissions…
+              </button>
             </div>
+            <div class="form-text text-muted">
+              Below is a read-only summary of configured permissions. Use “Manage permissions…” to add or edit entries.
+            </div>
+
+            <table class="table table-sm table-dark table-striped mt-2 mb-0" id="ra_table">
+              <thead>
+                <tr>
+                  <th style="width: 40%;">Name</th>
+                  <th style="width: 35%;">XUID</th>
+                  <th style="width: 15%;">Role</th>
+                  <th style="width: 10%;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- wordt via JS gevuld -->
+              </tbody>
+            </table>
           </div>
+
           <div class="mb-3">
-            <label class="form-label">Runtime permissions (permissions.json)</label>
-            <pre id="runtime_permissions"
-                class="form-control form-control-sm bg-black text-light"
-                style="min-height: 120px; white-space: pre; overflow-x: auto;"></pre>
-            <div class="form-text text-muted">
-              Read-only view of the current <code>permissions.json</code> used by Bedrock.
-              This may change during runtime (e.g. via <code>/op</code> commands).
+            <label class="form-label">Runtime permissions from Bedrock (permissions.json)</label>
+            <div class="form-text text-muted mb-1">
+              This shows how Bedrock currently sees player permissions. It may diverge from the configured list during play.
             </div>
+
+            <table class="table table-sm table-dark table-striped mb-0" id="runtime_permissions_table">
+              <thead>
+                <tr>
+                  <th style="width: 40%;">XUID</th>
+                  <th style="width: 30%;">Permission</th>
+                  <th style="width: 30%;">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- JS filled from /api/permissions -->
+              </tbody>
+            </table>
           </div>
+
         </div>
       </div>
     </div>
@@ -622,26 +662,228 @@ TEMPLATE = r"""
 </div>
 
 <!-- Bootstrap JS -->
-  <script src="static/bootstrap.bundle.min.js"></script>
-  <script>
-  (function() {
-    const el = document.getElementById('runtime_permissions');
-    if (!el) return;
+<script src="static/bootstrap.bundle.min.js"></script>
+<script>
+  // ---- Configured permissions (from config) ----
+
+  // Startstatus uit de backend
+  let roleAssignments = {{ role_assignments|tojson }};
+
+  function syncHiddenField() {
+    const hidden = document.getElementById('role_assignments_json');
+    if (!hidden) return;
+    hidden.value = JSON.stringify(roleAssignments, null, 2);
+  }
+
+  function renderRoleAssignmentsTable() {
+    const tbody = document.querySelector('#ra_table tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    if (!Array.isArray(roleAssignments) || roleAssignments.length === 0) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.className = 'text-muted small';
+      td.textContent = 'No explicit player permissions configured yet.';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    roleAssignments.forEach((item, idx) => {
+      const tr = document.createElement('tr');
+
+      const nameTd = document.createElement('td');
+      nameTd.textContent = item.name || '';
+      tr.appendChild(nameTd);
+
+      const xuidTd = document.createElement('td');
+      xuidTd.innerHTML = '<code>' + (item.xuid || '') + '</code>';
+      tr.appendChild(xuidTd);
+
+      const roleTd = document.createElement('td');
+      const roleSpan = document.createElement('span');
+      const role = item.role || 'member';
+      roleSpan.textContent = role;
+      roleSpan.className = 'badge bg-secondary text-uppercase';
+      if (role === 'operator') roleSpan.className = 'badge bg-danger text-uppercase';
+      if (role === 'member') roleSpan.className = 'badge bg-primary text-uppercase';
+      roleTd.appendChild(roleSpan);
+      tr.appendChild(roleTd);
+
+      const actionsTd = document.createElement('td');
+      actionsTd.className = 'text-end';
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'btn btn-sm btn-outline-light me-1';
+      editBtn.textContent = 'Edit';
+      editBtn.onclick = () => openEditModal(idx);
+      actionsTd.appendChild(editBtn);
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn btn-sm btn-outline-danger';
+      delBtn.textContent = '✕';
+      delBtn.onclick = () => deleteAssignment(idx);
+      actionsTd.appendChild(delBtn);
+
+      tr.appendChild(actionsTd);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function openEditModal(index) {
+    const item = roleAssignments[index] || {};
+    document.getElementById('edit_index').value = index;
+    document.getElementById('perm_name').value = item.name || '';
+    document.getElementById('perm_xuid').value = item.xuid || '';
+    document.getElementById('perm_role').value = item.role || 'member';
+
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('permissionsModal'));
+    modal.show();
+  }
+
+  // Gebruik deze om een lege "Add" te starten (optioneel via extra knop)
+  function openAddModal() {
+    document.getElementById('edit_index').value = -1;
+    document.getElementById('perm_name').value = '';
+    document.getElementById('perm_xuid').value = '';
+    document.getElementById('perm_role').value = 'member';
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('permissionsModal'));
+    modal.show();
+  }
+
+  function savePermissionFromModal() {
+    const idx = parseInt(document.getElementById('edit_index').value, 10);
+    const name = document.getElementById('perm_name').value.trim();
+    const xuid = document.getElementById('perm_xuid').value.trim();
+    const role = document.getElementById('perm_role').value;
+
+    if (!xuid) {
+      alert('XUID is required.');
+      return;
+    }
+
+    const item = { xuid: xuid, role: role };
+    if (name) item.name = name;
+
+    if (!Array.isArray(roleAssignments)) {
+      roleAssignments = [];
+    }
+
+    if (idx >= 0 && idx < roleAssignments.length) {
+      roleAssignments[idx] = item;
+    } else {
+      // nieuwe entry
+      // check of XUID al bestaat → dan vervangen
+      const existingIndex = roleAssignments.findIndex(r => r.xuid === xuid);
+      if (existingIndex >= 0) {
+        roleAssignments[existingIndex] = item;
+      } else {
+        roleAssignments.push(item);
+      }
+    }
+
+    syncHiddenField();
+    renderRoleAssignmentsTable();
+
+    const modalEl = document.getElementById('permissionsModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
+
+  function deleteAssignment(index) {
+    if (!Array.isArray(roleAssignments)) return;
+    roleAssignments.splice(index, 1);
+    syncHiddenField();
+    renderRoleAssignmentsTable();
+  }
+
+  // ---- Runtime permissions vanuit /api/permissions (read-only) ----
+
+  function renderRuntimePermissions() {
+    const tbody = document.querySelector('#runtime_permissions_table tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
 
     fetch("api/permissions")
       .then(resp => resp.json())
       .then(payload => {
-        if (!payload.ok) {
-          el.textContent = "Error: " + (payload.error || "unknown error");
+        if (!payload || !payload.data || !Array.isArray(payload.data)) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 3;
+          td.className = 'text-muted small';
+          td.textContent = 'No permissions.json data available.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
           return;
         }
-        el.textContent = JSON.stringify(payload.data, null, 2);
+
+        if (payload.data.length === 0) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 3;
+          td.className = 'text-muted small';
+          td.textContent = 'permissions.json is currently empty.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+          return;
+        }
+
+        payload.data.forEach(entry => {
+          const tr = document.createElement('tr');
+          const xuid = entry.xuid || '';
+          const perm = entry.permission || '';
+
+          const xuidTd = document.createElement('td');
+          xuidTd.innerHTML = '<code>' + xuid + '</code>';
+          tr.appendChild(xuidTd);
+
+          const permTd = document.createElement('td');
+          const span = document.createElement('span');
+          span.textContent = perm;
+          span.className = 'badge bg-secondary text-uppercase';
+          if (perm === 'operator') span.className = 'badge bg-danger text-uppercase';
+          if (perm === 'member')   span.className = 'badge bg-primary text-uppercase';
+          tr.appendChild(permTd);
+          permTd.appendChild(span);
+
+          const srcTd = document.createElement('td');
+          srcTd.className = 'text-muted small';
+          srcTd.textContent = payload.path ? ('From ' + payload.path) : 'permissions.json';
+          tr.appendChild(srcTd);
+
+          tbody.appendChild(tr);
+        });
       })
       .catch(err => {
-        el.textContent = "Error reading permissions.json: " + err;
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 3;
+        td.className = 'text-danger small';
+        td.textContent = 'Error reading permissions.json: ' + err;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
       });
-  })();
-  </script>
+  }
+
+  // Init bij laden
+  document.addEventListener('DOMContentLoaded', function () {
+    if (!Array.isArray(roleAssignments)) {
+      roleAssignments = [];
+    }
+    syncHiddenField();
+    renderRoleAssignmentsTable();
+    renderRuntimePermissions();
+  });
+</script>
+
 
 </body>
 </html>

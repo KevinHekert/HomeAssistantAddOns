@@ -156,6 +156,7 @@ ensure_permissions_file() {
 if [ -f permissions.json ] && [ -f "$OPT_FILE" ]; then
   echo "🔄 Syncing permissions.json → config role_assignments..."
   tmp_cfg="$(mktemp)"
+  jq --version
   jq --argfile perms permissions.json '
     .players.role_assignments = (
       $perms

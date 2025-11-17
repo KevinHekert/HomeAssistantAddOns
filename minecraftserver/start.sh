@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-FLASK_PORT="${FLASK_PORT:-8080}"
+FLASK_PORT="${FLASK_PORT:-8789}"
 cd /opt/flask
 echo "🚀 Starting Flask webserver on port ${FLASK_PORT} (waitress)..."
 waitress-serve --listen=0.0.0.0:${FLASK_PORT} app:app &

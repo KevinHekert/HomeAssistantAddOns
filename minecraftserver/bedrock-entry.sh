@@ -24,12 +24,7 @@ for entry in "${LINKS[@]}"; do
   target="${entry%%:*}"     # Left of :
   source="${entry##*:}"     # Right of :
 
-  if [ -L "$target" ]; then
-    echo "✔️ Symlink exists: $target → $(readlink "$target")"
-  else
-    echo "➕ Creating symlink: $target → $source"
-    ln -s "$source" "$target"
-  fi
+  ln -sfn "$source" "$target"
 done
 
 echo "✨ Symlink check complete."
@@ -212,7 +207,7 @@ sync_permissions_and_config() {
 
 # ---------- Bidirectionele sync: config <-> permissions.json ----------
 
-PERM_FILE="permissions.json"   # door symlink is dit /opt/bds/permissions.json
+PERM_FILE="/data/permissions.json"   # door symlink is dit /opt/bds/permissions.json
 
 # Safe lees helpers: geef altijd geldige JSON terug
 config_ra_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"

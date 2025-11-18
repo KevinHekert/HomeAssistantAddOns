@@ -72,6 +72,9 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   /etc/bds-version             r,
   /etc/bds-property-definitions.json r,
 
+  # MIME types lezen
+  /etc/mime.types              r,
+
   # ====== Libraries & systeem ======
   /lib/**                      mr,
   /lib64/**                    mr,

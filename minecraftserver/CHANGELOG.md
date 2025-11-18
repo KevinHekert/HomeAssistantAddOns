@@ -1,24 +1,14 @@
-## 1.2.4 - 2025-11-19
+## 1.2.5 - 2025-11-19
+- Added warning to UI, server won't start without EULA.
 - Add tail to apparmor
-
-## 1.2.3 - 2025-11-19
 - Bugfix: unable to set EULA=True if EULA=False
-
-## 1.2.2 - 2025-11-19
 - Move EULA to config, default = false. 
-
-## 1.2.1 - 2025-11-19
 - Whitelist depricated, allowlist is used. 
 - Use permissions to fill allowlist. 
-
-## 1.2.0 - 2025-11-18
 - New UI for config!
 - World detection from config, support for world switching
 - Apparmor added to addon
 - Ingress added to addon
-- Preparation for support of mcpack files via manual upload (not there yet)
-- Preparation for world upload
-- Preparation for world download
 
 
 ## 1.0.7-14 - 2025-11-14

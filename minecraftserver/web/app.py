@@ -376,6 +376,16 @@ TEMPLATE = r"""
           {{ error }}
         </div>
     {% endif %}
+    {% if not config.general.eula %}
+        <div class="alert alert-warning alert-sm" role="alert">
+          <strong>EULA not accepted.</strong>
+          The Bedrock server will <strong>not</strong> start until you accept the
+          <a href="https://www.minecraft.net/terms" target="_blank" class="alert-link">
+            Minecraft EULA
+          </a>
+          and restart the add-on.
+        </div>
+    {% endif %}
 
   <form method="post" class="row g-3">
     <!-- General -->

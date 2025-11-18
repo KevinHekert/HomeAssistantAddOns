@@ -1,5 +1,6 @@
 ## 1.2.1 - 2025-11-19
 - Whitelist depricated, allowlist is used. 
+- Use permissions to fill allowlist. 
 
 ## 1.2.0 - 2025-11-18
 - New UI for config!

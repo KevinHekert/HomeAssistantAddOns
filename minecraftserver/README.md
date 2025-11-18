@@ -24,9 +24,7 @@ This add-on is designed for **simplicity**, **performance**, and **zero-maintena
 
 ## 🏗 Installation
 
-1. Add this repository to Home Assistant Add-on Store  
-   (**URL will be added once published to GitHub**)
-
+1. Add this repository to Home Assistant Add-on Store: `https://github.com/KevinHekert/HomeAssistantAddOns/`
 2. Install **Minecraft Server** add-on  
 3. Open Configuration tab  
 4. Adjust settings as needed  

@@ -41,7 +41,7 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   /usr/local/bin/box64         ixr,
   /usr/local/bin/mc-monitor    ixr,
   /usr/local/bin/set-property  ixr,
-
+  /usr/bin/touch               ixr,
   /usr/bin/curl                ixr,
   /usr/bin/unzip               ixr,
 

@@ -228,13 +228,21 @@ merged_json="$(
       else "visitor"
       end;
 
-    # config: [{xuid, role}]
+    # config: [{xuid, role, name?}]
     def cfg_pairs(list):
-      [ list[]? | { xuid: (.xuid|tostring), lvl: norm_level(.role) } ];
+      [ list[]? | {
+          xuid: (.xuid|tostring),
+          lvl:  norm_level(.role),
+          name: (.name // null)
+        } ];
 
-    # perms: [{xuid, permission}]
+    # perms: [{xuid, permission}] – geen name
     def perm_pairs(list):
-      [ list[]? | { xuid: (.xuid|tostring), lvl: norm_level(.permission) } ];
+      [ list[]? | {
+          xuid: (.xuid|tostring),
+          lvl:  norm_level(.permission),
+          name: null
+        } ];
 
     . as $in
     | ($in.config_ra // [])  as $cfg_list
@@ -244,13 +252,31 @@ merged_json="$(
       | group_by(.xuid)
       | map({
           xuid: .[0].xuid,
-          lvl:  ( map(.lvl) | max )
+          lvl:  ( map(.lvl) | max ),
+          # neem naam uit config als die bestaat
+          name: (
+            [.[].name // empty]
+            | map(select(. != "" and . != "null"))
+            | first? // null
+          )
         })
       as $merged
 
     | {
-        merged_for_config:  ($merged | map({ xuid, role: level_to_role(.lvl) })),
-        merged_for_perms:   ($merged | map({ xuid, permission: level_to_role(.lvl) }))
+        # Voor config: xuid + role + optioneel name
+        merged_for_config: (
+          $merged | map(
+            if .name == null or .name == "" then
+              { xuid, role: level_to_role(.lvl) }
+            else
+              { xuid, role: level_to_role(.lvl), name: .name }
+            end
+          )
+        ),
+        # Voor permissions.json: alleen xuid + permission
+        merged_for_perms: (
+          $merged | map({ xuid, permission: level_to_role(.lvl) })
+        )
       }
   ' <<< "{\"config_ra\":$config_ra_json,\"perms\":$perms_json}"
 )"

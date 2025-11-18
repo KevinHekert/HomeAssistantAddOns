@@ -540,10 +540,9 @@ TEMPLATE = r"""
             <table class="table table-sm table-dark table-striped mt-2 mb-0" id="ra_table">
               <thead>
                 <tr>
-                  <th style="width: 40%;">Name</th>
-                  <th style="width: 35%;">XUID</th>
-                  <th style="width: 15%;">Role</th>
-                  <th style="width: 10%;"></th>
+                  <th style="width: 60%;">Player</th>
+                  <th style="width: 20%;">Role</th>
+                  <th style="width: 20%;"></th>
                 </tr>
               </thead>
               <tbody>
@@ -726,7 +725,7 @@ TEMPLATE = r"""
     if (!Array.isArray(roleAssignments) || roleAssignments.length === 0) {
       const tr = document.createElement('tr');
       const td = document.createElement('td');
-      td.colSpan = 4;
+      td.colSpan = 3;
       td.className = 'text-muted small';
       td.textContent = 'No explicit player permissions configured yet.';
       tr.appendChild(td);
@@ -737,11 +736,14 @@ TEMPLATE = r"""
     roleAssignments.forEach((item, idx) => {
       const tr = document.createElement('tr');
 
-      // Name + XUID gestapeld
+      // 1e kolom: naam + XUID onder elkaar
       const nameTd = document.createElement('td');
+
       const nameDiv = document.createElement('div');
       nameDiv.className = 'fw-semibold';
-      nameDiv.textContent = item.name || '(no name)';
+      const displayName =
+        item.name && item.name.trim().length > 0 ? item.name.trim() : '(no name)';
+      nameDiv.textContent = displayName;
 
       const xuidDiv = document.createElement('div');
       xuidDiv.className = 'small text-muted';
@@ -751,13 +753,7 @@ TEMPLATE = r"""
       nameTd.appendChild(xuidDiv);
       tr.appendChild(nameTd);
 
-      // Tweede kolom alleen XUID voor sorteerbaarheid / leesbaarheid (optioneel)
-      const xuidTd = document.createElement('td');
-      xuidTd.className = 'align-middle';
-      xuidTd.innerHTML = '<code>' + (item.xuid || '') + '</code>';
-      tr.appendChild(xuidTd);
-
-      // Role met badge
+      // 2e kolom: role badge
       const roleTd = document.createElement('td');
       roleTd.className = 'align-middle';
       const roleSpan = document.createElement('span');
@@ -770,7 +766,7 @@ TEMPLATE = r"""
       roleTd.appendChild(roleSpan);
       tr.appendChild(roleTd);
 
-      // Acties
+      // 3e kolom: acties
       const actionsTd = document.createElement('td');
       actionsTd.className = 'text-end align-middle';
 
@@ -793,6 +789,7 @@ TEMPLATE = r"""
       tbody.appendChild(tr);
     });
   }
+
 
   function openEditModal(index) {
     const item = roleAssignments[index] || {};

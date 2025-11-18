@@ -2,7 +2,7 @@ import json
 import os
 from copy import deepcopy
 
-from flask import Flask, request, redirect, url_for, render_template_string, flash, jsonify
+from flask import Flask, request, redirect, url_for, render_template_string, jsonify
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -11,7 +11,8 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, "static"),
     static_url_path="/static",
 )
-app.secret_key = "minecraftserver-for-ha"  # alleen voor flash-messages, mag random zijn
+SESSION_COOKIE_NAME="mcserver_ha_session"  # ⬅️ ander cookie-naampje
+
 
 PERMISSIONS_FILE = "/opt/bds/permissions.json"
 CONFIG_DIR = "/data/config"
@@ -140,30 +141,55 @@ def to_float(value, default=None):
 def api_permissions():
     """
     Read-only endpoint: returns the current contents of permissions.json
-    as JSON (or [] if missing/invalid).
+    as JSON (or [] if missing/invalid), wrapped in an object.
     """
-    path = PERMISSIONS_FILE
-    alt_path = "/data/permissions.json"
-
+    paths = [PERMISSIONS_FILE, "/data/permissions.json"]
     data = []
-    for p in (path, alt_path):
-        if os.path.exists(p):
-            try:
+    error = None
+    used_path = None
+
+    try:
+        for p in paths:
+            if os.path.exists(p):
+                used_path = p
                 with open(p, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                break
-            except Exception:
-                # invalid JSON -> laat data gewoon []
-                data = []
+                    raw = f.read().strip()
+
+                if not raw:
+                    # Leeg bestand -> lege lijst
+                    data = []
+                else:
+                    try:
+                        data = json.loads(raw)
+                    except Exception as e:
+                        # Ongeldige JSON in file
+                        error = f"Invalid JSON in {p}: {e}"
+                        data = []
                 break
 
-    return jsonify(data)
+        if used_path is None:
+            # Geen bestand gevonden
+            data = []
+            error = None
+
+    except Exception as e:
+        error = f"Unexpected error reading permissions.json: {e}"
+        data = []
+
+    return jsonify({
+        "ok": error is None,
+        "path": used_path,
+        "error": error,
+        "data": data,
+    })
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     config = load_config()
     worlds = list_worlds()
     error = None
+    message = None
+
 
     if request.method == "POST":
         form = request.form
@@ -287,17 +313,18 @@ def index():
             )
 
             save_config(config)
-            flash("Configuration saved. Restart the add-on to apply changes.", "success")
-            return redirect(url_for("index"))
+            message = "Configuration saved. Restart the add-on to apply changes."
+            #return redirect(request.path)
 
         except Exception as exc:
             error = f"Error while saving configuration: {exc}"
-            flash(error, "error")
 
     # Voor role_assignments textarea
     role_assignments_json = json.dumps(
         config["players"].get("role_assignments", []), indent=2
     )
+    role_assignments_list = config["players"].get("role_assignments", [])
+
 
     current_world = config["world"].get("level_name") or DEFAULT_CONFIG["world"][
         "level_name"
@@ -313,6 +340,7 @@ def index():
         worlds=worlds,
         current_world=current_world,
         role_assignments_json=role_assignments_json,
+        role_assignments=role_assignments_list,
     )
 
 
@@ -337,15 +365,16 @@ TEMPLATE = r"""
 </nav>
 
 <div class="container pb-5">
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, msg in messages %}
-        <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-sm" role="alert">
-          {{ msg }}
+    {% if message %}
+        <div class="alert alert-success alert-sm" role="alert">
+          {{ message }}
         </div>
-      {% endfor %}
     {% endif %}
-  {% endwith %}
+    {% if error %}
+        <div class="alert alert-danger alert-sm" role="alert">
+          {{ error }}
+        </div>
+    {% endif %}
 
   <form method="post" class="row g-3">
     <!-- General -->
@@ -488,24 +517,61 @@ TEMPLATE = r"""
                    {% if config.players.texturepack_required %}checked{% endif %}>
             <label class="form-check-label" for="texturepack_required">Require texture pack</label>
           </div>
+          <!-- Hidden field die uiteindelijk naar de backend gaat -->
+          <input type="hidden"
+                id="role_assignments_json"
+                name="role_assignments_json"
+                value="{{ role_assignments_json|e }}">
+
           <div class="mb-3">
-            <label for="role_assignments_json" class="form-label">Role assignments (JSON)</label>
-            <textarea class="form-control form-control-sm bg-black text-light" id="role_assignments_json" name="role_assignments_json">{{ role_assignments_json }}</textarea>
-            <div class="form-text text-muted">
-              Array of objects with <code>xuid</code> and <code>role</code>.
-              Example: <code>[{"xuid":"123","role":"operator"}]</code>
+            <div class="d-flex justify-content-between align-items-center">
+              <label class="form-label mb-0">Configured player permissions</label>
+              <button type="button"
+                      class="btn btn-sm btn-outline-light"
+                      data-bs-toggle="modal"
+                      data-bs-target="#permissionsModal">
+                Manage permissions…
+              </button>
             </div>
+            <div class="form-text text-muted">
+              Below is a read-only summary of configured permissions. Use “Manage permissions…” to add or edit entries.
+            </div>
+
+            <table class="table table-sm table-dark table-striped mt-2 mb-0" id="ra_table">
+              <thead>
+                <tr>
+                  <th style="width: 40%;">Name</th>
+                  <th style="width: 35%;">XUID</th>
+                  <th style="width: 15%;">Role</th>
+                  <th style="width: 10%;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- wordt via JS gevuld -->
+              </tbody>
+            </table>
           </div>
+
           <div class="mb-3">
-            <label class="form-label">Runtime permissions (permissions.json)</label>
-            <pre id="runtime_permissions"
-                class="form-control form-control-sm bg-black text-light"
-                style="min-height: 120px; white-space: pre; overflow-x: auto;"></pre>
-            <div class="form-text text-muted">
-              Read-only view of the current <code>permissions.json</code> used by Bedrock.
-              This may change during runtime (e.g. via <code>/op</code> commands).
+            <label class="form-label">Runtime permissions from Bedrock (permissions.json)</label>
+            <div class="form-text text-muted mb-1">
+              This shows how Bedrock currently sees player permissions. It may diverge from the configured list during play.
             </div>
+
+            <table class="table table-sm table-dark table-striped mb-0" id="runtime_permissions_table">
+              <thead>
+                <tr>
+                  <th style="width: 40%;">XUID</th>
+                  <th style="width: 30%;">Permission</th>
+                  <th style="width: 30%;">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- JS filled from /api/permissions -->
+              </tbody>
+            </table>
           </div>
+
         </div>
       </div>
     </div>
@@ -596,23 +662,270 @@ TEMPLATE = r"""
   </form>
 </div>
 
-<!-- Bootstrap JS -->
-  <script src="static/bootstrap.bundle.min.js"></script>
-  <script>
-  (function() {
-    const el = document.getElementById('runtime_permissions');
-    if (!el) return;
+<!-- Modal voor toevoegen/bewerken van permissions -->
+<div class="modal fade" id="permissionsModal" tabindex="-1" aria-labelledby="permissionsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-light border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="permissionsModalLabel">Manage player permissions</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="permissionsForm" onsubmit="return false;">
+          <!-- 👇 deze is belangrijk -->
+          <input type="hidden" id="edit_index" value="-1">
 
-    fetch("{{ url_for('api_permissions') }}")
+          <div class="mb-3">
+            <label for="perm_name" class="form-label">Name (optional)</label>
+            <input type="text" class="form-control form-control-sm bg-black text-light" id="perm_name" placeholder="Player name">
+          </div>
+
+          <div class="mb-3">
+            <label for="perm_xuid" class="form-label">XUID</label>
+            <input type="text" class="form-control form-control-sm bg-black text-light" id="perm_xuid" placeholder="e.g. 1234567890123456">
+          </div>
+
+          <div class="mb-3">
+            <label for="perm_role" class="form-label">Role</label>
+            <select class="form-select form-select-sm bg-black text-light" id="perm_role">
+              <option value="visitor">Visitor</option>
+              <option value="member">Member</option>
+              <option value="operator">Operator</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-success" onclick="savePermissionFromModal()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bootstrap JS -->
+<script src="static/bootstrap.bundle.min.js"></script>
+<script>
+  // ---- Configured permissions (from config) ----
+
+  // Startstatus uit de backend
+  let roleAssignments = {{ role_assignments|tojson }};
+
+  function syncHiddenField() {
+    const hidden = document.getElementById('role_assignments_json');
+    if (!hidden) return;
+    hidden.value = JSON.stringify(roleAssignments, null, 2);
+  }
+
+  function renderRoleAssignmentsTable() {
+    const tbody = document.querySelector('#ra_table tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    if (!Array.isArray(roleAssignments) || roleAssignments.length === 0) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.className = 'text-muted small';
+      td.textContent = 'No explicit player permissions configured yet.';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    roleAssignments.forEach((item, idx) => {
+      const tr = document.createElement('tr');
+
+      const nameTd = document.createElement('td');
+      nameTd.textContent = item.name || '';
+      tr.appendChild(nameTd);
+
+      const xuidTd = document.createElement('td');
+      xuidTd.innerHTML = '<code>' + (item.xuid || '') + '</code>';
+      tr.appendChild(xuidTd);
+
+      const roleTd = document.createElement('td');
+      const roleSpan = document.createElement('span');
+      const role = item.role || 'member';
+      roleSpan.textContent = role;
+      roleSpan.className = 'badge bg-secondary text-uppercase';
+      if (role === 'operator') roleSpan.className = 'badge bg-danger text-uppercase';
+      if (role === 'member') roleSpan.className = 'badge bg-primary text-uppercase';
+      roleTd.appendChild(roleSpan);
+      tr.appendChild(roleTd);
+
+      const actionsTd = document.createElement('td');
+      actionsTd.className = 'text-end';
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'btn btn-sm btn-outline-light me-1';
+      editBtn.textContent = 'Edit';
+      editBtn.onclick = () => openEditModal(idx);
+      actionsTd.appendChild(editBtn);
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn btn-sm btn-outline-danger';
+      delBtn.textContent = '✕';
+      delBtn.onclick = () => deleteAssignment(idx);
+      actionsTd.appendChild(delBtn);
+
+      tr.appendChild(actionsTd);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function openEditModal(index) {
+    const item = roleAssignments[index] || {};
+    document.getElementById('edit_index').value = index;
+    document.getElementById('perm_name').value = item.name || '';
+    document.getElementById('perm_xuid').value = item.xuid || '';
+    document.getElementById('perm_role').value = item.role || 'member';
+
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('permissionsModal'));
+    modal.show();
+  }
+
+  // Gebruik deze om een lege "Add" te starten (optioneel via extra knop)
+  function openAddModal() {
+    document.getElementById('edit_index').value = -1;
+    document.getElementById('perm_name').value = '';
+    document.getElementById('perm_xuid').value = '';
+    document.getElementById('perm_role').value = 'member';
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('permissionsModal'));
+    modal.show();
+  }
+
+  function savePermissionFromModal() {
+    const idx = parseInt(document.getElementById('edit_index').value, 10);
+    const name = document.getElementById('perm_name').value.trim();
+    const xuid = document.getElementById('perm_xuid').value.trim();
+    const role = document.getElementById('perm_role').value;
+
+    if (!xuid) {
+      alert('XUID is required.');
+      return;
+    }
+
+    const item = { xuid: xuid, role: role };
+    if (name) item.name = name;
+
+    if (!Array.isArray(roleAssignments)) {
+      roleAssignments = [];
+    }
+
+    if (idx >= 0 && idx < roleAssignments.length) {
+      roleAssignments[idx] = item;
+    } else {
+      // nieuwe entry
+      // check of XUID al bestaat → dan vervangen
+      const existingIndex = roleAssignments.findIndex(r => r.xuid === xuid);
+      if (existingIndex >= 0) {
+        roleAssignments[existingIndex] = item;
+      } else {
+        roleAssignments.push(item);
+      }
+    }
+
+    syncHiddenField();
+    renderRoleAssignmentsTable();
+
+    const modalEl = document.getElementById('permissionsModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
+
+  function deleteAssignment(index) {
+    if (!Array.isArray(roleAssignments)) return;
+    roleAssignments.splice(index, 1);
+    syncHiddenField();
+    renderRoleAssignmentsTable();
+  }
+
+  // ---- Runtime permissions vanuit /api/permissions (read-only) ----
+
+  function renderRuntimePermissions() {
+    const tbody = document.querySelector('#runtime_permissions_table tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    fetch("api/permissions")
       .then(resp => resp.json())
-      .then(data => {
-        el.textContent = JSON.stringify(data, null, 2);
+      .then(payload => {
+        if (!payload || !payload.data || !Array.isArray(payload.data)) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 3;
+          td.className = 'text-muted small';
+          td.textContent = 'No permissions.json data available.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+          return;
+        }
+
+        if (payload.data.length === 0) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 3;
+          td.className = 'text-muted small';
+          td.textContent = 'permissions.json is currently empty.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+          return;
+        }
+
+        payload.data.forEach(entry => {
+          const tr = document.createElement('tr');
+          const xuid = entry.xuid || '';
+          const perm = entry.permission || '';
+
+          const xuidTd = document.createElement('td');
+          xuidTd.innerHTML = '<code>' + xuid + '</code>';
+          tr.appendChild(xuidTd);
+
+          const permTd = document.createElement('td');
+          const span = document.createElement('span');
+          span.textContent = perm;
+          span.className = 'badge bg-secondary text-uppercase';
+          if (perm === 'operator') span.className = 'badge bg-danger text-uppercase';
+          if (perm === 'member')   span.className = 'badge bg-primary text-uppercase';
+          tr.appendChild(permTd);
+          permTd.appendChild(span);
+
+          const srcTd = document.createElement('td');
+          srcTd.className = 'text-muted small';
+          srcTd.textContent = payload.path ? ('From ' + payload.path) : 'permissions.json';
+          tr.appendChild(srcTd);
+
+          tbody.appendChild(tr);
+        });
       })
       .catch(err => {
-        el.textContent = "Error reading permissions.json: " + err;
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 3;
+        td.className = 'text-danger small';
+        td.textContent = 'Error reading permissions.json: ' + err;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
       });
-  })();
-  </script>
+  }
+
+  // Init bij laden
+  document.addEventListener('DOMContentLoaded', function () {
+    if (!Array.isArray(roleAssignments)) {
+      roleAssignments = [];
+    }
+    syncHiddenField();
+    renderRoleAssignmentsTable();
+    renderRuntimePermissions();
+  });
+</script>
+
 
 </body>
 </html>

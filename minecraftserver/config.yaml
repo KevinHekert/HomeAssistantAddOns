@@ -1,6 +1,6 @@
 name: "Minecraft Server for HA (Beta)"
 description: "Minecraft Bedrock Server tailored for Home Assistant"
-version: "1.0.16.8"
+version: "1.0.16.17"
 slug: "minecraftserver"
 url: https://github.com/KevinHekert/HomeAssistantAddOns/blob/main/minecraftserver/README.md
 init: false

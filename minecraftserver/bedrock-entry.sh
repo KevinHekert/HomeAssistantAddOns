@@ -62,16 +62,6 @@ if [[ ${DEBUG^^} = TRUE ]]; then
   echo "       cwd=$(pwd)"
 fi
 
-# ---------- EULA ----------
-if [[ ${EULA^^} != TRUE ]]; then
-  echo
-  echo "EULA must be set to TRUE to indicate agreement with the Minecraft End User License"
-  echo "See https://minecraft.net/terms"
-  echo "Current value is '${EULA}'"
-  echo
-  exit 1
-fi
-
 # ---------- Determine VERSION & binary path (pre-baked at build time) ----------
 : "${VERSION:=$(cat /etc/bds-version 2>/dev/null || true)}"
 BIN_DIR="/opt/bds"
@@ -363,6 +353,19 @@ else
   echo "⚠️ $PROP_FILE bestaat nog niet!"
 fi
 echo "-------------------------------------------"
+
+# ---------- EULA gate: skip Bedrock if not accepted ----------
+if [[ ${EULA^^} != TRUE ]]; then
+  echo
+  echo "⚠️ EULA is not accepted (EULA=${EULA:-unset})."
+  echo "   Bedrock server will NOT be started."
+  echo "   Accept the Minecraft EULA in the add-on UI and restart."
+  echo "   See https://minecraft.net/terms"
+  echo
+  # Container blijft draaien zodat de Flask UI via Ingress bereikbaar blijft.
+  tail -f /dev/null
+fi
+
 
 # ---------- Start ----------
 export LD_LIBRARY_PATH="${BIN_DIR}"

@@ -65,6 +65,7 @@ RUN easy-add --var version=${MC_MONITOR_VERSION} --var app=mc-monitor --file {{.
 # Bestanden naar container kopiëren
 COPY bedrock-entry.sh /opt/bedrock-entry.sh
 COPY start.sh /opt/start.sh
+COPY healthcheck.sh /opt/healthcheck.sh
 COPY *.mcpack /opt/addons/
 COPY property-definitions.json /etc/bds-property-definitions.json
 COPY web/app.py /opt/flask/app.py
@@ -74,6 +75,7 @@ COPY bin/* /usr/local/bin/
 # Maak scripts uitvoerbaar
 RUN chmod +x /opt/bedrock-entry.sh
 RUN chmod +x /opt/start.sh
+RUN chmod +x /opt/healthcheck.sh
 
 
 # ===== Download & uitpakken tijdens build =====
@@ -102,7 +104,7 @@ RUN ln -sfn /data/worlds            /opt/bds/worlds && \
     ln -sfn /data/allowlist.json    /opt/bds/allowlist.json && \
     ln -sfn /data/permissions.json  /opt/bds/permissions.json
     
-ENV VERSION=${BDS_VERSION} \
-    EULA=false
+ENV VERSION=${BDS_VERSION}
 
-HEALTHCHECK --interval=2m --timeout=5s --retries=2 --start-period=2m CMD timeout 3s /usr/local/bin/mc-monitor status-bedrock --host 127.0.0.1 --port $SERVER_PORT || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --retries=2 --start-period=15s CMD /opt/healthcheck.sh
+#HEALTHCHECK --interval=2m --timeout=5s --retries=2 --start-period=2m CMD timeout 3s /usr/local/bin/mc-monitor status-bedrock --host 127.0.0.1 --port $SERVER_PORT || exit 1

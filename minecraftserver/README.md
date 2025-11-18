@@ -9,7 +9,7 @@ This add-on is designed for **simplicity**, **performance**, and **zero-maintena
 ## ✨ Features
 
 | Feature | Description |
-|--------|--------------|
+|:--------|:--------------|
 | ✅ Bedrock Dedicated Server | Runs the official Mojang Bedrock Server inside Home Assistant |
 | 🔄 Auto-version detection | Automatically downloads the latest Bedrock version |
 | 🌍 World configuration | Seeds, world type, difficulty, gamemode & cheats |
@@ -46,7 +46,7 @@ The configuration is grouped into 5 logical sections:
 Core server behavior such as name, ports, online mode, and LAN visibility.
 
 | Setting | Description |
-|---------|----------------|
+|:--------|:------------|
 | Display name | Name shown in the Minecraft server list |
 | Port (IPv4/IPv6) | Ports used for Bedrock server |
 | Online verification | Require Microsoft/Xbox authentication |
@@ -59,7 +59,7 @@ Core server behavior such as name, ports, online mode, and LAN visibility.
 Controls how your world looks, feels, and behaves.
 
 | Setting | Options |
-|---------|-------------|
+|:--------|:--------|
 | World name | Any text |
 | World seed | Number or text seed |
 | World type | Default / Flat / Legacy |
@@ -72,7 +72,7 @@ Controls how your world looks, feels, and behaves.
 ### 👥 Players
 
 | Setting | Description |
-|---------|----------------|
+|:--------|:------------|
 | Max players | Maximum number of concurrent players |
 | Whitelist / Allowlist | Restrict players |
 | Default permission | Visitor / Member / Operator |
@@ -85,7 +85,7 @@ Controls how your world looks, feels, and behaves.
 Tweak simulation radius, CPU usage & bandwidth.
 
 | Setting | Description |
-|---------|----------------|
+|:--------|:----------------|
 | View distance | Render distance for players |
 | Simulation distance | Radius where mobs & redstone tick |
 | Idle timeout | Kick inactive players |
@@ -99,7 +99,7 @@ Tweak simulation radius, CPU usage & bandwidth.
 Server authoritative movement ensures fair gameplay and prevents hacked clients.
 
 | Setting | Options |
-|---------|------------|
+|:--------|:------------|
 | Movement authority | Client / Server / Server+Rewind |
 | Block breaking validation | Validate block break actions |
 | Score threshold | Cheating sensitivity |

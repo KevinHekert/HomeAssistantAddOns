@@ -1,3 +1,6 @@
+## 1.2.4 - 2025-11-19
+- Add tail to apparmor
+
 ## 1.2.3 - 2025-11-19
 - Bugfix: unable to set EULA=True if EULA=False
 

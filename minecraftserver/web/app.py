@@ -188,6 +188,8 @@ def index():
     config = load_config()
     worlds = list_worlds()
     error = None
+    message = None
+
 
     if request.method == "POST":
         form = request.form
@@ -312,7 +314,7 @@ def index():
 
             save_config(config)
             message = "Configuration saved. Restart the add-on to apply changes."
-            return redirect(request.path)
+            #return redirect(request.path)
 
         except Exception as exc:
             error = f"Error while saving configuration: {exc}"

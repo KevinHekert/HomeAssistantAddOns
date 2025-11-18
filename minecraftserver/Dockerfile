@@ -1,12 +1,10 @@
 ARG TARGETARCH
 FROM ghcr.io/home-assistant/amd64-base-debian:trixie
 
-
 # Multi-arch variabelen
 ARG TARGETOS
 ARG TARGETARCH
 ARG TARGETPLATFORM
-
 
 # ===== build args voor Bedrock versie/bron =====
 ARG BDS_VERSION
@@ -83,9 +81,7 @@ RUN chmod +x /opt/start.sh
 RUN set -eux;
 RUN test -n "${BDS_VERSION}" && test -n "${BDS_URL}"
 RUN echo "📦 Downloading Bedrock Server version ${BDS_VERSION}..."
-#RUN curl -fsSL -o /tmp/bedrock.zip "${BDS_URL}"
 RUN curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors --http1.1 -A "itzg/minecraft-bedrock-server" -o /tmp/bedrock.zip "${BDS_URL}"
-
 
 
 # (2) Uitpakken naar /opt/bds (read-only runtime, data in /data)
@@ -93,21 +89,20 @@ RUN mkdir -p /opt/bds
 WORKDIR /opt/bds
 RUN unzip -q /tmp/bedrock.zip && rm -f /tmp/bedrock.zip
 
+
 # (3) Hernoem binary naar vaste naam met versie-suffix
 RUN chmod +x bedrock_server && mv bedrock_server "bedrock_server-${BDS_VERSION}"
 
+
 # (4) Bewaar versie-info voor runtime
 RUN echo "${BDS_VERSION}" > /etc/bds-version
-
 RUN mkdir -p /data/worlds
-
 RUN ln -sfn /data/worlds            /opt/bds/worlds && \
     ln -sfn /data/server.properties /opt/bds/server.properties && \
     ln -sfn /data/allowlist.json    /opt/bds/allowlist.json && \
     ln -sfn /data/permissions.json  /opt/bds/permissions.json
     
-
 ENV VERSION=${BDS_VERSION} \
-    EULA=true
+    EULA=false
 
 HEALTHCHECK --interval=2m --timeout=5s --retries=2 --start-period=2m CMD timeout 3s /usr/local/bin/mc-monitor status-bedrock --host 127.0.0.1 --port $SERVER_PORT || exit 1

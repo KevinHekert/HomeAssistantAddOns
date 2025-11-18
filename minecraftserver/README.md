@@ -4,6 +4,8 @@ Run your own **Minecraft Bedrock Server** directly inside Home Assistant – wit
 
 This add-on is designed for **simplicity**, **performance**, and **zero-maintenance hosting** for families, kids, or LAN-based multiplayer.
 
+**Important** EULA setting must be set to true in order to start server.
+
 ---
 
 ## ✨ Features

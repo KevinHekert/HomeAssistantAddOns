@@ -1,3 +1,6 @@
+## 1.2.2 - 2025-11-19
+- Move EULA to config, default = false. 
+
 ## 1.2.1 - 2025-11-19
 - Whitelist depricated, allowlist is used. 
 - Use permissions to fill allowlist. 

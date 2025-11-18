@@ -28,6 +28,7 @@ DEFAULT_CONFIG = {
         "online_mode": True,
         "emit_server_telemetry": False,
         "enable_lan_visibility": True,
+        "eula": False,
     },
     "world": {
         "level_name": "HomeAssistant",
@@ -208,6 +209,8 @@ def index():
             config["general"]["enable_lan_visibility"] = to_bool(
                 form.get("enable_lan_visibility")
             )
+            config["general"]["eula"] = to_bool(form.get("eula"))
+
 
             # WORLD
             selected_world = form.get("selected_world", "").strip()
@@ -411,6 +414,16 @@ TEMPLATE = r"""
             <input class="form-check-input" type="checkbox" id="enable_lan_visibility" name="enable_lan_visibility"
                    {% if config.general.enable_lan_visibility %}checked{% endif %}>
             <label class="form-check-label" for="enable_lan_visibility">Visible on local network (LAN)</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="eula" name="eula"
+                  {% if config.general.eula %}checked{% endif %}>
+            <label class="form-check-label" for="eula">
+              I agree to the Minecraft EULA
+              <a href="https://www.minecraft.net/eula" target="_blank" rel="noreferrer" class="link-light">
+                (view EULA)
+              </a>
+            </label>
           </div>
         </div>
       </div>

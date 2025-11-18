@@ -1,5 +1,12 @@
-## 1.1.2 - 2025-11-18
-New UI for config!
+## 1.2.0 - 2025-11-18
+- New UI for config!
+- World detection from config, support for world switching
+- Apparmor added to addon
+- Ingress added to addon
+- Preparation for support of mcpack files via manual upload (not there yet)
+- Preparation for world upload
+- Preparation for world download
+
 
 ## 1.0.7-14 - 2025-11-14
 - Fixed update flow

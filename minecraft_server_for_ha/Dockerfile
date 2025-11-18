@@ -24,9 +24,9 @@ ARG MC_MONITOR_VERSION
 # Tools installeren en up to date maken
 RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip jq
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-flask python3-waitress
 RUN apt-get clean
 RUN rm -rf /var/lib/apt/lists/*
-
 
 # Instal box64 on arm
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
@@ -45,11 +45,14 @@ RUN echo "🧱 Bedrock Server version: ${BDS_VERSION}"
 RUN echo "🌐 Bedrock Server URL: ${BDS_URL}"
 
 # Default bedrock poort openen.
-EXPOSE 19132/udp
+EXPOSE 19132/udp 8789/tcp
+
 VOLUME ["/data"]
 WORKDIR /data
 
-ENTRYPOINT ["/usr/local/bin/entrypoint-demoter", "--match", "/data", "--debug", "--stdin-on-term", "stop", "/opt/bedrock-entry.sh"]
+#ENTRYPOINT ["/usr/local/bin/entrypoint-demoter", "--match", "/data", "--debug", "--stdin-on-term", "stop", "/opt/bedrock-entry.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint-demoter", "--match", "/data", "--debug", "--stdin-on-term", "stop", "/opt/start.sh"]
+
 
 ARG EASY_ADD_VERSION
 
@@ -61,12 +64,19 @@ RUN easy-add --var version=${SET_PROPERTY_VERSION} --var app=set-property --file
 RUN easy-add --var version=${RESTIFY_VERSION} --var app=restify --file {{.app}} --from https://github.com/itzg/{{.app}}/releases/download/{{.version}}/{{.app}}_{{.version}}_linux_${TARGETARCH}.tar.gz
 RUN easy-add --var version=${MC_MONITOR_VERSION} --var app=mc-monitor --file {{.app}} --from https://github.com/itzg/{{.app}}/releases/download/{{.version}}/{{.app}}_{{.version}}_linux_${TARGETARCH}.tar.gz
 
-# Bestanden add-on toevoegen.
+# Bestanden naar container kopiëren
 COPY bedrock-entry.sh /opt/bedrock-entry.sh
+COPY start.sh /opt/start.sh
 COPY *.mcpack /opt/addons/
 COPY property-definitions.json /etc/bds-property-definitions.json
+COPY web/app.py /opt/flask/app.py
+COPY web/static /opt/flask/static
 COPY bin/* /usr/local/bin/
+
+# Maak scripts uitvoerbaar
 RUN chmod +x /opt/bedrock-entry.sh
+RUN chmod +x /opt/start.sh
+
 
 # ===== Download & uitpakken tijdens build =====
 # (1) Downloaden

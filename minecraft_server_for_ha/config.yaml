@@ -1,0 +1,21 @@
+name: "Minecraft Server for HA"
+description: "Minecraft Bedrock Server tailored for Home Assistant"
+version: "1.1.0"
+slug: "minecraft_server_for_ha"
+url: https://github.com/KevinHekert/HomeAssistantAddOns/blob/main/minecraftserver/README.md
+init: false
+startup: application
+
+ingress: true
+ingress_port: 8789         # moet overeenkomen met Flask-poort
+panel_icon: mdi:minecraft  # optioneel, leuk voor in de sidebar
+panel_title: "Minecraft Server"
+
+host_network: true
+arch:
+  - amd64
+map:
+  - share:rw
+
+options: {}
+schema: {}

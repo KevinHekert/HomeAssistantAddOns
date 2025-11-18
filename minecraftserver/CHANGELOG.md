@@ -1,4 +1,4 @@
-## 1.2.5 - 2025-11-19
+## 1.2.6 - 2025-11-19
 - Added warning to UI, server won't start without EULA.
 - Add tail to apparmor
 - Bugfix: unable to set EULA=True if EULA=False
@@ -9,6 +9,7 @@
 - World detection from config, support for world switching
 - Apparmor added to addon
 - Ingress added to addon
+- Add-on access only via Ingress deny all, access only via Ingriss
 
 
 ## 1.0.7-14 - 2025-11-14

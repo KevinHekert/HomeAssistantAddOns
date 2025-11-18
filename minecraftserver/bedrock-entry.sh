@@ -314,7 +314,7 @@ echo "✅ Bidirectionele sync voltooid."
 #     ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
 # fi
 
-sync_permissions_and_config
+#sync_permissions_and_config
 
 assignments_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
 

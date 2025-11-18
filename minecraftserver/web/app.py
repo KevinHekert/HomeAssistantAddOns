@@ -527,23 +527,22 @@ TEMPLATE = r"""
             <div class="d-flex justify-content-between align-items-center">
               <label class="form-label mb-0">Configured player permissions</label>
               <button type="button"
-                      class="btn btn-sm btn-outline-light"
-                      data-bs-toggle="modal"
-                      data-bs-target="#permissionsModal">
-                Manage permissions…
+                      class="btn btn-sm btn-success"
+                      onclick="openAddModal()">
+                + Add player
               </button>
             </div>
             <div class="form-text text-muted">
-              Below is a read-only summary of configured permissions. Use “Manage permissions…” to add or edit entries.
+              Use “+ Add player” to add entries. Use Edit / ✕ in the table to modify or remove players.
             </div>
+
 
             <table class="table table-sm table-dark table-striped mt-2 mb-0" id="ra_table">
               <thead>
                 <tr>
-                  <th style="width: 40%;">Name</th>
-                  <th style="width: 35%;">XUID</th>
-                  <th style="width: 15%;">Role</th>
-                  <th style="width: 10%;"></th>
+                  <th style="width: 60%;">Player</th>
+                  <th style="width: 20%;">Role</th>
+                  <th style="width: 20%;"></th>
                 </tr>
               </thead>
               <tbody>
@@ -726,7 +725,7 @@ TEMPLATE = r"""
     if (!Array.isArray(roleAssignments) || roleAssignments.length === 0) {
       const tr = document.createElement('tr');
       const td = document.createElement('td');
-      td.colSpan = 4;
+      td.colSpan = 3;
       td.className = 'text-muted small';
       td.textContent = 'No explicit player permissions configured yet.';
       tr.appendChild(td);
@@ -737,26 +736,39 @@ TEMPLATE = r"""
     roleAssignments.forEach((item, idx) => {
       const tr = document.createElement('tr');
 
+      // 1e kolom: naam + XUID onder elkaar
       const nameTd = document.createElement('td');
-      nameTd.textContent = item.name || '';
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'fw-semibold';
+      const displayName =
+        item.name && item.name.trim().length > 0 ? item.name.trim() : '(no name)';
+      nameDiv.textContent = displayName;
+
+      const xuidDiv = document.createElement('div');
+      xuidDiv.className = 'small text-muted';
+      xuidDiv.innerHTML = '<code>' + (item.xuid || '') + '</code>';
+
+      nameTd.appendChild(nameDiv);
+      nameTd.appendChild(xuidDiv);
       tr.appendChild(nameTd);
 
-      const xuidTd = document.createElement('td');
-      xuidTd.innerHTML = '<code>' + (item.xuid || '') + '</code>';
-      tr.appendChild(xuidTd);
-
+      // 2e kolom: role badge
       const roleTd = document.createElement('td');
+      roleTd.className = 'align-middle';
       const roleSpan = document.createElement('span');
       const role = item.role || 'member';
       roleSpan.textContent = role;
-      roleSpan.className = 'badge bg-secondary text-uppercase';
-      if (role === 'operator') roleSpan.className = 'badge bg-danger text-uppercase';
-      if (role === 'member') roleSpan.className = 'badge bg-primary text-uppercase';
+      roleSpan.className = 'badge text-uppercase';
+      if (role === 'operator') roleSpan.className += ' bg-danger';
+      else if (role === 'member') roleSpan.className += ' bg-primary';
+      else roleSpan.className += ' bg-secondary';
       roleTd.appendChild(roleSpan);
       tr.appendChild(roleTd);
 
+      // 3e kolom: acties
       const actionsTd = document.createElement('td');
-      actionsTd.className = 'text-end';
+      actionsTd.className = 'text-end align-middle';
 
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
@@ -777,6 +789,7 @@ TEMPLATE = r"""
       tbody.appendChild(tr);
     });
   }
+
 
   function openEditModal(index) {
     const item = roleAssignments[index] || {};

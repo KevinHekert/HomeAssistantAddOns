@@ -1,3 +1,6 @@
+## 1.1.2
+New UI for config!
+
 ## 1.0.7-14 - 2025-11-14
 - Fixed update flow
 - Updated ENTRYPOINT_DEMOTER from '0.4.8' to '0.4.9'

@@ -32,7 +32,7 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   /usr/bin/python3             ixr,
   /usr/local/bin/python3       ixr,
   /usr/local/bin/waitress-serve ixr,
-
+  /usr/bin/mktemp               ixr,
   /usr/bin/jq                  ixr,
   /usr/bin/grep                ixr,
   /usr/bin/sed                 ixr,

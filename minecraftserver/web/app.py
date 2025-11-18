@@ -526,7 +526,8 @@ TEMPLATE = r"""
               </button>
             </div>
             <div class="form-text text-muted">
-              Use “+ Add player” to add entries. Use Edit / ✕ in the table to modify or remove players.
+              Use “+ Add player” to add entries. Use Edit / ✕ in the table to modify or remove players. <br />
+              Players configured here are also written to <code>allowlist.json</code> when the allowlist is enabled.
             </div>
 
 

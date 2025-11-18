@@ -318,8 +318,29 @@ tmp="$(mktemp)"
   (reduce .[] as $i ({}; .[$i.xuid] = {xuid:$i.xuid, permission:$i.role})) |
   to_entries | map(.value)
 ' > "$tmp" && mv "$tmp" "$PERM_FILE"
+
 ensure_permissions_file
 echo "✅ permissions.json generated"
+
+# ---------- Build allowlist.json vanuit config.players.role_assignments ----------
+ALLOWLIST_FILE="/data/allowlist.json"
+
+if [[ -f "$OPT_FILE" ]]; then
+  tmp_allow="$(mktemp)"
+  jq -c '
+    .players.role_assignments // [] |
+    map({
+      name: ( .name // "" ),
+      xuid: ( .xuid | tostring )
+    })
+  ' "$OPT_FILE" > "$tmp_allow" && mv "$tmp_allow" "$ALLOWLIST_FILE"
+
+  echo "✅ allowlist.json regenerated from config.players.role_assignments"
+else
+  echo "⚠️ $OPT_FILE not found, skipping allowlist.json generation"
+fi
+
+
 
 # ---------- Apply server.properties from ENV via definitions ----------
 PROP_FILE="/data/server.properties"

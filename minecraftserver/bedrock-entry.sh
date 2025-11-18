@@ -23,7 +23,6 @@ echo "🔗 Checking Bedrock symlinks..."
 for entry in "${LINKS[@]}"; do
   target="${entry%%:*}"     # Left of :
   source="${entry##*:}"     # Right of :
-
   ln -sfn "$source" "$target"
 done
 
@@ -43,6 +42,7 @@ lower_bool() { case "${1,,}" in true|1|on|yes) echo "true" ;; *) echo "false" ;;
 
 # JSON helpers
 OPT_FILE="/data/config/bedrock_for_ha_config.json"
+CONFIG_FILE="$OPT_FILE"
 optn() { jq -r "$1 // empty" "$OPT_FILE" 2>/dev/null; }                       # nested path, e.g. '.world.gamemode'
 optf() { jq -r --arg k "$1" '.[$k] // empty' "$OPT_FILE" 2>/dev/null; }       # flat key, e.g. 'gamemode'
 first_nonempty() { for v in "$@"; do [[ -n "$v" ]] && { echo "$v"; return; }; done; echo ""; }
@@ -309,7 +309,7 @@ tmp="$(mktemp)"
     if ($r=="operator" or $r=="member" or $r=="visitor") then $r else "member" end)) |
   (reduce .[] as $i ({}; .[$i.xuid] = {xuid:$i.xuid, permission:$i.role})) |
   to_entries | map(.value)
-' > "$tmp" && mv "$tmp" permissions.json
+' > "$tmp" && mv "$tmp" "$PERM_FILE"
 ensure_permissions_file
 echo "✅ permissions.json generated"
 

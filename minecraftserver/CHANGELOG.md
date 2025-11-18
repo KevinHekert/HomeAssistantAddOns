@@ -1,3 +1,6 @@
+## 1.2.3 - 2025-11-19
+- Bugfix: unable to set EULA=True if EULA=False
+
 ## 1.2.2 - 2025-11-19
 - Move EULA to config, default = false. 
 

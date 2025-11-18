@@ -23,11 +23,12 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   network inet dgram,
   network inet6 dgram,
 
-  # ====== Binaries die je (waarschijnlijk) gebruikt ======
+  # ====== Binaries die je gebruikt ======
   /bin/bash                    ixr,
   /bin/sh                      ixr,
   /usr/bin/env                 ixr,
-
+  /usr/bin/waitress-serve      ixr,
+  /usr/bin/ln                  ixr,
   /usr/bin/python3             ixr,
   /usr/local/bin/python3       ixr,
   /usr/local/bin/waitress-serve ixr,

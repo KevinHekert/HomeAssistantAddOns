@@ -10,4 +10,4 @@ https://github.com/KevinHekert/HomeAssistantAddOns
 ```
 
 ## Add-ons in this repository
- - **[Minecraft Server](/minecraftserver/README.md)**: Minecraft server add-on for Home Assistant.
+ - **[Minecraft Server](/minecraft_server_for_ha/README.md)**: Minecraft server add-on for Home Assistant.

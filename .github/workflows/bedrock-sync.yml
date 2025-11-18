@@ -46,7 +46,7 @@ jobs:
       - name: Read current versions
         id: current
         run: |
-          ADDIR='minecraft_server_for_ha'
+          ADDIR='minecraftserver'
           CUR_URL="$(yq -r '.args.BDS_URL' "$ADDIR/build.yaml")"
           CUR_BDS_VERSION="$(yq -r '.args.BDS_VERSION' "$ADDIR/build.yaml")"
           ADDON_VERSION="$(yq -r '.version' "$ADDIR/config.yaml")"
@@ -84,7 +84,7 @@ jobs:
       - name: Check for add-on updates
         id: check_addons
         run: |
-          ADDIR='minecraft_server_for_ha'
+          ADDIR='minecraftserver'
           UPDATED=false
           CHANGELOG_ENTRIES=""
 
@@ -143,7 +143,7 @@ jobs:
         id: bump
         run: |
           set -e
-          ADDIR='minecraft_server_for_ha'
+          ADDIR='minecraftserver'
           CUR_ADDON_VER='${{ steps.current.outputs.addon_version }}'
           IFS='.' read -r MAJ MIN PAT <<< "$CUR_ADDON_VER"
           PAT=$((PAT+1))
@@ -157,7 +157,7 @@ jobs:
       - name: Update CHANGELOG
         if: steps.decide_any.outputs.update_needed == 'true'
         run: |
-          ADDIR='minecraft_server_for_ha'
+          ADDIR='minecraftserver'
           VER='${{ steps.bump.outputs.new_addon_version }}'
           NOW="$(TZ=Europe/Amsterdam date +%Y-%m-%d)"
           CHANGELOG_PATH="$ADDIR/CHANGELOG.md"
@@ -187,7 +187,7 @@ jobs:
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add minecraft_server_for_ha/build.yaml minecraft_server_for_ha/config.yaml minecraft_server_for_ha/CHANGELOG.md
+          git add minecraftserver/build.yaml minecraftserver/config.yaml minecraftserver/CHANGELOG.md
           git commit -m "chore(minecraftserver): release ${{ steps.bump.outputs.new_addon_version }}"
           git push
 
@@ -215,4 +215,4 @@ jobs:
           body: |
             Bedrock Server updated to ${{ steps.upstream.outputs.latest_bds_version }}.
             Add-on version: ${{ steps.bump.outputs.new_addon_version }}.
-            See changelog in minecraft_server_for_ha/CHANGELOG.md
+            See changelog in minecraftserver/CHANGELOG.md

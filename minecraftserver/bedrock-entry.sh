@@ -8,13 +8,12 @@ set -eo pipefail
 #  - Starts pre-bundled binary at /opt/bds/bedrock_server-${VERSION}
 # =========================
 
-#Check symlinks
+#(Re)set symlinks
 
 LINKS=(
   "/opt/bds/worlds:/data/worlds"
   "/opt/bds/server.properties:/data/server.properties"
   "/opt/bds/allowlist.json:/data/allowlist.json"
-  "/opt/bds/whitelist.json:/data/whitelist.json"
   "/opt/bds/permissions.json:/data/permissions.json"
 )
 
@@ -88,17 +87,19 @@ if [[ ! -x "$BIN_PATH" ]]; then
   exit 2
 fi
 
-# ---------- allow/white list ----------
-allowListUsers=${ALLOW_LIST_USERS:-${WHITE_LIST_USERS}}
+# ---------- allow list ----------
+allowListUsers="${ALLOW_LIST_USERS:-}"
+
 if [ -n "$allowListUsers" ]; then
-  echo "Setting allow list"
-  for f in whitelist.json allowlist.json; do
-    [ -f "$f" ] && rm -rf "$f"
-    jq -n --arg users "$allowListUsers" '$users | split(",") | map({"name": .})' > "$f"
-  done
-  export WHITE_LIST=true
+  echo "Setting allowlist.json from \$ALLOW_LIST_USERS"
+
+  rm -f allowlist.json
+  jq -n --arg users "$allowListUsers" \
+    '$users | split(",") | map({ "name": . })' > allowlist.json
+
   export ALLOW_LIST=true
 fi
+
 
 # ---------- options → ENV (nested with flat fallbacks) ----------
 # GENERAL
@@ -119,7 +120,6 @@ export ALLOW_CHEATS="$(lower_bool "${ALLOW_CHEATS:-$(first_nonempty "$(optn '.wo
 
 # PLAYERS
 export MAX_PLAYERS="${MAX_PLAYERS:-$(first_nonempty "$(optn '.players.max_players')" "$(optf 'max_players')")}"
-export WHITE_LIST="$(lower_bool "${WHITE_LIST:-$(first_nonempty "$(optn '.players.white_list')" "$(optf 'white_list')")}")"
 export ALLOW_LIST="$(lower_bool "${ALLOW_LIST:-$(first_nonempty "$(optn '.players.allow_list')" "$(optf 'allow_list')")}")"
 export DEFAULT_PLAYER_PERMISSION_LEVEL="${DEFAULT_PLAYER_PERMISSION_LEVEL:-$(first_nonempty "$(optn '.players.default_player_permission_level')" "$(optf 'default_player_permission_level')")}"
 export TEXTUREPACK_REQUIRED="$(lower_bool "${TEXTUREPACK_REQUIRED:-$(first_nonempty "$(optn '.players.texturepack_required')" "$(optf 'texturepack_required')")}")"
@@ -296,25 +296,7 @@ jq --argjson ra "$cfg_out" '
 # 2) Schrijf terug naar permissions.json
 tmp_perm="$(mktemp)"
 echo "$perms_out" | jq '.' > "$tmp_perm" && mv "$tmp_perm" "$PERM_FILE"
-
 echo "✅ Bidirectionele sync voltooid."
-
-
-# if [ -f permissions.json ] && [ -f "$OPT_FILE" ]; then
-#     echo "🔄 Syncing permissions.json → config role_assignments..."
-
-#     tmp_cfg="$(mktemp)"
-
-#     jq --slurpfile perms permissions.json '
-#       .players.role_assignments =
-#         ( $perms[0] | map({
-#             xuid: (.xuid | tostring),
-#             role: (.permission | tostring)
-#         }) )
-#     ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
-# fi
-
-#sync_permissions_and_config
 
 assignments_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
 

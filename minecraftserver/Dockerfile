@@ -104,7 +104,6 @@ RUN mkdir -p /data/worlds
 RUN ln -sfn /data/worlds            /opt/bds/worlds && \
     ln -sfn /data/server.properties /opt/bds/server.properties && \
     ln -sfn /data/allowlist.json    /opt/bds/allowlist.json && \
-    ln -sfn /data/whitelist.json    /opt/bds/whitelist.json && \
     ln -sfn /data/permissions.json  /opt/bds/permissions.json
     
 

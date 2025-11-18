@@ -39,7 +39,6 @@ DEFAULT_CONFIG = {
     },
     "players": {
         "max_players": 20,
-        "white_list": False,
         "allow_list": False,
         "default_player_permission_level": "visitor",
         "texturepack_required": False,
@@ -245,7 +244,6 @@ def index():
             config["players"]["max_players"] = to_int(
                 form.get("max_players"), DEFAULT_CONFIG["players"]["max_players"]
             )
-            config["players"]["white_list"] = to_bool(form.get("white_list"))
             config["players"]["allow_list"] = to_bool(form.get("allow_list"))
             config["players"]["default_player_permission_level"] = form.get(
                 "default_player_permission_level",
@@ -493,11 +491,6 @@ TEMPLATE = r"""
             <label for="max_players" class="form-label">Max players</label>
             <input type="number" class="form-control form-control-sm bg-black text-light" id="max_players" name="max_players"
                    value="{{ config.players.max_players }}">
-          </div>
-          <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" id="white_list" name="white_list"
-                   {% if config.players.white_list %}checked{% endif %}>
-            <label class="form-check-label" for="white_list">Whitelist enabled</label>
           </div>
           <div class="form-check form-switch mb-2">
             <input class="form-check-input" type="checkbox" id="allow_list" name="allow_list"

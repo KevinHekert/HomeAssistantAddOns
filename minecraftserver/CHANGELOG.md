@@ -1,3 +1,6 @@
+## 1.2.1 - 2025-11-19
+- Whitelist depricated, allowlist is used. 
+
 ## 1.2.0 - 2025-11-18
 - New UI for config!
 - World detection from config, support for world switching

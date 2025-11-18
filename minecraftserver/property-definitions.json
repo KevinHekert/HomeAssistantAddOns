@@ -47,10 +47,6 @@
     "env": "ONLINE_MODE",
     "allowed": ["true","false"]
   },
-  "white-list": {
-    "env": "WHITE_LIST",
-    "allowed": ["true","false"]
-  },
   "allow-list": {
     "env": "ALLOW_LIST",
     "allowed": ["true","false"]

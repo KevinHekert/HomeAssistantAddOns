@@ -1,0 +1,107 @@
+#include <tunables/global>
+
+profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate_deleted) {
+  # ====== Basis abstractions ======
+  # Basisrechten voor standaard syscalls, env, DNS, etc.
+  # Deze zijn “aanbevolen” in de HA-docs.
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/user-tmp>
+
+  # ====== Capabilities ======
+  capability chown,
+  capability dac_override,
+  capability fowner,
+  capability setgid,
+  capability setuid,
+  capability net_bind_service,    # luisteren op 19132/19133/8789
+  capability sys_chroot,
+
+  # ====== Netwerk ======
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+
+  # ====== Binaries die je gebruikt ======
+  /bin/bash                    ixr,
+  /bin/sh                      ixr,
+  /usr/bin/env                 ixr,
+  /usr/bin/waitress-serve      ixr,
+  /usr/bin/ln                  ixr,
+  /usr/bin/python3             ixr,
+  /usr/local/bin/python3       ixr,
+  /usr/local/bin/waitress-serve ixr,
+  /usr/bin/mktemp               ixr,
+  /usr/bin/jq                  ixr,
+  /usr/bin/grep                ixr,
+  /usr/bin/sed                 ixr,
+  /usr/bin/awk                 ixr,
+  /usr/bin/mv                  ixr,
+  /usr/bin/send-command        ixr,
+  /usr/local/bin/box64         ixr,
+  /usr/local/bin/mc-monitor    ixr,
+  /usr/local/bin/set-property  ixr,
+  /usr/bin/touch               ixr,
+  /usr/bin/curl                ixr,
+  /usr/bin/unzip               ixr,
+  /usr/bin/tail                ixr,
+
+  # ====== Add-on root & scripts ======
+  # Alles onder /opt mag gelezen/geschreven/uitgevoerd worden
+  /opt/                        rix,
+  /opt/**                      rixwlk,
+
+  # Startscript
+  /start.sh                    rix,
+
+  # Bedrock server & entry
+  /opt/bds/                    rix,
+  /opt/bds/**                  rixwlk,
+  /opt/bedrock-entry.sh        rix,
+
+  # Flask web UI
+  /opt/flask/                  rix,
+  /opt/flask/**                rixwlk,
+
+  # ====== Data & config ======
+  /data/                       rix,
+  /data/**                     rixwlk,
+  /share/                      rix,
+  /share/**                    rixwlk,
+
+  # BDS metadata / definities
+  /etc/bds-version             r,
+  /etc/bds-property-definitions.json r,
+
+  # MIME types lezen
+  /etc/mime.types              r,
+
+  # ====== Libraries & systeem ======
+  /lib/**                      mr,
+  /lib64/**                    mr,
+  /usr/lib/**                  mr,
+  /usr/lib64/**                mr,
+  /usr/local/lib/**            mr,
+  /usr/share/**                r,
+
+  # ====== Temp & logs ======
+  /tmp/                        rix,
+  /tmp/**                      rixwlk,
+  /var/tmp/                    rix,
+  /var/tmp/**                  rixwlk,
+
+  /var/log/                    rix,
+  /var/log/**                  rixwlk,
+
+  # ====== Devices (veilige subset) ======
+  /dev/null                    rw,
+  /dev/urandom                 r,
+  /dev/random                  r,
+
+  # ====== Expliciet verboden dingen ======
+  deny /dev/mem                rwx,
+  deny /dev/kmem               rwx,
+  deny /dev/sd*                rwx,
+  deny /dev/loop*              rwx,
+}

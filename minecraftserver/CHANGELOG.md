@@ -1,5 +1,16 @@
-## 1.1.2
-New UI for config!
+## 1.2.6 - 2025-11-19
+- Added warning to UI, server won't start without EULA.
+- Add tail to apparmor
+- Bugfix: unable to set EULA=True if EULA=False
+- Move EULA to config, default = false. 
+- Whitelist depricated, allowlist is used. 
+- Use permissions to fill allowlist. 
+- New UI for config!
+- World detection from config, support for world switching
+- Apparmor added to addon
+- Ingress added to addon
+- Add-on access only via Ingress deny all, access only via Ingriss
+
 
 ## 1.0.7-14 - 2025-11-14
 - Fixed update flow

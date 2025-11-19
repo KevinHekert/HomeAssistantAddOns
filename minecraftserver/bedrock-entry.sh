@@ -8,13 +8,12 @@ set -eo pipefail
 #  - Starts pre-bundled binary at /opt/bds/bedrock_server-${VERSION}
 # =========================
 
-#Check symlinks
+#(Re)set symlinks
 
 LINKS=(
   "/opt/bds/worlds:/data/worlds"
   "/opt/bds/server.properties:/data/server.properties"
   "/opt/bds/allowlist.json:/data/allowlist.json"
-  "/opt/bds/whitelist.json:/data/whitelist.json"
   "/opt/bds/permissions.json:/data/permissions.json"
 )
 
@@ -63,16 +62,6 @@ if [[ ${DEBUG^^} = TRUE ]]; then
   echo "       cwd=$(pwd)"
 fi
 
-# ---------- EULA ----------
-if [[ ${EULA^^} != TRUE ]]; then
-  echo
-  echo "EULA must be set to TRUE to indicate agreement with the Minecraft End User License"
-  echo "See https://minecraft.net/terms"
-  echo "Current value is '${EULA}'"
-  echo
-  exit 1
-fi
-
 # ---------- Determine VERSION & binary path (pre-baked at build time) ----------
 : "${VERSION:=$(cat /etc/bds-version 2>/dev/null || true)}"
 BIN_DIR="/opt/bds"
@@ -88,17 +77,19 @@ if [[ ! -x "$BIN_PATH" ]]; then
   exit 2
 fi
 
-# ---------- allow/white list ----------
-allowListUsers=${ALLOW_LIST_USERS:-${WHITE_LIST_USERS}}
+# ---------- allow list ----------
+allowListUsers="${ALLOW_LIST_USERS:-}"
+
 if [ -n "$allowListUsers" ]; then
-  echo "Setting allow list"
-  for f in whitelist.json allowlist.json; do
-    [ -f "$f" ] && rm -rf "$f"
-    jq -n --arg users "$allowListUsers" '$users | split(",") | map({"name": .})' > "$f"
-  done
-  export WHITE_LIST=true
+  echo "Setting allowlist.json from \$ALLOW_LIST_USERS"
+
+  rm -f allowlist.json
+  jq -n --arg users "$allowListUsers" \
+    '$users | split(",") | map({ "name": . })' > allowlist.json
+
   export ALLOW_LIST=true
 fi
+
 
 # ---------- options → ENV (nested with flat fallbacks) ----------
 # GENERAL
@@ -108,6 +99,8 @@ export SERVER_PORT_V6="${SERVER_PORT_V6:-$(first_nonempty "$(optn '.general.serv
 export ONLINE_MODE="$(lower_bool "${ONLINE_MODE:-$(first_nonempty "$(optn '.general.online_mode')" "$(optf 'online_mode')")}")"
 export EMIT_SERVER_TELEMETRY="$(lower_bool "${EMIT_SERVER_TELEMETRY:-$(first_nonempty "$(optn '.general.emit_server_telemetry')" "$(optf 'emit_server_telemetry')")}")"
 export ENABLE_LAN_VISIBILITY="$(lower_bool "${ENABLE_LAN_VISIBILITY:-$(first_nonempty "$(optn '.general.enable_lan_visibility')" "$(optf 'enable_lan_visibility')")}")"
+export EULA="$(lower_bool "${EULA:-$(first_nonempty "$(optn '.general.eula')" "$(optf 'eula')")}")"
+
 
 # WORLD
 export LEVEL_NAME="${LEVEL_NAME:-$(first_nonempty "$(optn '.world.level_name')" "$(optf 'level_name')")}"
@@ -119,7 +112,6 @@ export ALLOW_CHEATS="$(lower_bool "${ALLOW_CHEATS:-$(first_nonempty "$(optn '.wo
 
 # PLAYERS
 export MAX_PLAYERS="${MAX_PLAYERS:-$(first_nonempty "$(optn '.players.max_players')" "$(optf 'max_players')")}"
-export WHITE_LIST="$(lower_bool "${WHITE_LIST:-$(first_nonempty "$(optn '.players.white_list')" "$(optf 'white_list')")}")"
 export ALLOW_LIST="$(lower_bool "${ALLOW_LIST:-$(first_nonempty "$(optn '.players.allow_list')" "$(optf 'allow_list')")}")"
 export DEFAULT_PLAYER_PERMISSION_LEVEL="${DEFAULT_PLAYER_PERMISSION_LEVEL:-$(first_nonempty "$(optn '.players.default_player_permission_level')" "$(optf 'default_player_permission_level')")}"
 export TEXTUREPACK_REQUIRED="$(lower_bool "${TEXTUREPACK_REQUIRED:-$(first_nonempty "$(optn '.players.texturepack_required')" "$(optf 'texturepack_required')")}")"
@@ -296,25 +288,7 @@ jq --argjson ra "$cfg_out" '
 # 2) Schrijf terug naar permissions.json
 tmp_perm="$(mktemp)"
 echo "$perms_out" | jq '.' > "$tmp_perm" && mv "$tmp_perm" "$PERM_FILE"
-
 echo "✅ Bidirectionele sync voltooid."
-
-
-# if [ -f permissions.json ] && [ -f "$OPT_FILE" ]; then
-#     echo "🔄 Syncing permissions.json → config role_assignments..."
-
-#     tmp_cfg="$(mktemp)"
-
-#     jq --slurpfile perms permissions.json '
-#       .players.role_assignments =
-#         ( $perms[0] | map({
-#             xuid: (.xuid | tostring),
-#             role: (.permission | tostring)
-#         }) )
-#     ' "$OPT_FILE" > "$tmp_cfg" && mv "$tmp_cfg" "$OPT_FILE"
-# fi
-
-#sync_permissions_and_config
 
 assignments_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
 
@@ -336,8 +310,29 @@ tmp="$(mktemp)"
   (reduce .[] as $i ({}; .[$i.xuid] = {xuid:$i.xuid, permission:$i.role})) |
   to_entries | map(.value)
 ' > "$tmp" && mv "$tmp" "$PERM_FILE"
+
 ensure_permissions_file
 echo "✅ permissions.json generated"
+
+# ---------- Build allowlist.json vanuit config.players.role_assignments ----------
+ALLOWLIST_FILE="/data/allowlist.json"
+
+if [[ -f "$OPT_FILE" ]]; then
+  tmp_allow="$(mktemp)"
+  jq -c '
+    .players.role_assignments // [] |
+    map({
+      name: ( .name // "" ),
+      xuid: ( .xuid | tostring )
+    })
+  ' "$OPT_FILE" > "$tmp_allow" && mv "$tmp_allow" "$ALLOWLIST_FILE"
+
+  echo "✅ allowlist.json regenerated from config.players.role_assignments"
+else
+  echo "⚠️ $OPT_FILE not found, skipping allowlist.json generation"
+fi
+
+
 
 # ---------- Apply server.properties from ENV via definitions ----------
 PROP_FILE="/data/server.properties"
@@ -358,6 +353,19 @@ else
   echo "⚠️ $PROP_FILE bestaat nog niet!"
 fi
 echo "-------------------------------------------"
+
+# ---------- EULA gate: skip Bedrock if not accepted ----------
+if [[ ${EULA^^} != TRUE ]]; then
+  echo
+  echo "⚠️ EULA is not accepted (EULA=${EULA:-unset})."
+  echo "   Bedrock server will NOT be started."
+  echo "   Accept the Minecraft EULA in the add-on UI and restart."
+  echo "   See https://minecraft.net/terms"
+  echo
+  # Container blijft draaien zodat de Flask UI via Ingress bereikbaar blijft.
+  tail -f /dev/null
+fi
+
 
 # ---------- Start ----------
 export LD_LIBRARY_PATH="${BIN_DIR}"

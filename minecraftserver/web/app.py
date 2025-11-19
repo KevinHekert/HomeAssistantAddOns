@@ -28,6 +28,7 @@ DEFAULT_CONFIG = {
         "online_mode": True,
         "emit_server_telemetry": False,
         "enable_lan_visibility": True,
+        "eula": False,
     },
     "world": {
         "level_name": "HomeAssistant",
@@ -39,7 +40,6 @@ DEFAULT_CONFIG = {
     },
     "players": {
         "max_players": 20,
-        "white_list": False,
         "allow_list": False,
         "default_player_permission_level": "visitor",
         "texturepack_required": False,
@@ -209,6 +209,8 @@ def index():
             config["general"]["enable_lan_visibility"] = to_bool(
                 form.get("enable_lan_visibility")
             )
+            config["general"]["eula"] = to_bool(form.get("eula"))
+
 
             # WORLD
             selected_world = form.get("selected_world", "").strip()
@@ -245,7 +247,6 @@ def index():
             config["players"]["max_players"] = to_int(
                 form.get("max_players"), DEFAULT_CONFIG["players"]["max_players"]
             )
-            config["players"]["white_list"] = to_bool(form.get("white_list"))
             config["players"]["allow_list"] = to_bool(form.get("allow_list"))
             config["players"]["default_player_permission_level"] = form.get(
                 "default_player_permission_level",
@@ -375,6 +376,16 @@ TEMPLATE = r"""
           {{ error }}
         </div>
     {% endif %}
+    {% if not config.general.eula %}
+        <div class="alert alert-warning alert-sm" role="alert">
+          <strong>EULA not accepted.</strong>
+          The Bedrock server will <strong>not</strong> start until you accept the
+          <a href="https://www.minecraft.net/terms" target="_blank" class="alert-link">
+            Minecraft EULA
+          </a>
+          and restart the add-on.
+        </div>
+    {% endif %}
 
   <form method="post" class="row g-3">
     <!-- General -->
@@ -413,6 +424,16 @@ TEMPLATE = r"""
             <input class="form-check-input" type="checkbox" id="enable_lan_visibility" name="enable_lan_visibility"
                    {% if config.general.enable_lan_visibility %}checked{% endif %}>
             <label class="form-check-label" for="enable_lan_visibility">Visible on local network (LAN)</label>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="eula" name="eula"
+                  {% if config.general.eula %}checked{% endif %}>
+            <label class="form-check-label" for="eula">
+              I agree to the Minecraft EULA
+              <a href="https://www.minecraft.net/eula" target="_blank" rel="noreferrer" class="link-light">
+                (view EULA)
+              </a>
+            </label>
           </div>
         </div>
       </div>
@@ -495,11 +516,6 @@ TEMPLATE = r"""
                    value="{{ config.players.max_players }}">
           </div>
           <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" id="white_list" name="white_list"
-                   {% if config.players.white_list %}checked{% endif %}>
-            <label class="form-check-label" for="white_list">Whitelist enabled</label>
-          </div>
-          <div class="form-check form-switch mb-2">
             <input class="form-check-input" type="checkbox" id="allow_list" name="allow_list"
                    {% if config.players.allow_list %}checked{% endif %}>
             <label class="form-check-label" for="allow_list">Allow list enabled</label>
@@ -533,7 +549,8 @@ TEMPLATE = r"""
               </button>
             </div>
             <div class="form-text text-muted">
-              Use “+ Add player” to add entries. Use Edit / ✕ in the table to modify or remove players.
+              Use “+ Add player” to add entries. Use Edit / ✕ in the table to modify or remove players. <br />
+              Players configured here are also written to <code>allowlist.json</code> when the allowlist is enabled.
             </div>
 
 

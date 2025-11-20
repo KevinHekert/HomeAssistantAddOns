@@ -13,7 +13,7 @@ This add-on is designed for **simplicity**, **performance**, and **zero-maintena
 | Feature | Description |
 |:--------|:--------------|
 | ✅ Bedrock Dedicated Server | Runs the official Mojang Bedrock Server inside Home Assistant |
-| 🔄 Auto-version detection | Automatically downloads the latest Bedrock version |
+| 🔄 Auto-version detection | Repository is updated automatically with the latest Bedrock version |
 | 🌍 World configuration | Seeds, world type, difficulty, gamemode & cheats |
 | 👥 Player management | Whitelist/allowlist, default permissions, max player limit |
 | 🚀 Performance tuning | View distance, tick distance, multithreading, compression |

@@ -1,3 +1,7 @@
+## 1.2.7 - 2025-11-20
+- Rephrased items; updating isn't automated. Version detection is, within GitHub: but it isn't in the code itself. 
+- Added logo and icon
+
 ## 1.2.6 - 2025-11-19
 - Added warning to UI, server won't start without EULA.
 - Add tail to apparmor

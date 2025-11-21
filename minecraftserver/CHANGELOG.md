@@ -1,3 +1,6 @@
+## 1.2.13 - 2025-11-21
+- Updated Bedrock Server from '1.21.123.2' to '1.21.124.2'
+
 ## 1.2.12 - 2025-11-21
 - Updated Bedrock Server from '1.21.123.2' to '1.21.124.2'
 

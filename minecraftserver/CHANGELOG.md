@@ -1,3 +1,6 @@
+## 1.2.22 - 2025-11-21
+- Updated Bedrock Server from '1.21.123.2' to '1.21.124.2'
+
 ## 1.2.8 - 2025-11-20
 - Rephrased items; updating isn't automated. Version detection is, within GitHub: but it isn't in the code itself. 
 - Added logo and icon

@@ -78,6 +78,23 @@ jobs:
             echo "bds_update_needed=true" >> "$GITHUB_OUTPUT"
           fi
 
+
+      # =====================
+      # Step 3b: Update Bedrock in build.yaml
+      # =====================
+      - name: Update Bedrock fields in build.yaml
+        if: steps.decide_bds.outputs.bds_update_needed == 'true'
+        run: |
+          ADDIR='minecraftserver'
+          NEW_URL='${{ steps.upstream.outputs.latest_url }}'
+          NEW_VER='${{ steps.upstream.outputs.latest_bds_version }}'
+
+          echo "Updating BDS_URL to $NEW_URL"
+          echo "Updating BDS_VERSION to $NEW_VER"
+
+          yq -i ".args.BDS_URL = \"$NEW_URL\"" "$ADDIR/build.yaml"
+          yq -i ".args.BDS_VERSION = \"$NEW_VER\"" "$ADDIR/build.yaml"
+          
       # =====================
       # Step 4: Check add-ons updates
       # =====================

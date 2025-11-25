@@ -1,3 +1,6 @@
+## 1.2.23 - 2025-11-25
+- Removed depricated code, adjusted comments in code.
+
 ## 1.2.22 - 2025-11-21
 - Updated Bedrock Server from '1.21.123.2' to '1.21.124.2'
 - Updated GitHub action to edit version in build parameters (build.yaml)

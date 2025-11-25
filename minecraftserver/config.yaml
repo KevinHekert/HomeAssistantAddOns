@@ -7,8 +7,8 @@ apparmor: true
 init: false
 startup: application
 ingress: true
-ingress_port: 8789 # moet overeenkomen met Flask-poort
-panel_icon: mdi:minecraft # optioneel, leuk voor in de sidebar
+ingress_port: 8789
+panel_icon: mdi:minecraft
 panel_title: "Minecraft Server"
 host_network: true
 arch:

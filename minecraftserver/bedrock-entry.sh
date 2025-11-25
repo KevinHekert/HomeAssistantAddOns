@@ -2,13 +2,13 @@
 set -eo pipefail
 
 # =========================
-#  Bedrock STARTER (no download)
-#  - Applies server.properties via set-property
+#  Bedrock Server entry door Kevin Hekert
+#  - Applies server.properties via set-property (thanks to itzg!)
 #  - Builds permissions/allowlist (from options + env fallbacks)
 #  - Starts pre-bundled binary at /opt/bds/bedrock_server-${VERSION}
 # =========================
 
-#(Re)set symlinks
+#(Re)set symlinks (blijft niet altijd bewaard vanuit Dockerfile build)
 
 LINKS=(
   "/opt/bds/worlds:/data/worlds"
@@ -20,12 +20,13 @@ LINKS=(
 echo "🔗 Checking Bedrock symlinks..."
 
 for entry in "${LINKS[@]}"; do
-  target="${entry%%:*}"     # Left of :
-  source="${entry##*:}"     # Right of :
+  target="${entry%%:*}"
+  source="${entry##*:}"
   ln -sfn "$source" "$target"
+  echo "  - $target → $source"
 done
 
-echo "✨ Symlink check complete."
+echo "✨ Symlink check and update complete..."
 
 # --- Ensure /data/worlds exists ---
 if [ ! -d /data/worlds ]; then
@@ -42,8 +43,8 @@ lower_bool() { case "${1,,}" in true|1|on|yes) echo "true" ;; *) echo "false" ;;
 # JSON helpers
 OPT_FILE="/data/config/bedrock_for_ha_config.json"
 CONFIG_FILE="$OPT_FILE"
-optn() { jq -r "$1 // empty" "$OPT_FILE" 2>/dev/null; }                       # nested path, e.g. '.world.gamemode'
-optf() { jq -r --arg k "$1" '.[$k] // empty' "$OPT_FILE" 2>/dev/null; }       # flat key, e.g. 'gamemode'
+optn() { jq -r "$1 // empty" "$OPT_FILE" 2>/dev/null; }
+optf() { jq -r --arg k "$1" '.[$k] // empty' "$OPT_FILE" 2>/dev/null; }
 first_nonempty() { for v in "$@"; do [[ -n "$v" ]] && { echo "$v"; return; }; done; echo ""; }
 
 jq_safe_array_file() {
@@ -173,10 +174,9 @@ sync_permissions_and_config() {
           . + [{xuid:$c.xuid, permission:$c.role}]
         end
       )
-  ' <<< '{}')"  # dummy stdin omdat jq iets nodig heeft
+  ' <<< '{}')"
 
   echo "${new_perm_json:-[]}" > "$PERM_FILE"
-
   # 4) permissions ➜ config (altijd terugschrijven naar config)
   local final_perm_json
   final_perm_json="$(cat "$PERM_FILE")"
@@ -199,7 +199,7 @@ sync_permissions_and_config() {
 
 # ---------- Bidirectionele sync: config <-> permissions.json ----------
 
-PERM_FILE="/data/permissions.json"   # door symlink is dit /opt/bds/permissions.json
+PERM_FILE="/data/permissions.json"   # Zie ook symlinks
 
 # Safe lees helpers: geef altijd geldige JSON terug
 config_ra_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"

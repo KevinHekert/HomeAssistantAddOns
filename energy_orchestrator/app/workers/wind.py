@@ -35,8 +35,8 @@ def wind_logging_worker():
             sync_history_for_entity(WIND_ENTITY_ID, latest_ts)
         except Exception as e:
             _Logger.error("Onverwachte fout in wind logging worker: %s", e)
-        # Elke 5 minuten opnieuw syncen
-        time.sleep(300)
+        # Elke 10 seconden opnieuw proberen
+        time.sleep(10)
 
 
 def start_wind_logging_worker():

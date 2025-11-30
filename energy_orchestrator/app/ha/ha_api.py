@@ -78,7 +78,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
 
     if since is None:
         # Nog geen samples → bijvoorbeeld laatste 7 dagen binnenhalen
-        start = now_utc - timedelta(days=7)
+        start = now_utc - timedelta(days=100)
         _Logger.info(
             "Geen bestaande samples voor %s, history sync vanaf %s",
             entity_id,
@@ -86,7 +86,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
         )
     else:
         # Klein beetje terug in de tijd om randgevallen mee te pakken
-        start = since - timedelta(minutes=5)
+        start = since - timedelta(seconds=5)
         _Logger.info(
             "History sync voor %s vanaf %s (laatste sample was %s)",
             entity_id,

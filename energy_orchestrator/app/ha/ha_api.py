@@ -80,7 +80,8 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
 
     now_utc = datetime.now(timezone.utc)
 
-    if since is None:
+    if since is not None and since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
         # We willen "BACKFILL_HORIZON_DAYS" terug, maar beperken de window per request
         desired_start = now_utc - timedelta(days=BACKFILL_HORIZON_DAYS)
     else:

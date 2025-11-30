@@ -6,11 +6,9 @@ import threading
 
 from urllib import request, error
 from flask import Flask, render_template
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
-from db import Base, Sample
-from db.core import engine, test_db_connection, init_db_schema
+from db.core import test_db_connection, init_db_schema
+from db.samples import get_latest_sample_timestamp, sample_exists, log_sample
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -104,76 +102,7 @@ def start_wind_logging_worker():
     _wind_logger_started = True
     _Logger.info("Wind logging worker thread gestart.")
 
-def log_sample(entity_id: str, timestamp: datetime, value: float | None, unit: str | None) -> None:
-    if value is None:
-        _Logger.info("Geen waarde om op te slaan voor %s, overslaan.", entity_id)
-        return
-
-    try:
-        with Session(engine) as session:
-            sample = Sample(
-                entity_id=entity_id,
-                timestamp=timestamp,
-                value=float(value),
-                unit=unit,
-            )
-            session.add(sample)
-            session.commit()
-        _Logger.info(
-            "Sample opgeslagen: entity=%s, ts=%s, value=%s, unit=%s",
-            entity_id,
-            timestamp,
-            value,
-            unit,
-        )
-    except SQLAlchemyError as e:
-        _Logger.error("Fout bij opslaan van Sample voor %s: %s", entity_id, e)
-
-def get_latest_sample_timestamp(entity_id: str) -> datetime | None:
-    """Geef de laatste timestamp terug voor deze entiteit, of None als er geen samples zijn."""
-    try:
-        with Session(engine) as session:
-            result = (
-                session.query(Sample.timestamp)
-                .filter(Sample.entity_id == entity_id)
-                .order_by(Sample.timestamp.desc())
-                .limit(1)
-                .one_or_none()
-            )
-        if result is None:
-            _Logger.info("Nog geen samples gevonden voor %s.", entity_id)
-            return None
-
-        latest_ts = result[0]
-        _Logger.info("Laatste sample voor %s: %s", entity_id, latest_ts)
-        return latest_ts
-    except SQLAlchemyError as e:
-        _Logger.error("Fout bij ophalen laatste sample voor %s: %s", entity_id, e)
-        return None
-
-def sample_exists(entity_id: str, timestamp: datetime) -> bool:
-    """Check of er al een sample is voor deze entity + timestamp."""
-    try:
-        with Session(engine) as session:
-            exists = (
-                session.query(Sample.id)
-                .filter(
-                    Sample.entity_id == entity_id,
-                    Sample.timestamp == timestamp,
-                )
-                .first()
-                is not None
-            )
-        return exists
-    except SQLAlchemyError as e:
-        _Logger.error(
-            "Fout bij controleren of sample bestaat voor %s @ %s: %s",
-            entity_id,
-            timestamp,
-            e,
-        )
-        return True  # bij twijfel: liever niet dubbel inserten
-    
+ 
 def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     """
     Sync alle history uit Home Assistant voor deze entity vanaf 'since' tot nu.

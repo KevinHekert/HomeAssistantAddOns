@@ -67,9 +67,16 @@ def get_entity_state(entity_id: str) -> tuple[float | None, str | None]:
 
 def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     """
-    Sync alle history uit Home Assistant voor deze entity vanaf 'since' tot nu.
+    Sync alle history uit Home Assistant voor deze entity.
 
-    - Haalt alle tussenliggende waardes op.
+    - Als er nog geen samples zijn (since is None):
+      start = nu - BACKFILL_IF_NO_SAMPLES_DAYS
+      end   = start + MAX_WINDOW_DAYS
+
+    - Als er al samples zijn:
+      start = since - 5 minuten
+      end   = start + MAX_WINDOW_DAYS (maar niet voorbij nu)
+
     - Voegt alleen nieuwe samples toe (op basis van entity_id + timestamp).
     - Slaat altijd een sync-poging op in SyncStatus (ook bij geen data / fout).
     """
@@ -86,28 +93,30 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     if since is not None and since.tzinfo is None:
         since = since.replace(tzinfo=timezone.utc)
 
-    # 1) Bepaal de ruwe start
+    window = timedelta(days=MAX_WINDOW_DAYS)
+
     if since is None:
-        # Geen samples → eerste backfill: bv. laatste 7 dagen
+        # DB is leeg → begin 100 dagen terug en haal maar 1 dag op
         start = now_utc - timedelta(days=BACKFILL_IF_NO_SAMPLES_DAYS)
     else:
         # Wel samples → vanaf laatste sample, klein stukje terug voor veiligheid
         start = since - timedelta(minutes=5)
 
-    # 2) Zorg dat de window nooit groter is dan MAX_WINDOW_DAYS
-    max_span = timedelta(days=MAX_WINDOW_DAYS)
-    if now_utc - start > max_span:
-        start = now_utc - max_span
+    # Eindtijd is start + window, maar nooit later dan nu
+    end = start + window
+    if end > now_utc:
+        end = now_utc
 
     _Logger.info(
-        "History sync voor %s: start=%s, now=%s",
+        "History sync voor %s: start=%s, end=%s, now=%s",
         entity_id,
         start,
+        end,
         now_utc,
     )
 
     start_iso = start.astimezone(timezone.utc).isoformat()
-    end_iso = now_utc.astimezone(timezone.utc).isoformat()
+    end_iso = end.astimezone(timezone.utc).isoformat()
 
     start_encoded = quote(start_iso)
 
@@ -183,4 +192,5 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
         inserted,
         skipped,
     )
+
 

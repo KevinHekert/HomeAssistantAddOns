@@ -9,7 +9,7 @@ from flask import Flask, render_template
 from sqlalchemy import create_engine, text, DateTime, Float, Integer, String
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, Session
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 
@@ -45,6 +45,18 @@ WIND_ENTITY_ID = os.environ.get("WIND_ENTITY_ID", "sensor.knmi_windsnelheid")
 
 
 #Functies
+def parse_ha_timestamp(value: str) -> datetime | None:
+    """Parseer een ISO timestamp uit Home Assistant (met eventuele 'Z')."""
+    if not value:
+        return None
+    # Home Assistant geeft meestal bijv. "2025-11-30T17:26:32.123456+00:00" of met 'Z'
+    value = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        _Logger.error("Kan HA timestamp niet parsen: %s", value)
+        return None
+    
 def test_db_connection():
     """Heel simpele check of MariaDB bereikbaar is."""
     try:
@@ -100,7 +112,7 @@ def get_wind_speed_from_ha():
     return value, unit
 
 def wind_logging_worker():
-    """Achtergrondthread die periodiek wind-samples logt."""
+    """Achtergrondthread die periodiek samples sync't uit HA-history."""
     _Logger.info("Wind logging worker gestart.")
     while True:
         try:
@@ -108,15 +120,18 @@ def wind_logging_worker():
             init_db_schema()
 
             latest_ts = get_latest_sample_timestamp(WIND_ENTITY_ID)
-            _Logger.info("Huidige laatste timestamp voor %s: %s", WIND_ENTITY_ID, latest_ts)
+            _Logger.info(
+                "Huidige laatste timestamp voor %s vóór sync: %s",
+                WIND_ENTITY_ID,
+                latest_ts,
+            )
 
-            ts = datetime.now(timezone.utc)
-            value, unit = get_wind_speed_from_ha()
-            log_sample(WIND_ENTITY_ID, ts, value, unit)
-
+            sync_history_for_entity(WIND_ENTITY_ID, latest_ts)
         except Exception as e:
             _Logger.error("Onverwachte fout in wind logging worker: %s", e)
+        # Elke 5 minuten opnieuw syncen
         time.sleep(300)
+
 
 
 def start_wind_logging_worker():
@@ -175,6 +190,130 @@ def get_latest_sample_timestamp(entity_id: str) -> datetime | None:
         _Logger.error("Fout bij ophalen laatste sample voor %s: %s", entity_id, e)
         return None
 
+def sample_exists(entity_id: str, timestamp: datetime) -> bool:
+    """Check of er al een sample is voor deze entity + timestamp."""
+    try:
+        with Session(engine) as session:
+            exists = (
+                session.query(Sample.id)
+                .filter(
+                    Sample.entity_id == entity_id,
+                    Sample.timestamp == timestamp,
+                )
+                .first()
+                is not None
+            )
+        return exists
+    except SQLAlchemyError as e:
+        _Logger.error(
+            "Fout bij controleren of sample bestaat voor %s @ %s: %s",
+            entity_id,
+            timestamp,
+            e,
+        )
+        return True  # bij twijfel: liever niet dubbel inserten
+    
+def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
+    """
+    Sync alle history uit Home Assistant voor deze entity vanaf 'since' tot nu.
+
+    - Haalt alle tussenliggende waardes op.
+    - Voegt alleen nieuwe samples toe (op basis van entity_id + timestamp).
+    """
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        _Logger.warning(
+            "Geen SUPERVISOR_TOKEN gevonden; history sync voor %s wordt overgeslagen.",
+            entity_id,
+        )
+        return
+
+    # Startpunt bepalen
+    now_utc = datetime.now(timezone.utc)
+
+    if since is None:
+        # Nog geen samples → bijvoorbeeld laatste 7 dagen binnenhalen
+        start = now_utc - timedelta(days=7)
+        _Logger.info(
+            "Geen bestaande samples voor %s, history sync vanaf %s",
+            entity_id,
+            start,
+        )
+    else:
+        # Klein beetje terug in de tijd om randgevallen mee te pakken
+        start = since - timedelta(minutes=5)
+        _Logger.info(
+            "History sync voor %s vanaf %s (laatste sample was %s)",
+            entity_id,
+            start,
+            since,
+        )
+
+    start_iso = start.astimezone(timezone.utc).isoformat()
+
+    url = (
+        f"http://supervisor/core/api/history/period/{start_iso}"
+        f"?filter_entity_id={entity_id}"
+    )
+
+    req = request.Request(url)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/json")
+
+    try:
+        _Logger.info("History-verzoek naar Home Assistant API: %s", url)
+        with request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except error.URLError as e:
+        _Logger.error("Fout bij history-opvraag voor %s: %s", entity_id, e)
+        return
+    except Exception:
+        _Logger.error(
+            "Onverwachte fout bij history-opvraag voor %s.", entity_id, exc_info=True
+        )
+        return
+
+    if not data:
+        _Logger.info("Geen history-data ontvangen voor %s.", entity_id)
+        return
+
+    # HA-history structuur: lijst van lijsten; eerste lijst bevat states voor deze entity
+    states = data[0] if isinstance(data[0], list) else data
+    _Logger.info("Aantal historypunten voor %s ontvangen: %d", entity_id, len(states))
+
+    inserted = 0
+    skipped = 0
+
+    for state_obj in states:
+        raw_state = state_obj.get("state")
+        attributes = state_obj.get("attributes", {})
+
+        ts_str = state_obj.get("last_updated") or state_obj.get("last_changed")
+        ts = parse_ha_timestamp(ts_str)
+        if ts is None:
+            continue
+
+        try:
+            value = float(raw_state)
+        except (TypeError, ValueError):
+            continue  # niet-numerieke states slaan we over
+
+        unit = attributes.get("unit_of_measurement")
+
+        # Dubbel-check op entity + timestamp
+        if sample_exists(entity_id, ts):
+            skipped += 1
+            continue
+
+        log_sample(entity_id, ts, value, unit)
+        inserted += 1
+
+    _Logger.info(
+        "History sync voor %s afgerond: %d nieuwe, %d overgeslagen (bestonden al).",
+        entity_id,
+        inserted,
+        skipped,
+    )
 
 @app.get("/")
 def index():

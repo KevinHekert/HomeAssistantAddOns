@@ -28,11 +28,14 @@ def get_wind_speed_from_ha():
     req.add_header("Content-Type", "application/json")
 
     try:
+        _Logger.debug("Verzoek sturen naar Home Assistant API.")
         with request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except error.URLError:
+        _Logger.error("Fout bij verbinden met Home Assistant API.")
         return None
     except Exception:
+        _Logger.error("Onverwachte fout bij ophalen van gegevens van Home Assistant.", exc_info=True)
         return None
 
     # Probeer eerst state als float

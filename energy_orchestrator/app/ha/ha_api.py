@@ -10,7 +10,8 @@ from db.sync_state import update_sync_attempt
 _Logger = logging.getLogger(__name__)
 
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN")
-
+MAX_WINDOW_DAYS = 1
+BACKFILL_HORIZON_DAYS = 100
 
 def parse_ha_timestamp(value: str) -> datetime | None:
     """Parseer een ISO timestamp uit Home Assistant (met eventuele 'Z')."""
@@ -79,28 +80,33 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     now_utc = datetime.now(timezone.utc)
 
     if since is None:
-        # Nog geen samples → bijvoorbeeld laatste 7 dagen binnenhalen
-        start = now_utc - timedelta(days=100)
-        _Logger.info(
-            "Geen bestaande samples voor %s, history sync vanaf %s",
-            entity_id,
-            start,
-        )
+        # We willen "BACKFILL_HORIZON_DAYS" terug, maar beperken de window per request
+        desired_start = now_utc - timedelta(days=BACKFILL_HORIZON_DAYS)
     else:
-        # Klein beetje terug in de tijd om randgevallen mee te pakken
-        start = since - timedelta(seconds=10)
-        _Logger.info(
-            "History sync voor %s vanaf %s (laatste sample was %s)",
-            entity_id,
-            start,
-            since,
-        )
+        # Voor incremental: vanaf laatste sample, klein stukje terug voor veiligheid
+        desired_start = since - timedelta(minutes=5)
+
+    # Nu clampen we de start zodat de span nooit groter wordt dan MAX_WINDOW_DAYS
+    max_span = timedelta(days=MAX_WINDOW_DAYS)
+    if now_utc - desired_start > max_span:
+        start = now_utc - max_span
+    else:
+        start = desired_start
+
+    _Logger.info(
+        "History sync voor %s: desired_start=%s, effective_start=%s, now=%s",
+        entity_id,
+        desired_start,
+        start,
+        now_utc,
+    )
 
     start_iso = start.astimezone(timezone.utc).isoformat()
+    end_iso = now_utc.astimezone(timezone.utc).isoformat()
 
     url = (
         f"http://supervisor/core/api/history/period/{start_iso}"
-        f"?filter_entity_id={entity_id}"
+        f"?end_time={end_iso}&filter_entity_id={entity_id}"
     )
 
     req = request.Request(url)

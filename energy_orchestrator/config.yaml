@@ -1,7 +1,7 @@
 name: Energy Orchestrator
-version: "0.0.0.1"
+version: "0.0.1"
 slug: energy_orchestrator
-description: Add-on met UI voor toekomstige energie-optimisatie.
+description: Django UI voor toekomstige energie-optimisatie.
 arch:
   - amd64
 startup: services
@@ -10,4 +10,7 @@ ingress: true
 ingress_port: 8099
 panel_icon: mdi:lightning-bolt
 panel_title: Energy Orchestrator
-init: true
+init: false
+
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base:3.22

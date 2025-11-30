@@ -15,3 +15,10 @@ class Sample(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+class SyncStatus(Base):
+    __tablename__ = "sync_status"
+
+    entity_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    last_attempt: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

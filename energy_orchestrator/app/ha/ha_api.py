@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from urllib import request, error
 
 from db.samples import sample_exists, log_sample
+from db.sync_state import update_sync_attempt
 
 _Logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
 
     - Haalt alle tussenliggende waardes op.
     - Voegt alleen nieuwe samples toe (op basis van entity_id + timestamp).
+    - Slaat altijd een sync-poging op in SyncStatus (ook bij geen data / fout).
     """
     if not SUPERVISOR_TOKEN:
         _Logger.warning(
@@ -86,7 +88,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
         )
     else:
         # Klein beetje terug in de tijd om randgevallen mee te pakken
-        start = since - timedelta(seconds=5)
+        start = since - timedelta(seconds=10)
         _Logger.info(
             "History sync voor %s vanaf %s (laatste sample was %s)",
             entity_id,
@@ -105,6 +107,9 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     req.add_header("Authorization", f"Bearer {SUPERVISOR_TOKEN}")
     req.add_header("Content-Type", "application/json")
 
+    # Standaard: poging geregistreerd, nog niet succesvol
+    update_sync_attempt(entity_id, now_utc, success=False)
+
     try:
         _Logger.info("History-verzoek naar Home Assistant API: %s", url)
         with request.urlopen(req, timeout=30) as resp:
@@ -120,9 +125,9 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
 
     if not data:
         _Logger.info("Geen history-data ontvangen voor %s.", entity_id)
+        # poging blijft wel geregistreerd, maar geen success-flag
         return
 
-    # HA-history structuur: lijst van lijsten; eerste lijst bevat states voor deze entity
     states = data[0] if isinstance(data[0], list) else data
     _Logger.info("Aantal historypunten voor %s ontvangen: %d", entity_id, len(states))
 
@@ -141,11 +146,10 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
         try:
             value = float(raw_state)
         except (TypeError, ValueError):
-            continue  # niet-numerieke states slaan we over
+            continue
 
         unit = attributes.get("unit_of_measurement")
 
-        # Dubbel-check op entity + timestamp
         if sample_exists(entity_id, ts):
             skipped += 1
             continue
@@ -153,9 +157,13 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
         log_sample(entity_id, ts, value, unit)
         inserted += 1
 
+    # Als we hier zijn, was de call inhoudelijk oké; we markeren deze poging als succesvol
+    update_sync_attempt(entity_id, now_utc, success=True)
+
     _Logger.info(
         "History sync voor %s afgerond: %d nieuwe, %d overgeslagen (bestonden al).",
         entity_id,
         inserted,
         skipped,
     )
+

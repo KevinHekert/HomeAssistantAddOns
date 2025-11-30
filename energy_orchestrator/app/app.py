@@ -103,6 +103,8 @@ def wind_logging_worker():
     _Logger.info("Wind logging worker gestart.")
     while True:
         try:
+            latest_ts = get_latest_sample_timestamp(WIND_ENTITY_ID)
+            _Logger.info("Huidige laatste timestamp voor %s: %s", WIND_ENTITY_ID, latest_ts)
             test_db_connection()
             init_db_schema()
 
@@ -119,7 +121,6 @@ def start_wind_logging_worker():
     global _wind_logger_started
     if _wind_logger_started:
         return
-
     thread = threading.Thread(target=wind_logging_worker, daemon=True)
     thread.start()
     _wind_logger_started = True
@@ -150,6 +151,27 @@ def log_sample(entity_id: str, timestamp: datetime, value: float | None, unit: s
     except SQLAlchemyError as e:
         _Logger.error("Fout bij opslaan van Sample voor %s: %s", entity_id, e)
 
+def get_latest_sample_timestamp(entity_id: str) -> datetime | None:
+    """Geef de laatste timestamp terug voor deze entiteit, of None als er geen samples zijn."""
+    try:
+        with Session(engine) as session:
+            result = (
+                session.query(Sample.timestamp)
+                .filter(Sample.entity_id == entity_id)
+                .order_by(Sample.timestamp.desc())
+                .limit(1)
+                .one_or_none()
+            )
+        if result is None:
+            _Logger.info("Nog geen samples gevonden voor %s.", entity_id)
+            return None
+
+        latest_ts = result[0]
+        _Logger.info("Laatste sample voor %s: %s", entity_id, latest_ts)
+        return latest_ts
+    except SQLAlchemyError as e:
+        _Logger.error("Fout bij ophalen laatste sample voor %s: %s", entity_id, e)
+        return None
 
 
 @app.get("/")

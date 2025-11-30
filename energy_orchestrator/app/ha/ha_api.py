@@ -134,7 +134,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     req.add_header("Content-Type", "application/json")
 
     # Standaard: poging geregistreerd, nog niet succesvol
-    update_sync_attempt(entity_id, now_utc, success=False)
+    update_sync_attempt(entity_id, end, success=False)
 
     try:
         _Logger.info("History-verzoek naar Home Assistant API: %s", url)
@@ -184,7 +184,8 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
         inserted += 1
 
     # Als we hier zijn, was de call inhoudelijk oké; we markeren deze poging als succesvol
-    update_sync_attempt(entity_id, now_utc, success=True)
+    update_sync_attempt(entity_id, end, success=True)
+
 
     _Logger.info(
         "History sync voor %s afgerond: %d nieuwe, %d overgeslagen (bestonden al).",

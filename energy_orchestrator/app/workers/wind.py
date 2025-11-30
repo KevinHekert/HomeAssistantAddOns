@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 
 from db.core import test_db_connection, init_db_schema
 from db.samples import get_latest_sample_timestamp
+from db.sync_state import get_sync_status
+
 from ha.ha_api import sync_history_for_entity
 import threading
 
@@ -26,13 +28,23 @@ def wind_logging_worker():
             init_db_schema()
 
             latest_ts = get_latest_sample_timestamp(WIND_ENTITY_ID)
+            status = get_sync_status(WIND_ENTITY_ID)
+
+            if latest_ts is not None:
+                effective_since = latest_ts
+            elif status is not None and status.last_attempt is not None:
+                effective_since = status.last_attempt
+            else:
+                effective_since = None
+
             _Logger.info(
-                "Huidige laatste timestamp voor %s vóór sync: %s",
+                "Effective since voor %s vóór sync: %s",
                 WIND_ENTITY_ID,
-                latest_ts,
+                effective_since,
             )
 
-            sync_history_for_entity(WIND_ENTITY_ID, latest_ts)
+            sync_history_for_entity(WIND_ENTITY_ID, effective_since)
+
         except Exception as e:
             _Logger.error("Onverwachte fout in wind logging worker: %s", e)
         # Elke 10 seconden opnieuw proberen

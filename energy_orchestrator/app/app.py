@@ -9,7 +9,8 @@ from flask import Flask, render_template
 from sqlalchemy import create_engine, text, DateTime, Float, Integer, String
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, Session
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 
 app = Flask(__name__)
@@ -105,10 +106,10 @@ def wind_logging_worker():
             test_db_connection()
             init_db_schema()
 
-            value, unit = get_wind_speed_from_ha()
             ts = datetime.now(timezone.utc)
-
+            value, unit = get_wind_speed_from_ha()
             log_sample(WIND_ENTITY_ID, ts, value, unit)
+
         except Exception as e:
             _Logger.error("Onverwachte fout in wind logging worker: %s", e)
         time.sleep(300)
@@ -165,4 +166,4 @@ def index():
 
 if __name__ == "__main__":
     start_wind_logging_worker()
-    app.run(host="0.0.0.0", port=8099, debug=True)
+    app.run(host="0.0.0.0", port=8099, debug=False)

@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 _Logger = logging.getLogger(__name__)
 # Voor nu hardcoded; later maken we dit configureerbaar
-WIND_ENTITY_ID = os.environ.get("WIND_ENTITY_ID", "ssensor.knmi_windsnelheid")
+WIND_ENTITY_ID = os.environ.get("WIND_ENTITY_ID", "sensor.knmi_windsnelheid")
 
 
 def get_wind_speed_from_ha():

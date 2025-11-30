@@ -4,8 +4,10 @@ import logging
 
 from urllib import request, error
 from flask import Flask, render_template
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, DateTime, Float, Integer
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import declarative_base, Mapped, mapped_column
+from datetime import datetime
 
 app = Flask(__name__)
 _Logger = logging.getLogger(__name__)
@@ -20,6 +22,14 @@ DB_NAME = os.environ.get("DB_NAME", "energy_orchestrator")
 DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
 engine = create_engine(DB_URL, future=True)
 
+Base = declarative_base()
+
+class WindSample(Base):
+    __tablename__ = "wind_samples"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    value: Mapped[float] = mapped_column(Float)
 
 
 #Entities
@@ -35,6 +45,14 @@ def test_db_connection():
         _Logger.info("Verbinding met MariaDB geslaagd.")
     except SQLAlchemyError as e:
         _Logger.error("Fout bij verbinden met MariaDB: %s", e)
+
+def init_db_schema():
+    """Maak de tabellen aan als ze nog niet bestaan."""
+    try:
+        Base.metadata.create_all(engine)
+        _Logger.info("Database schema bijgewerkt (wind_samples).")
+    except SQLAlchemyError as e:
+        _Logger.error("Fout bij aanmaken schema in MariaDB: %s", e)
 
 
 def get_wind_speed_from_ha():
@@ -72,6 +90,7 @@ def get_wind_speed_from_ha():
 @app.get("/")
 def index():
     test_db_connection()
+    init_db_schema()
     wind_speed = get_wind_speed_from_ha()
     return render_template("index.html", wind_speed=wind_speed)
     

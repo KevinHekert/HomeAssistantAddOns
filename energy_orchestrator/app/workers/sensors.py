@@ -18,7 +18,6 @@ SENSOR_ENTITIES = [
     os.environ.get("RETURN_TEMP_ENTITY_ID", "sensor.opentherm_return_temperature"),
     os.environ.get("HUMIDITY_ENTITY_ID", "sensor.knmi_luchtvochtigheid"),
     os.environ.get("PRESSURE_ENTITY_ID", "sensor.knmi_luchtdruk"),
-    # TODO: vervang onderstaande door je echte entity-id zonder spaties
     os.environ.get("HP_KWH_TOTAL_ENTITY_ID", "sensor.extra_total"),
     os.environ.get("DHW_TEMP_ENTITY_ID", "sensor.opentherm_dhw_temperature"),
 ]
@@ -48,7 +47,7 @@ def _sync_entity(entity_id: str) -> None:
     )
 
     sync_history_for_entity(entity_id, effective_since)
-    time.sleep(1)
+    time.sleep(5)
 
 
 def sensor_logging_worker():
@@ -73,7 +72,7 @@ def sensor_logging_worker():
             _Logger.error("Onverwachte fout in sensor logging worker-loop: %s", e)
 
         # TODO: voor productie naar 300s; nu 10 voor sneller testen
-        time.sleep(1)
+        time.sleep(300)
 
 
 def start_sensor_logging_worker():

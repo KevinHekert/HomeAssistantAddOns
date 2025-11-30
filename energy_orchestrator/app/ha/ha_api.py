@@ -11,8 +11,10 @@ from db.sync_state import update_sync_attempt
 _Logger = logging.getLogger(__name__)
 
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN")
+BACKFILL_IF_NO_SAMPLES_DAYS = 100
 MAX_WINDOW_DAYS = 1
-BACKFILL_HORIZON_DAYS = 100
+
+
 
 def parse_ha_timestamp(value: str) -> datetime | None:
     """Parseer een ISO timestamp uit Home Assistant (met eventuele 'Z')."""
@@ -80,25 +82,26 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
 
     now_utc = datetime.now(timezone.utc)
 
+    # Normaliseer 'since' naar timezone-aware UTC (DB geeft vaak naive datetimes)
     if since is not None and since.tzinfo is None:
         since = since.replace(tzinfo=timezone.utc)
-        # We willen "BACKFILL_HORIZON_DAYS" terug, maar beperken de window per request
-        desired_start = now_utc - timedelta(days=BACKFILL_HORIZON_DAYS)
-    else:
-        # Voor incremental: vanaf laatste sample, klein stukje terug voor veiligheid
-        desired_start = since - timedelta(minutes=5)
 
-    # Nu clampen we de start zodat de span nooit groter wordt dan MAX_WINDOW_DAYS
-    max_span = timedelta(days=MAX_WINDOW_DAYS)
-    if now_utc - desired_start > max_span:
-        start = now_utc - max_span
+    # 1) Bepaal de ruwe start
+    if since is None:
+        # Geen samples → eerste backfill: bv. laatste 7 dagen
+        start = now_utc - timedelta(days=BACKFILL_IF_NO_SAMPLES_DAYS)
     else:
-        start = desired_start
+        # Wel samples → vanaf laatste sample, klein stukje terug voor veiligheid
+        start = since - timedelta(minutes=5)
+
+    # 2) Zorg dat de window nooit groter is dan MAX_WINDOW_DAYS
+    max_span = timedelta(days=MAX_WINDOW_DAYS)
+    if now_utc - start > max_span:
+        start = now_utc - max_span
 
     _Logger.info(
-        "History sync voor %s: desired_start=%s, effective_start=%s, now=%s",
+        "History sync voor %s: start=%s, now=%s",
         entity_id,
-        desired_start,
         start,
         now_utc,
     )

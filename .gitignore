@@ -1,0 +1,17 @@
+# Python cache en rommel
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Alle virtual envs, waar dan ook
+**/.venv/
+
+# Django sqlite DB (als je die niet in git wilt)
+**/db.sqlite3
+
+# Editor / tooling
+.vscode/
+.idea/
+
+# Logs
+*.log

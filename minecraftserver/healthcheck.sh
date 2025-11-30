@@ -3,7 +3,7 @@ set -e
 
 CONFIG_FILE="/data/config/bedrock_for_ha_config.json"
 
-# Default: nog geen config of geen eula veld -> beschouw als niet geaccepteerd
+# EULA Standaard niet geaccepteerd (vereiste)
 eula="false"
 if [ -f "$CONFIG_FILE" ]; then
   eula="$(jq -r '.general.eula // false' "$CONFIG_FILE" 2>/dev/null || echo "false")"
@@ -14,6 +14,7 @@ fi
 case "${eula,,}" in
   true|1|yes|on)
     # EULA geaccepteerd -> Bedrock hoort te draaien; healthcheck moet dat afdwingen
+    echo ${eula}
     ;;
   *)
     # EULA niet geaccepteerd -> UI-only modus is OK voor Supervisor
@@ -21,7 +22,7 @@ case "${eula,,}" in
     ;;
 esac
 
-# Vanaf hier: EULA = true, nu moet Bedrock bereikbaar zijn
+# Als Eula geaccepteerd is, controleren of de server draait
 timeout 3s /usr/local/bin/mc-monitor status-bedrock \
   --host 127.0.0.1 \
   --port "${SERVER_PORT:-19132}" >/dev/null 2>&1 || exit 1

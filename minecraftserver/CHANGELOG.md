@@ -1,3 +1,10 @@
+## 1.2.23 - 2025-11-25
+- Removed depricated code, adjusted comments in code.
+
+## 1.2.22 - 2025-11-21
+- Updated Bedrock Server from '1.21.123.2' to '1.21.124.2'
+- Updated GitHub action to edit version in build parameters (build.yaml)
+
 ## 1.2.8 - 2025-11-20
 - Rephrased items; updating isn't automated. Version detection is, within GitHub: but it isn't in the code itself. 
 - Added logo and icon

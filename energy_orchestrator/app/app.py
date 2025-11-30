@@ -1,0 +1,44 @@
+from flask import Flask
+
+app = Flask(__name__)
+
+
+@app.get("/")
+def index():
+    return """
+    <!DOCTYPE html>
+    <html lang="nl">
+    <head>
+        <meta charset="UTF-8">
+        <title>Energy Orchestrator</title>
+        <style>
+            body {
+                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                margin: 0;
+                padding: 1.5rem;
+                background: #020617;
+                color: #e5e7eb;
+            }
+            h1 { margin-top: 0; }
+            .card {
+                background: #020617;
+                border-radius: 12px;
+                padding: 1.5rem;
+                border: 1px solid #1f2937;
+                max-width: 700px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>⚡ Energy Orchestrator</h1>
+        <div class="card">
+            <p>Flask UI skelet draait nu binnen Home Assistant.</p>
+            <p>Volgende stappen: prijzen, PV, warmtepomp, EV, batterij.</p>
+        </div>
+    </body>
+    </html>
+    """
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8099, debug=True)

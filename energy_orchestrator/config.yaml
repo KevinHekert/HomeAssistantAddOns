@@ -1,0 +1,16 @@
+name: Energy Orchestrator
+version: "0.0.0.4"
+slug: energy_orchestrator
+description: Flask UI voor toekomstige energie-optimisatie.
+arch:
+  - amd64
+startup: services
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:lightning-bolt
+panel_title: Energy Orchestrator
+init: false
+
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base:3.22

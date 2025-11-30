@@ -3,6 +3,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from urllib import request, error
+from urllib.parse import urlencode, quote
 
 from db.samples import sample_exists, log_sample
 from db.sync_state import update_sync_attempt
@@ -104,10 +105,16 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     start_iso = start.astimezone(timezone.utc).isoformat()
     end_iso = now_utc.astimezone(timezone.utc).isoformat()
 
-    url = (
-        f"http://supervisor/core/api/history/period/{start_iso}"
-        f"?end_time={end_iso}&filter_entity_id={entity_id}"
+    start_encoded = quote(start_iso)
+
+    query = urlencode(
+        {
+            "end_time": end_iso,
+            "filter_entity_id": entity_id,
+        }
     )
+
+    url = f"http://supervisor/core/api/history/period/{start_encoded}?{query}"
 
     req = request.Request(url)
     req.add_header("Authorization", f"Bearer {SUPERVISOR_TOKEN}")

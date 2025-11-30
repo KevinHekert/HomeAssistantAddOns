@@ -1,6 +1,8 @@
 import os
 import json
 import logging
+import time
+import threading
 
 from urllib import request, error
 from flask import Flask, render_template
@@ -9,8 +11,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column, Session
 from datetime import datetime
 
+
 app = Flask(__name__)
 _Logger = logging.getLogger(__name__)
+_wind_logger_started = False
 
 
 #DB Settings
@@ -24,11 +28,12 @@ engine = create_engine(DB_URL, future=True)
 
 Base = declarative_base()
 
-class WindSample(Base):
-    __tablename__ = "wind_samples"
+class Sample(Base):
+    __tablename__ = "samples"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    entity_id: Mapped[str] = mapped_column(String(128), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)  # tijd van meting uit HA
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
@@ -51,7 +56,7 @@ def init_db_schema():
     """Maak de tabellen aan als ze nog niet bestaan."""
     try:
         Base.metadata.create_all(engine)
-        _Logger.info("Database schema bijgewerkt (wind_samples).")
+        _Logger.info("Database schema bijgewerkt (samples).")
     except SQLAlchemyError as e:
         _Logger.error("Fout bij aanmaken schema in MariaDB: %s", e)
 
@@ -92,31 +97,64 @@ def get_wind_speed_from_ha():
 
     return value, unit
 
-def log_wind_sample(value: float | None, unit: str | None) -> None:
-    """Sla één windsampel op in de database."""
+def wind_logging_worker():
+    """Achtergrondthread die periodiek wind-samples logt."""
+    _Logger.info("Wind logging worker gestart.")
+    while True:
+        try:
+            test_db_connection()
+            init_db_schema()
+
+            value, unit = get_wind_speed_from_ha()
+            ts = datetime.now(timezone.utc)
+
+            log_sample(WIND_ENTITY_ID, ts, value, unit)
+        except Exception as e:
+            _Logger.error("Onverwachte fout in wind logging worker: %s", e)
+        time.sleep(300)
+
+
+def start_wind_logging_worker():
+    global _wind_logger_started
+    if _wind_logger_started:
+        return
+
+    thread = threading.Thread(target=wind_logging_worker, daemon=True)
+    thread.start()
+    _wind_logger_started = True
+    _Logger.info("Wind logging worker thread gestart.")
+
+def log_sample(entity_id: str, timestamp: datetime, value: float | None, unit: str | None) -> None:
     if value is None:
-        _Logger.info("Geen waarde om op te slaan, overslaan.")
+        _Logger.info("Geen waarde om op te slaan voor %s, overslaan.", entity_id)
         return
 
     try:
         with Session(engine) as session:
-            sample = WindSample(value=float(value), unit=unit)
+            sample = Sample(
+                entity_id=entity_id,
+                timestamp=timestamp,
+                value=float(value),
+                unit=unit,
+            )
             session.add(sample)
             session.commit()
-        _Logger.info("WindSample opgeslagen: value=%s, unit=%s", value, unit)
+        _Logger.info(
+            "Sample opgeslagen: entity=%s, ts=%s, value=%s, unit=%s",
+            entity_id,
+            timestamp,
+            value,
+            unit,
+        )
     except SQLAlchemyError as e:
-        _Logger.error("Fout bij opslaan van WindSample: %s", e)
+        _Logger.error("Fout bij opslaan van Sample voor %s: %s", entity_id, e)
+
+
 
 @app.get("/")
 def index():
-    # Check DB en zorg dat schema bestaat
-    test_db_connection()
-    init_db_schema()
-
+    # Alleen actuele waarde ophalen voor de UI
     wind_speed, wind_unit = get_wind_speed_from_ha()
-
-    # Voor nu: bij elke pagina-load 1 sample loggen
-    log_wind_sample(wind_speed, wind_unit)
 
     return render_template(
         "index.html",
@@ -126,4 +164,5 @@ def index():
     
 
 if __name__ == "__main__":
+    start_wind_logging_worker()
     app.run(host="0.0.0.0", port=8099, debug=True)

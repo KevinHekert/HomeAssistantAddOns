@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 _Logger = logging.getLogger(__name__)
 _wind_logger_started = False
 
@@ -103,10 +104,11 @@ def wind_logging_worker():
     _Logger.info("Wind logging worker gestart.")
     while True:
         try:
-            latest_ts = get_latest_sample_timestamp(WIND_ENTITY_ID)
-            _Logger.info("Huidige laatste timestamp voor %s: %s", WIND_ENTITY_ID, latest_ts)
             test_db_connection()
             init_db_schema()
+
+            latest_ts = get_latest_sample_timestamp(WIND_ENTITY_ID)
+            _Logger.info("Huidige laatste timestamp voor %s: %s", WIND_ENTITY_ID, latest_ts)
 
             ts = datetime.now(timezone.utc)
             value, unit = get_wind_speed_from_ha()

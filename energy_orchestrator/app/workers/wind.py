@@ -48,7 +48,7 @@ def wind_logging_worker():
         except Exception as e:
             _Logger.error("Onverwachte fout in wind logging worker: %s", e)
         # Elke 10 seconden opnieuw proberen
-        time.sleep(10)
+        time.sleep(1)
 
 
 def start_wind_logging_worker():

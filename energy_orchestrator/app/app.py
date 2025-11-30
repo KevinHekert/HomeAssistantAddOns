@@ -3,14 +3,38 @@ import json
 import logging
 
 from urllib import request, error
-
 from flask import Flask, render_template
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
 app = Flask(__name__)
-
 _Logger = logging.getLogger(__name__)
-# Voor nu hardcoded; later maken we dit configureerbaar
+
+
+#DB Settings
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_USER = os.environ.get("DB_USER", "username")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "password")
+DB_NAME = os.environ.get("DB_NAME", "energy_orchestrator")
+
+DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
+engine = create_engine(DB_URL, future=True)
+
+
+
+#Entities
 WIND_ENTITY_ID = os.environ.get("WIND_ENTITY_ID", "sensor.knmi_windsnelheid")
+
+
+#Functies
+def test_db_connection():
+    """Heel simpele check of MariaDB bereikbaar is."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        _Logger.info("Verbinding met MariaDB geslaagd.")
+    except SQLAlchemyError as e:
+        _Logger.error("Fout bij verbinden met MariaDB: %s", e)
 
 
 def get_wind_speed_from_ha():
@@ -47,6 +71,7 @@ def get_wind_speed_from_ha():
 
 @app.get("/")
 def index():
+    test_db_connection()
     wind_speed = get_wind_speed_from_ha()
     return render_template("index.html", wind_speed=wind_speed)
     

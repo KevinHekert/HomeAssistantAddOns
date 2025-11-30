@@ -1,5 +1,5 @@
 name: Energy Orchestrator
-version: "0.0.0.9"
+version: "0.0.0.10"
 slug: energy_orchestrator
 description: Flask UI voor toekomstige energie-optimisatie.
 arch:
@@ -16,3 +16,14 @@ build_from:
 
 homeassistant_api: true
 
+options:
+  db_host: core-mariadb
+  db_user: energy_orchestrator
+  db_password: ""
+  db_name: energy_orchestrator
+
+schema:
+  db_host: str
+  db_user: str
+  db_password: str
+  db_name: str

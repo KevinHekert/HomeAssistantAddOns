@@ -4,9 +4,9 @@ import logging
 
 from urllib import request, error
 from flask import Flask, render_template
-from sqlalchemy import create_engine, text, DateTime, Float, Integer
+from sqlalchemy import create_engine, text, DateTime, Float, Integer, String
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import declarative_base, Mapped, mapped_column
+from sqlalchemy.orm import declarative_base, Mapped, mapped_column, Session
 from datetime import datetime
 
 app = Flask(__name__)
@@ -30,6 +30,7 @@ class WindSample(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 #Entities
@@ -56,11 +57,11 @@ def init_db_schema():
 
 
 def get_wind_speed_from_ha():
-    """Lees de actuele windsnelheid uit Home Assistant via de Supervisor API."""
+    """Lees de actuele windsnelheid + eenheid uit Home Assistant via de Supervisor API."""
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
         _Logger.warning("Geen SUPERVISOR_TOKEN gevonden in omgevingsvariabelen.")
-        return None
+        return None, None
     
     _Logger.info("Lezen windsnelheid van Home Assistant entiteit: %s", WIND_ENTITY_ID)
     url = f"http://supervisor/core/api/states/{WIND_ENTITY_ID}"
@@ -70,29 +71,58 @@ def get_wind_speed_from_ha():
     req.add_header("Content-Type", "application/json")
 
     try:
-        _Logger.debug("Verzoek sturen naar Home Assistant API.")
+        _Logger.debug("Verzoek sturen naar Home Assistant API: %s", url)
         with request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-    except error.URLError:
-        _Logger.error("Fout bij verbinden met Home Assistant API.")
-        return None
+    except error.URLError as e:
+        _Logger.error("Fout bij verbinden met Home Assistant API: %s", e)
+        return None, None
     except Exception:
         _Logger.error("Onverwachte fout bij ophalen van gegevens van Home Assistant.", exc_info=True)
-        return None
+        return None, None
 
-    # Probeer eerst state als float
     state = data.get("state")
+    attributes = data.get("attributes", {})
+    unit = attributes.get("unit_of_measurement")
+
     try:
-        return float(state)
+        value = float(state)
     except (TypeError, ValueError):
-        return state  # eventueel string teruggeven
+        value = None
+
+    return value, unit
+
+def log_wind_sample(value: float | None, unit: str | None) -> None:
+    """Sla één windsampel op in de database."""
+    if value is None:
+        _Logger.info("Geen waarde om op te slaan, overslaan.")
+        return
+
+    try:
+        with Session(engine) as session:
+            sample = WindSample(value=float(value), unit=unit)
+            session.add(sample)
+            session.commit()
+        _Logger.info("WindSample opgeslagen: value=%s, unit=%s", value, unit)
+    except SQLAlchemyError as e:
+        _Logger.error("Fout bij opslaan van WindSample: %s", e)
 
 @app.get("/")
 def index():
+    # Check DB en zorg dat schema bestaat
     test_db_connection()
     init_db_schema()
-    wind_speed = get_wind_speed_from_ha()
-    return render_template("index.html", wind_speed=wind_speed)
+
+    wind_speed, wind_unit = get_wind_speed_from_ha()
+
+    # Voor nu: bij elke pagina-load 1 sample loggen
+    log_wind_sample(wind_speed, wind_unit)
+
+    return render_template(
+        "index.html",
+        wind_speed=wind_speed,
+        wind_unit=wind_unit,
+    )
     
 
 if __name__ == "__main__":

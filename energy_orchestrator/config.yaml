@@ -1,5 +1,5 @@
 name: Energy Orchestrator
-version: "0.0.0.2"
+version: "0.0.0.3"
 slug: energy_orchestrator
 description: Django UI voor toekomstige energie-optimisatie.
 arch:

@@ -1,7 +1,8 @@
 import logging
 from flask import Flask, render_template
 from ha.ha_api import get_entity_state
-from workers.wind import start_wind_logging_worker
+from workers import start_wind_logging_worker, start_temperature_logging_worker
+
 
 app = Flask(__name__)
 
@@ -26,4 +27,5 @@ def index():
 
 if __name__ == "__main__":
     start_wind_logging_worker()
+    start_temperature_logging_worker()
     app.run(host="0.0.0.0", port=8099, debug=False)

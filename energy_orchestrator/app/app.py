@@ -6,31 +6,16 @@ import threading
 
 from urllib import request, error
 from flask import Flask, render_template
-#from sqlalchemy import create_engine, text, DateTime, Float, Integer, String
 from sqlalchemy.exc import SQLAlchemyError
-#from sqlalchemy.orm import declarative_base, Mapped, mapped_column, Session
-from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
 from db import Base, Sample
-
-
+from db.core import engine, test_db_connection, init_db_schema
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 _Logger = logging.getLogger(__name__)
 _wind_logger_started = False
-
-
-#DB Settings
-DB_HOST = os.environ.get("DB_HOST", "localhost")
-DB_USER = os.environ.get("DB_USER", "username")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "password")
-DB_NAME = os.environ.get("DB_NAME", "energy_orchestrator")
-
-DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
-engine = create_engine(DB_URL, future=True)
-
 
 
 #Entities
@@ -50,23 +35,6 @@ def parse_ha_timestamp(value: str) -> datetime | None:
         _Logger.error("Kan HA timestamp niet parsen: %s", value)
         return None
     
-def test_db_connection():
-    """Heel simpele check of MariaDB bereikbaar is."""
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        _Logger.info("Verbinding met MariaDB geslaagd.")
-    except SQLAlchemyError as e:
-        _Logger.error("Fout bij verbinden met MariaDB: %s", e)
-
-def init_db_schema():
-    """Maak de tabellen aan als ze nog niet bestaan."""
-    try:
-        Base.metadata.create_all(engine)
-        _Logger.info("Database schema bijgewerkt (samples).")
-    except SQLAlchemyError as e:
-        _Logger.error("Fout bij aanmaken schema in MariaDB: %s", e)
-
 
 def get_wind_speed_from_ha():
     """Lees de actuele windsnelheid + eenheid uit Home Assistant via de Supervisor API."""

@@ -1,11 +1,14 @@
 import os
 import json
+import logging
+
 from urllib import request, error
 
 from flask import Flask, render_template
 
 app = Flask(__name__)
 
+_Logger = logging.getLogger(__name__)
 # Voor nu hardcoded; later maken we dit configureerbaar
 WIND_ENTITY_ID = os.environ.get("WIND_ENTITY_ID", "ssensor.knmi_windsnelheid")
 
@@ -14,9 +17,10 @@ def get_wind_speed_from_ha():
     """Lees de actuele windsnelheid uit Home Assistant via de Supervisor API."""
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
-        # Lokale dev of geen toegang → geen crash, gewoon None
+        _Logger.warning("Geen SUPERVISOR_TOKEN gevonden in omgevingsvariabelen.")
         return None
-
+    
+    _Logger.info("Lezen windsnelheid van Home Assistant entiteit: %s", WIND_ENTITY_ID)
     url = f"http://supervisor/core/api/states/{WIND_ENTITY_ID}"
 
     req = request.Request(url)

@@ -10,10 +10,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Django project code
+# Jouw Flask-code
 COPY app /app
 
-# Entrypoint
+# Entrypoint script
 COPY run.sh /
 RUN chmod +x /run.sh
 

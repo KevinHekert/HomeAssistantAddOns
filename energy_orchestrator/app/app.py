@@ -6,10 +6,13 @@ import threading
 
 from urllib import request, error
 from flask import Flask, render_template
-from sqlalchemy import create_engine, text, DateTime, Float, Integer, String
+#from sqlalchemy import create_engine, text, DateTime, Float, Integer, String
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import declarative_base, Mapped, mapped_column, Session
+#from sqlalchemy.orm import declarative_base, Mapped, mapped_column, Session
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
+from db import Base, Sample
 
 
 
@@ -28,16 +31,6 @@ DB_NAME = os.environ.get("DB_NAME", "energy_orchestrator")
 DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
 engine = create_engine(DB_URL, future=True)
 
-Base = declarative_base()
-
-class Sample(Base):
-    __tablename__ = "samples"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    entity_id: Mapped[str] = mapped_column(String(128), index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)  # tijd van meting uit HA
-    value: Mapped[float] = mapped_column(Float)
-    unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 #Entities

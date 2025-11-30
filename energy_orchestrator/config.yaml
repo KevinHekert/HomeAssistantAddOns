@@ -1,5 +1,5 @@
 name: Energy Orchestrator
-version: "0.0.1"
+version: "0.0.0.1"
 slug: energy_orchestrator
 description: Add-on met UI voor toekomstige energie-optimisatie.
 arch:

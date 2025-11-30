@@ -11,3 +11,4 @@ https://github.com/KevinHekert/HomeAssistantAddOns
 
 ## Add-ons in this repository
  - **[Minecraft Server](/minecraftserver/README.md)**: Minecraft server add-on for Home Assistant.
+ - **[Energy Orchestrator](/energy_orchestrator/README.md)**: Energy orchestrator add-on for Home Assistant (WIP).

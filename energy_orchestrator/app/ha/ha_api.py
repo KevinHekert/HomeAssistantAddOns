@@ -65,7 +65,7 @@ def get_entity_state(entity_id: str) -> tuple[float | None, str | None]:
     return value, unit
 
 
-def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
+def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
     """
     Sync alle history uit Home Assistant voor deze entity.
 
@@ -79,13 +79,16 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
 
     - Voegt alleen nieuwe samples toe (op basis van entity_id + timestamp).
     - Slaat altijd een sync-poging op in SyncStatus (ook bij geen data / fout).
+
+    Returns:
+        Number of newly inserted samples (0 if none found or error).
     """
     if not SUPERVISOR_TOKEN:
         _Logger.warning(
             "Geen SUPERVISOR_TOKEN gevonden; history sync voor %s wordt overgeslagen.",
             entity_id,
         )
-        return
+        return 0
 
     now_utc = datetime.now(timezone.utc)
 
@@ -107,7 +110,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     if end > now_utc:
         end = now_utc
 
-    _Logger.info(
+    _Logger.debug(
         "History sync voor %s: start=%s, end=%s, now=%s",
         entity_id,
         start,
@@ -137,25 +140,25 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     update_sync_attempt(entity_id, end, success=False)
 
     try:
-        _Logger.info("History-verzoek naar Home Assistant API: %s", url)
+        _Logger.debug("History-verzoek naar Home Assistant API: %s", url)
         with request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except error.URLError as e:
         _Logger.error("Fout bij history-opvraag voor %s: %s", entity_id, e)
-        return
+        return 0
     except Exception:
         _Logger.error(
             "Onverwachte fout bij history-opvraag voor %s.", entity_id, exc_info=True
         )
-        return
+        return 0
 
     if not data:
-        _Logger.info("Geen history-data ontvangen voor %s.", entity_id)
+        _Logger.debug("Geen history-data ontvangen voor %s.", entity_id)
         # poging blijft wel geregistreerd, maar geen success-flag
-        return
+        return 0
 
     states = data[0] if isinstance(data[0], list) else data
-    _Logger.info("Aantal historypunten voor %s ontvangen: %d", entity_id, len(states))
+    _Logger.debug("Aantal historypunten voor %s ontvangen: %d", entity_id, len(states))
 
     inserted = 0
     skipped = 0
@@ -186,12 +189,21 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> None:
     # Als we hier zijn, was de call inhoudelijk oké; we markeren deze poging als succesvol
     update_sync_attempt(entity_id, end, success=True)
 
+    # Summary log: only log at INFO level if new samples were inserted
+    if inserted > 0:
+        _Logger.info(
+            "Opgehaald en opgeslagen: %d metingen van %s.",
+            inserted,
+            entity_id,
+        )
+    else:
+        _Logger.debug(
+            "History sync voor %s afgerond: %d nieuwe, %d overgeslagen (bestonden al).",
+            entity_id,
+            inserted,
+            skipped,
+        )
 
-    _Logger.info(
-        "History sync voor %s afgerond: %d nieuwe, %d overgeslagen (bestonden al).",
-        entity_id,
-        inserted,
-        skipped,
-    )
+    return inserted
 
 

@@ -188,7 +188,7 @@ class TestPredictHeatingDemandProfileEndpoint:
             assert response.status_code == 503
             data = response.get_json()
             assert data["status"] == "error"
-            assert "not trained" in data["message"].lower() or "not available" in data["message"].lower()
+            assert "Model not trained" in data["message"]
 
     def test_predict_no_request_body(self, client, mock_model):
         """Prediction without valid JSON returns 400."""
@@ -218,7 +218,7 @@ class TestPredictHeatingDemandProfileEndpoint:
             assert response.status_code == 400
             data = response.get_json()
             assert data["status"] == "error"
-            assert "required" in data["message"].lower() or "non-empty" in data["message"].lower()
+            assert "required" in data["message"] and "non-empty" in data["message"]
 
     def test_predict_missing_features(self, client, mock_model):
         """Prediction with missing features returns 400."""

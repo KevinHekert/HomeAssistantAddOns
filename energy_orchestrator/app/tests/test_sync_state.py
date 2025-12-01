@@ -5,7 +5,7 @@ Tests the sync status tracking functionality for sensor data synchronization.
 """
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session

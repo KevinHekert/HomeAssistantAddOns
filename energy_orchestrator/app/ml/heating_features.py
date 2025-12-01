@@ -465,10 +465,14 @@ def get_actual_vs_predicted_data(
             
             if slots_per_agg > 1:
                 # Group by hour slots and aggregate
+                # Floor to nearest slot_duration_minutes boundary
                 pivot_df["slot_group"] = (
                     pivot_df.index.to_series()
-                    .apply(lambda x: x.replace(minute=0, second=0, microsecond=0) + 
-                           timedelta(hours=(x.minute // slot_duration_minutes)))
+                    .apply(lambda x: x.replace(
+                        minute=(x.minute // slot_duration_minutes) * slot_duration_minutes,
+                        second=0, 
+                        microsecond=0
+                    ))
                 )
                 
                 # For most categories: take the mean
@@ -478,7 +482,10 @@ def get_actual_vs_predicted_data(
                     if col == "slot_group":
                         continue
                     elif col == "hp_kwh_total":
-                        agg_funcs[col] = lambda x: x.max() - x.min() if len(x) > 0 else None
+                        # Use default parameter to capture col value
+                        def hp_kwh_agg(x, c=col):
+                            return x.max() - x.min() if len(x) > 0 else None
+                        agg_funcs[col] = hp_kwh_agg
                     else:
                         agg_funcs[col] = "mean"
                 

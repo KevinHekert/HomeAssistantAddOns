@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
+import pandas as pd
 from ha.ha_api import get_entity_state
 from workers import start_sensor_logging_worker
 from db.resample import resample_all_categories_to_5min
@@ -584,7 +585,7 @@ def compare_predictions_with_actual():
             missing_features = []
             
             for feat in model.feature_names:
-                if feat in row and row[feat] is not None and not (isinstance(row[feat], float) and row[feat] != row[feat]):
+                if feat in row and row[feat] is not None and not pd.isna(row[feat]):
                     features[feat] = float(row[feat])
                 else:
                     missing_features.append(feat)
@@ -596,7 +597,7 @@ def compare_predictions_with_actual():
             
             # Get actual value
             actual_kwh = row.get("actual_heating_kwh")
-            if actual_kwh is None or (isinstance(actual_kwh, float) and actual_kwh != actual_kwh):
+            if actual_kwh is None or pd.isna(actual_kwh):
                 continue
             
             # Make prediction

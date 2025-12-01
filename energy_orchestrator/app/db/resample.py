@@ -49,7 +49,7 @@ def get_primary_entities_by_category(session: Session | None = None) -> dict[str
         # Query active mappings, sorted by category, priority, and id
         mappings = (
             session.query(SensorMapping)
-            .filter(SensorMapping.is_active == True)
+            .filter(SensorMapping.is_active.is_(True))
             .order_by(
                 SensorMapping.category.asc(),
                 SensorMapping.priority.asc(),

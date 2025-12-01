@@ -755,16 +755,18 @@ class TestResampleAllCategoriesToFiveMin:
         )
         session.close()
 
-        # Slots from 12:00 to 12:40 (8 slots: 12:00, 12:05, ..., 12:35)
+        # Slots from 12:00 to 12:35 (8 slots: 12:00, 12:05, ..., 12:35)
         # should have value 10
+        # Note: global_end is 12:40, and we only process slots where slot_start < global_end
+        # So we get 8 slots: [12:00, 12:05), [12:05, 12:10), ..., [12:35, 12:40)
         for i, r in enumerate(resampled[:-1]):
             expected_time = datetime(2024, 1, 1, 12, i * 5, 0)
             assert r.slot_start == expected_time, f"Slot {i} time mismatch"
             assert r.value == 10.0, f"Slot {i} at {r.slot_start} should have value 10"
 
-        # Last slot should not exist since global_end is 12:40
-        # and we only process slots where slot_start < global_end
-        # So the slot [12:40, 12:45) is NOT processed
+        # The last slot [12:35, 12:40) should also have value 10
+        # since no new sample occurs until 12:40 (which is exactly at global_end)
+        # The slot starting at 12:40 is not processed because slot_start < global_end is False
 
 
 class TestSchemaCreation:

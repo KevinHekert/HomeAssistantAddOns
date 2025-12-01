@@ -2,6 +2,21 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.55] - 2025-12-01
+
+- **Load Historical Day Examples**: Added ability to load historical days from 5-minute resampled data as scenario examples
+  - New `/api/examples/available_days` endpoint returns list of available days (excluding first and last day)
+  - New `/api/examples/historical_day/<date>` endpoint returns hourly averaged data for a specific day
+  - UI dropdown to select historical day in the Scenario-Based Prediction section
+- **Compare Predictions with Actual Data**: When a historical day is selected, the prediction table shows comparison
+  - Added second column with actual kWh values from historical data
+  - Added delta (difference) and percentage columns
+  - Bar chart shows predicted vs actual values side by side
+  - Summary shows Mean Absolute Error (MAE) and Mean Absolute Percentage Error (MAPE)
+- Added 19 new tests for historical day functionality
+- Internal: Added `get_available_historical_days()` function to query available days
+- Internal: Added `get_historical_day_hourly_data()` function to compute hourly averages
+
 ## [0.0.0.54] - 2025-12-01
 
 - **Simplified Scenario API**: Added new `/api/predictions/scenario` endpoint that accepts human-readable inputs

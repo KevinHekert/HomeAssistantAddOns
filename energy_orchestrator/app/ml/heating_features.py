@@ -1083,3 +1083,189 @@ def convert_simplified_to_model_features(
         final_features.append(final_slot)
     
     return final_features, parsed_timestamps
+
+
+def get_available_historical_days() -> list[str]:
+    """
+    Get list of available days from resampled samples, excluding first and last day.
+    
+    This function queries the resampled_samples table to find all unique dates
+    with data, then returns only the middle days (excluding the first and last day)
+    to ensure complete data is available.
+    
+    Returns:
+        List of date strings in YYYY-MM-DD format, sorted chronologically.
+        Returns empty list if fewer than 3 days of data exist.
+        
+    Example:
+        >>> days = get_available_historical_days()
+        >>> print(days)  # e.g., ['2024-01-02', '2024-01-03', '2024-01-04']
+    """
+    try:
+        with Session(engine) as session:
+            # Get distinct dates from resampled samples
+            stmt = select(
+                ResampledSample.slot_start,
+            ).distinct().order_by(ResampledSample.slot_start)
+            
+            result = session.execute(stmt).fetchall()
+            
+            if not result:
+                return []
+            
+            # Extract unique dates
+            dates = sorted(set(
+                row[0].date() for row in result
+            ))
+            
+            # Need at least 3 days to return middle days
+            if len(dates) < 3:
+                _Logger.info(
+                    "Fewer than 3 days of data (%d), cannot return historical days",
+                    len(dates),
+                )
+                return []
+            
+            # Exclude first and last day
+            middle_dates = dates[1:-1]
+            
+            return [d.isoformat() for d in middle_dates]
+            
+    except Exception as e:
+        _Logger.error("Error getting available historical days: %s", e, exc_info=True)
+        return []
+
+
+def get_historical_day_hourly_data(
+    date_str: str,
+) -> tuple[Optional[list[dict]], Optional[str]]:
+    """
+    Get hourly averaged data for a specific historical day.
+    
+    This function retrieves 5-minute resampled data for the specified day
+    and aggregates it to hourly averages for use as scenario input.
+    
+    Args:
+        date_str: Date in YYYY-MM-DD format
+        
+    Returns:
+        Tuple of (hourly_data list, error message if any)
+        
+        hourly_data is a list of 24 dictionaries, one per hour, containing:
+        - timestamp: ISO 8601 timestamp for that hour
+        - outdoor_temperature: Hourly average outdoor temp
+        - wind_speed: Hourly average wind speed
+        - humidity: Hourly average humidity
+        - pressure: Hourly average pressure
+        - target_temperature: Hourly average target temp
+        - indoor_temperature: Hourly average indoor temp (if available)
+        - actual_heating_kwh: Actual heating kWh for that hour (from hp_kwh_total delta)
+        
+    Example:
+        >>> data, error = get_historical_day_hourly_data("2024-01-15")
+        >>> if data:
+        ...     print(len(data))  # 24 hours
+        ...     print(data[0]["outdoor_temperature"])
+    """
+    try:
+        # Parse the date
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return None, f"Invalid date format: {date_str}. Use YYYY-MM-DD."
+        
+        # Define time range for the entire day
+        start_time = datetime.combine(target_date, datetime.min.time())
+        end_time = start_time + timedelta(days=1)
+        
+        with Session(engine) as session:
+            # Load resampled data for the day
+            stmt = select(
+                ResampledSample.slot_start,
+                ResampledSample.category,
+                ResampledSample.value,
+            ).where(
+                ResampledSample.slot_start >= start_time,
+                ResampledSample.slot_start < end_time,
+            ).order_by(ResampledSample.slot_start)
+            
+            result = session.execute(stmt).fetchall()
+            
+            if not result:
+                return None, f"No data available for date {date_str}"
+            
+            # Convert to DataFrame
+            raw_df = pd.DataFrame(result, columns=["slot_start", "category", "value"])
+            
+            # Pivot to wide format
+            pivot_df = raw_df.pivot(
+                index="slot_start",
+                columns="category",
+                values="value",
+            ).sort_index()
+            
+            if pivot_df.empty:
+                return None, "No data after pivoting"
+            
+            # Add hour column for grouping
+            pivot_df["hour"] = pivot_df.index.to_series().apply(
+                lambda x: x.replace(minute=0, second=0, microsecond=0)
+            )
+            
+            # Aggregate by hour
+            # For most columns: mean
+            # For hp_kwh_total: max - min (delta for the hour)
+            def _hp_kwh_agg(x):
+                """Compute kWh delta for the hour (max - min)."""
+                if len(x) > 0 and not x.isna().all():
+                    return x.max() - x.min()
+                return None
+            
+            agg_funcs = {}
+            for col in pivot_df.columns:
+                if col == "hour":
+                    continue
+                elif col == "hp_kwh_total":
+                    agg_funcs[col] = _hp_kwh_agg
+                else:
+                    agg_funcs[col] = "mean"
+            
+            hourly_df = pivot_df.groupby("hour").agg(agg_funcs)
+            
+            # Map category names to simplified names
+            category_to_simplified = {
+                "outdoor_temp": "outdoor_temperature",
+                "wind": "wind_speed",
+                "humidity": "humidity",
+                "pressure": "pressure",
+                "target_temp": "target_temperature",
+                "indoor_temp": "indoor_temperature",
+                "hp_kwh_total": "actual_heating_kwh",
+            }
+            
+            # Build result list
+            hourly_data = []
+            for hour_ts, row in hourly_df.iterrows():
+                hour_dict = {
+                    "timestamp": hour_ts.isoformat(),
+                }
+                
+                for cat, simplified in category_to_simplified.items():
+                    if cat in row and pd.notna(row[cat]):
+                        hour_dict[simplified] = round(float(row[cat]), 4)
+                
+                hourly_data.append(hour_dict)
+            
+            # Sort by timestamp
+            hourly_data.sort(key=lambda x: x["timestamp"])
+            
+            return hourly_data, None
+            
+    except Exception as e:
+        _Logger.error(
+            "Error getting historical day data for %s: %s",
+            date_str,
+            e,
+            exc_info=True,
+        )
+        return None, str(e)

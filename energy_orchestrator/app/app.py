@@ -15,6 +15,8 @@ from ml.heating_features import (
     validate_prediction_start_time,
     validate_simplified_scenario,
     convert_simplified_to_model_features,
+    get_available_historical_days,
+    get_historical_day_hourly_data,
     SIMPLIFIED_REQUIRED_FIELDS,
     SIMPLIFIED_OPTIONAL_FIELDS,
 )
@@ -917,6 +919,116 @@ def get_scenario_example():
         "required_fields": SIMPLIFIED_REQUIRED_FIELDS,
         "optional_fields": SIMPLIFIED_OPTIONAL_FIELDS,
     })
+
+
+@app.get("/api/examples/available_days")
+def get_available_days():
+    """
+    Get list of available historical days that can be used as scenario examples.
+    
+    Returns days from the 5-minute resampled data, excluding the first and last day
+    to ensure complete data is available.
+    
+    Response:
+    {
+        "status": "success",
+        "days": ["2024-01-02", "2024-01-03", ...],
+        "count": 10
+    }
+    """
+    try:
+        days = get_available_historical_days()
+        
+        return jsonify({
+            "status": "success",
+            "days": days,
+            "count": len(days),
+        })
+    except Exception as e:
+        _Logger.error("Error getting available days: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/examples/historical_day/<date_str>")
+def get_historical_day_example(date_str: str):
+    """
+    Get hourly averaged data for a specific historical day.
+    
+    This endpoint retrieves actual historical data from the 5-minute samples,
+    aggregated to hourly averages, for use as a scenario example.
+    
+    Path parameter:
+        date_str: Date in YYYY-MM-DD format
+        
+    Response:
+    {
+        "status": "success",
+        "date": "2024-01-15",
+        "hourly_data": [
+            {
+                "timestamp": "2024-01-15T00:00:00",
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 17.0,
+                "indoor_temperature": 19.5,
+                "actual_heating_kwh": 1.25
+            },
+            ...
+        ],
+        "scenario_format": {...}  // Ready-to-use format for /api/predictions/scenario
+    }
+    """
+    try:
+        data, error = get_historical_day_hourly_data(date_str)
+        
+        if data is None:
+            return jsonify({
+                "status": "error",
+                "message": error or "No data available",
+            }), 404
+        
+        # Build scenario format (convert to future timestamps for prediction)
+        # Note: timestamps remain historical for comparison purposes
+        scenario_timeslots = []
+        for hour in data:
+            slot = {
+                "timestamp": hour["timestamp"],
+            }
+            # Add required fields
+            if "outdoor_temperature" in hour:
+                slot["outdoor_temperature"] = hour["outdoor_temperature"]
+            if "wind_speed" in hour:
+                slot["wind_speed"] = hour["wind_speed"]
+            if "humidity" in hour:
+                slot["humidity"] = hour["humidity"]
+            if "pressure" in hour:
+                slot["pressure"] = hour["pressure"]
+            if "target_temperature" in hour:
+                slot["target_temperature"] = hour["target_temperature"]
+            # Add optional fields
+            if "indoor_temperature" in hour:
+                slot["indoor_temperature"] = hour["indoor_temperature"]
+            
+            scenario_timeslots.append(slot)
+        
+        model = _get_model()
+        
+        return jsonify({
+            "status": "success",
+            "date": date_str,
+            "hourly_data": data,
+            "scenario_format": {
+                "timeslots": scenario_timeslots,
+            },
+            "model_available": model is not None and model.is_available,
+            "description": f"Historical data for {date_str} with hourly averages",
+        })
+        
+    except Exception as e:
+        _Logger.error("Error getting historical day data: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 if __name__ == "__main__":

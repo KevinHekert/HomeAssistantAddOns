@@ -942,3 +942,241 @@ class TestConvertSimplifiedToModelFeatures:
         
         assert len(timestamps) == 1
         assert timestamps[0].hour == 14
+
+
+class TestGetAvailableHistoricalDays:
+    """Tests for get_available_historical_days function."""
+    
+    def test_no_data_returns_empty_list(self, patch_engine):
+        """Returns empty list when no data exists."""
+        from ml.heating_features import get_available_historical_days
+        
+        days = get_available_historical_days()
+        
+        assert days == []
+    
+    def test_fewer_than_3_days_returns_empty(self, patch_engine):
+        """Returns empty list when fewer than 3 days of data exist."""
+        from ml.heating_features import get_available_historical_days
+        
+        start = datetime(2024, 1, 15, 0, 0, 0)
+        
+        # Create 2 days of data
+        with Session(patch_engine) as session:
+            for day in range(2):
+                for hour in range(24):
+                    slot_start = start + timedelta(days=day, hours=hour)
+                    session.add(ResampledSample(
+                        slot_start=slot_start,
+                        category="outdoor_temp",
+                        value=5.0,
+                        unit="°C",
+                    ))
+            session.commit()
+        
+        days = get_available_historical_days()
+        
+        assert days == []
+    
+    def test_returns_middle_days_only(self, patch_engine):
+        """Returns only middle days, excluding first and last."""
+        from ml.heating_features import get_available_historical_days
+        
+        start = datetime(2024, 1, 15, 0, 0, 0)
+        
+        # Create 5 days of data
+        with Session(patch_engine) as session:
+            for day in range(5):
+                for hour in range(4):  # Just 4 samples per day for efficiency
+                    slot_start = start + timedelta(days=day, hours=hour)
+                    session.add(ResampledSample(
+                        slot_start=slot_start,
+                        category="outdoor_temp",
+                        value=5.0,
+                        unit="°C",
+                    ))
+            session.commit()
+        
+        days = get_available_historical_days()
+        
+        # Should have 3 days (excluding first and last)
+        assert len(days) == 3
+        assert "2024-01-16" in days  # Second day
+        assert "2024-01-17" in days  # Third day
+        assert "2024-01-18" in days  # Fourth day
+        assert "2024-01-15" not in days  # First day excluded
+        assert "2024-01-19" not in days  # Last day excluded
+    
+    def test_returns_sorted_dates(self, patch_engine):
+        """Returns dates in sorted order."""
+        from ml.heating_features import get_available_historical_days
+        
+        start = datetime(2024, 1, 15, 0, 0, 0)
+        
+        # Create 4 days of data in random order
+        with Session(patch_engine) as session:
+            for day in [2, 0, 3, 1]:  # Random order
+                slot_start = start + timedelta(days=day)
+                session.add(ResampledSample(
+                    slot_start=slot_start,
+                    category="outdoor_temp",
+                    value=5.0,
+                    unit="°C",
+                ))
+            session.commit()
+        
+        days = get_available_historical_days()
+        
+        # Should be in sorted order
+        assert len(days) == 2
+        assert days == ["2024-01-16", "2024-01-17"]
+
+
+class TestGetHistoricalDayHourlyData:
+    """Tests for get_historical_day_hourly_data function."""
+    
+    def test_invalid_date_format(self, patch_engine):
+        """Returns error for invalid date format."""
+        from ml.heating_features import get_historical_day_hourly_data
+        
+        data, error = get_historical_day_hourly_data("not-a-date")
+        
+        assert data is None
+        assert error is not None
+        assert "Invalid date format" in error
+    
+    def test_no_data_for_date(self, patch_engine):
+        """Returns error when no data for specified date."""
+        from ml.heating_features import get_historical_day_hourly_data
+        
+        data, error = get_historical_day_hourly_data("2024-01-15")
+        
+        assert data is None
+        assert error is not None
+        assert "No data" in error
+    
+    def test_returns_hourly_data(self, patch_engine):
+        """Returns hourly averaged data for a day."""
+        from ml.heating_features import get_historical_day_hourly_data
+        
+        start = datetime(2024, 1, 15, 0, 0, 0)
+        
+        # Create 24 hours of 5-minute data
+        with Session(patch_engine) as session:
+            for hour in range(24):
+                for minute in range(0, 60, 5):
+                    slot_start = start + timedelta(hours=hour, minutes=minute)
+                    session.add(ResampledSample(
+                        slot_start=slot_start,
+                        category="outdoor_temp",
+                        value=5.0 + hour * 0.1,
+                        unit="°C",
+                    ))
+                    session.add(ResampledSample(
+                        slot_start=slot_start,
+                        category="wind",
+                        value=3.0,
+                        unit="m/s",
+                    ))
+                    session.add(ResampledSample(
+                        slot_start=slot_start,
+                        category="humidity",
+                        value=75.0,
+                        unit="%",
+                    ))
+                    session.add(ResampledSample(
+                        slot_start=slot_start,
+                        category="pressure",
+                        value=1013.0,
+                        unit="hPa",
+                    ))
+                    session.add(ResampledSample(
+                        slot_start=slot_start,
+                        category="target_temp",
+                        value=20.0,
+                        unit="°C",
+                    ))
+                    session.add(ResampledSample(
+                        slot_start=slot_start,
+                        category="indoor_temp",
+                        value=19.5,
+                        unit="°C",
+                    ))
+                    # hp_kwh_total increases over time
+                    session.add(ResampledSample(
+                        slot_start=slot_start,
+                        category="hp_kwh_total",
+                        value=100.0 + hour + minute / 60.0,
+                        unit="kWh",
+                    ))
+            session.commit()
+        
+        data, error = get_historical_day_hourly_data("2024-01-15")
+        
+        assert data is not None
+        assert error is None
+        assert len(data) == 24  # 24 hours
+        
+        # Check first hour has all expected fields
+        first_hour = data[0]
+        assert "timestamp" in first_hour
+        assert "outdoor_temperature" in first_hour
+        assert "wind_speed" in first_hour
+        assert "humidity" in first_hour
+        assert "pressure" in first_hour
+        assert "target_temperature" in first_hour
+        assert "indoor_temperature" in first_hour
+        assert "actual_heating_kwh" in first_hour
+    
+    def test_hourly_averaging(self, patch_engine):
+        """Data is correctly averaged per hour."""
+        from ml.heating_features import get_historical_day_hourly_data
+        
+        start = datetime(2024, 1, 15, 12, 0, 0)
+        
+        # Create 12 samples for one hour with known average
+        with Session(patch_engine) as session:
+            for i in range(12):
+                slot_start = start + timedelta(minutes=5 * i)
+                # Values from 0 to 11, average should be 5.5
+                session.add(ResampledSample(
+                    slot_start=slot_start,
+                    category="outdoor_temp",
+                    value=float(i),
+                    unit="°C",
+                ))
+            session.commit()
+        
+        data, error = get_historical_day_hourly_data("2024-01-15")
+        
+        assert data is not None
+        assert len(data) == 1
+        
+        # Average of 0,1,2,3,4,5,6,7,8,9,10,11 = 5.5
+        assert data[0]["outdoor_temperature"] == 5.5
+    
+    def test_hp_kwh_delta_calculation(self, patch_engine):
+        """hp_kwh_total is converted to delta (max - min) per hour."""
+        from ml.heating_features import get_historical_day_hourly_data
+        
+        start = datetime(2024, 1, 15, 12, 0, 0)
+        
+        # Create 12 samples for one hour
+        with Session(patch_engine) as session:
+            for i in range(12):
+                slot_start = start + timedelta(minutes=5 * i)
+                # hp_kwh_total increases from 100 to 111
+                session.add(ResampledSample(
+                    slot_start=slot_start,
+                    category="hp_kwh_total",
+                    value=100.0 + i,
+                    unit="kWh",
+                ))
+            session.commit()
+        
+        data, error = get_historical_day_hourly_data("2024-01-15")
+        
+        assert data is not None
+        
+        # Delta should be 111 - 100 = 11
+        assert data[0]["actual_heating_kwh"] == 11.0

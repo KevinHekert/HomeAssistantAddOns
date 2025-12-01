@@ -881,3 +881,172 @@ class TestScenarioExampleEndpoint:
             for slot in data["example"]["timeslots"]:
                 ts = datetime.fromisoformat(slot["timestamp"])
                 assert ts > now
+
+
+class TestAvailableDaysEndpoint:
+    """Test the /api/examples/available_days GET endpoint."""
+
+    def test_available_days_success(self, client):
+        """Get available days returns 200 with list of days."""
+        with patch("app.get_available_historical_days") as mock_get_days:
+            mock_get_days.return_value = ["2024-01-02", "2024-01-03", "2024-01-04"]
+
+            response = client.get("/api/examples/available_days")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert "days" in data
+            assert len(data["days"]) == 3
+            assert data["count"] == 3
+            assert "2024-01-02" in data["days"]
+
+    def test_available_days_empty(self, client):
+        """Get available days returns empty list when no data."""
+        with patch("app.get_available_historical_days") as mock_get_days:
+            mock_get_days.return_value = []
+
+            response = client.get("/api/examples/available_days")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["days"] == []
+            assert data["count"] == 0
+
+    def test_available_days_error(self, client):
+        """Error fetching days returns 500."""
+        with patch("app.get_available_historical_days") as mock_get_days:
+            mock_get_days.side_effect = Exception("Database error")
+
+            response = client.get("/api/examples/available_days")
+
+            assert response.status_code == 500
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "Database error" in data["message"]
+
+
+class TestHistoricalDayEndpoint:
+    """Test the /api/examples/historical_day/<date_str> GET endpoint."""
+
+    def test_historical_day_success(self, client):
+        """Get historical day returns 200 with hourly data."""
+        hourly_data = [
+            {
+                "timestamp": "2024-01-15T00:00:00",
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 17.0,
+                "indoor_temperature": 19.5,
+                "actual_heating_kwh": 1.25,
+            },
+            {
+                "timestamp": "2024-01-15T01:00:00",
+                "outdoor_temperature": 4.5,
+                "wind_speed": 3.5,
+                "humidity": 76.0,
+                "pressure": 1013.0,
+                "target_temperature": 17.0,
+                "indoor_temperature": 19.3,
+                "actual_heating_kwh": 1.30,
+            },
+        ]
+        with patch("app.get_historical_day_hourly_data") as mock_get_data, \
+             patch("app._get_model") as mock_get_model:
+            mock_get_data.return_value = (hourly_data, None)
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/historical_day/2024-01-15")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["date"] == "2024-01-15"
+            assert "hourly_data" in data
+            assert len(data["hourly_data"]) == 2
+            assert "scenario_format" in data
+            assert "timeslots" in data["scenario_format"]
+
+    def test_historical_day_not_found(self, client):
+        """Get historical day returns 404 when no data available."""
+        with patch("app.get_historical_day_hourly_data") as mock_get_data:
+            mock_get_data.return_value = (None, "No data available for date 2024-01-15")
+
+            response = client.get("/api/examples/historical_day/2024-01-15")
+
+            assert response.status_code == 404
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "No data" in data["message"]
+
+    def test_historical_day_invalid_date(self, client):
+        """Get historical day with invalid date format returns 404."""
+        with patch("app.get_historical_day_hourly_data") as mock_get_data:
+            mock_get_data.return_value = (None, "Invalid date format")
+
+            response = client.get("/api/examples/historical_day/invalid-date")
+
+            assert response.status_code == 404
+            data = response.get_json()
+            assert data["status"] == "error"
+
+    def test_historical_day_scenario_format(self, client):
+        """Historical day returns proper scenario format."""
+        hourly_data = [
+            {
+                "timestamp": "2024-01-15T12:00:00",
+                "outdoor_temperature": 8.0,
+                "wind_speed": 4.0,
+                "humidity": 70.0,
+                "pressure": 1015.0,
+                "target_temperature": 20.0,
+                "indoor_temperature": 19.8,
+                "actual_heating_kwh": 0.95,
+            },
+        ]
+        with patch("app.get_historical_day_hourly_data") as mock_get_data, \
+             patch("app._get_model") as mock_get_model:
+            mock_get_data.return_value = (hourly_data, None)
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/historical_day/2024-01-15")
+
+            data = response.get_json()
+            scenario_slot = data["scenario_format"]["timeslots"][0]
+            
+            # Check that scenario format contains required fields
+            assert "timestamp" in scenario_slot
+            assert "outdoor_temperature" in scenario_slot
+            assert "wind_speed" in scenario_slot
+            assert "humidity" in scenario_slot
+            assert "pressure" in scenario_slot
+            assert "target_temperature" in scenario_slot
+
+    def test_historical_day_model_status(self, client, mock_model):
+        """Historical day shows model availability."""
+        hourly_data = [{"timestamp": "2024-01-15T00:00:00", "outdoor_temperature": 5.0}]
+        
+        with patch("app.get_historical_day_hourly_data") as mock_get_data, \
+             patch("app._get_model") as mock_get_model:
+            mock_get_data.return_value = (hourly_data, None)
+            mock_get_model.return_value = mock_model
+
+            response = client.get("/api/examples/historical_day/2024-01-15")
+
+            data = response.get_json()
+            assert data["model_available"] is True
+
+    def test_historical_day_error(self, client):
+        """Error fetching historical day returns 500."""
+        with patch("app.get_historical_day_hourly_data") as mock_get_data:
+            mock_get_data.side_effect = Exception("Database error")
+
+            response = client.get("/api/examples/historical_day/2024-01-15")
+
+            assert response.status_code == 500
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "Database error" in data["message"]

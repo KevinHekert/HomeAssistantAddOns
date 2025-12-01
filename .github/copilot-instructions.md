@@ -2,6 +2,15 @@
 
 This repository contains Home Assistant Add-ons. Below are the guidelines and conventions for developing and maintaining the add-ons in this repository.
 
+## Development Requirements
+
+**Always test everything and write tests when developing.** This is a mandatory requirement for all code changes:
+
+- Run all existing tests before and after making changes
+- Write new tests for any new functionality or bug fixes
+- Ensure all tests pass before considering a change complete
+- Follow test-driven development (TDD) practices when appropriate
+
 ## Repository Structure
 
 ```

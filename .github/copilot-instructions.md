@@ -11,6 +11,24 @@ This repository contains Home Assistant Add-ons. Below are the guidelines and co
 - Ensure all tests pass before considering a change complete
 - Follow test-driven development (TDD) practices when appropriate
 
+**Always verify builds and runtime functionality:**
+
+- Always check that the code builds successfully
+- Always verify that the application runs correctly after changes
+- Test the actual functionality, not just unit tests
+
+**Always run tests automatically and report results:**
+
+- Run all tests automatically as part of the development process
+- Post test results in the pull request conversation
+- Include both passed and failed test summaries
+
+**Always explain changes in pull requests:**
+
+- Provide a clear functional explanation of what was changed and why
+- Describe the impact of changes on the application behavior
+- Document any breaking changes or migration steps required
+
 ## Repository Structure
 
 ```

@@ -140,7 +140,7 @@
             statusDiv.textContent = 'Resampling in progress...';
             
             try {
-                const response = await fetch('resample', {
+                const response = await fetch('/resample', {
                     method: 'POST'
                 });
                 
@@ -181,7 +181,7 @@
             statusDiv.textContent = 'Training model... This may take a while.';
             
             try {
-                const response = await fetch('api/train/heating_demand', {
+                const response = await fetch('/api/train/heating_demand', {
                     method: 'POST'
                 });
                 
@@ -229,7 +229,7 @@
             statusDiv.textContent = 'Checking model status...';
             
             try {
-                const response = await fetch('api/model/status');
+                const response = await fetch('/api/model/status');
                 const data = await response.json();
                 
                 if (data.status === 'available') {

@@ -88,7 +88,7 @@
             statusDiv.textContent = 'Resampling in progress...';
             
             try {
-                const response = await fetch('/resample', {
+                const response = await fetch('resample', {
                     method: 'POST'
                 });
                 

@@ -1,5 +1,5 @@
 name: Energy Orchestrator
-version: "0.0.0.38"
+version: "0.0.0.39"
 slug: energy_orchestrator
 description: Flask UI voor toekomstige energie-optimisatie.
 arch:
@@ -29,6 +29,9 @@ options:
   pressure_entity_id: sensor.knmi_luchtdruk
   hp_kwh_total_entity_id: sensor.extra_total
   dhw_temp_entity_id: sensor.opentherm_dhw_temperature
+  indoor_temp_entity_id: sensor.anna_temperature
+  target_temp_entity_id: sensor.anna_setpoint
+  dhw_active_entity_id: binary_sensor.dhw_active
 
 schema:
   db_host: str
@@ -43,3 +46,6 @@ schema:
   pressure_entity_id: str?
   hp_kwh_total_entity_id: str?
   dhw_temp_entity_id: str?
+  indoor_temp_entity_id: str?
+  target_temp_entity_id: str?
+  dhw_active_entity_id: str?

@@ -26,6 +26,9 @@ SENSOR_CATEGORIES = {
     "pressure": "PRESSURE_ENTITY_ID",
     "hp_kwh_total": "HP_KWH_TOTAL_ENTITY_ID",
     "dhw_temp": "DHW_TEMP_ENTITY_ID",
+    "indoor_temp": "INDOOR_TEMP_ENTITY_ID",
+    "target_temp": "TARGET_TEMP_ENTITY_ID",
+    "dhw_active": "DHW_ACTIVE_ENTITY_ID",
 }
 
 # Default fallback entity IDs (same as in workers/sensors.py)
@@ -38,6 +41,9 @@ DEFAULT_ENTITIES = {
     "pressure": "sensor.knmi_luchtdruk",
     "hp_kwh_total": "sensor.extra_total",
     "dhw_temp": "sensor.opentherm_dhw_temperature",
+    "indoor_temp": "sensor.anna_temperature",
+    "target_temp": "sensor.anna_setpoint",
+    "dhw_active": "binary_sensor.dhw_active",
 }
 
 

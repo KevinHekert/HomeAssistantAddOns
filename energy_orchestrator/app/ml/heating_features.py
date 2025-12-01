@@ -60,6 +60,12 @@ class ScenarioValidationResult:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
+
+# Default values for missing model features
+DEFAULT_OUTDOOR_TEMP = 5.0  # Default outdoor temperature in °C
+DEFAULT_HEATING_KWH = 2.0   # Default heating consumption in kWh
+HOURS_PER_DAY = 24          # Hours in a day for heating degree calculation
+
 # Feature categories used as model inputs (exogenous variables only)
 INPUT_CATEGORIES = [
     "outdoor_temp",
@@ -763,13 +769,47 @@ def validate_simplified_scenario(
     timeslots: list[dict],
 ) -> ScenarioValidationResult:
     """
-    Validate simplified scenario input.
+    Validate simplified scenario input for heating demand predictions.
+    
+    This function validates user-provided scenario timeslots to ensure they
+    contain all required fields and have valid values for prediction.
+    
+    Validation Rules:
+    - Scenario must contain at least one timeslot
+    - Each timeslot must have all required fields (see SIMPLIFIED_REQUIRED_FIELDS)
+    - Timestamps must be ISO 8601 format and in the future
+    - All numeric fields must be valid numbers
+    - Optional fields (like indoor_temperature) are validated if present
     
     Args:
-        timeslots: List of simplified timeslot dictionaries
+        timeslots: List of simplified timeslot dictionaries. Each dict should have:
+            - timestamp: ISO 8601 datetime string (must be in future)
+            - outdoor_temperature: float (°C)
+            - wind_speed: float (m/s)
+            - humidity: float (%)
+            - pressure: float (hPa)
+            - target_temperature: float (°C)
+            - indoor_temperature: float, optional (°C)
         
     Returns:
-        ScenarioValidationResult with validation status
+        ScenarioValidationResult with:
+            - valid: bool indicating if all validations passed
+            - errors: list of error messages for each failed validation
+            - warnings: list of warning messages (non-blocking issues)
+            
+    Example:
+        >>> from datetime import datetime, timedelta
+        >>> next_hour = datetime.now() + timedelta(hours=1)
+        >>> slots = [{
+        ...     "timestamp": next_hour.isoformat(),
+        ...     "outdoor_temperature": 5.0,
+        ...     "wind_speed": 3.0,
+        ...     "humidity": 75.0,
+        ...     "pressure": 1013.0,
+        ...     "target_temperature": 20.0,
+        ... }]
+        >>> result = validate_simplified_scenario(slots)
+        >>> assert result.valid
     """
     result = ScenarioValidationResult(valid=True)
     
@@ -1008,9 +1048,9 @@ def convert_simplified_to_model_features(
     # Add historical heating to first slot, then rolling sum for subsequent
     for i, features in enumerate(base_features):
         if "heating_kwh_last_6h" in model_feature_names:
-            features["heating_kwh_last_6h"] = historical_heating.get("heating_kwh_last_6h", 2.0)
+            features["heating_kwh_last_6h"] = historical_heating.get("heating_kwh_last_6h", DEFAULT_HEATING_KWH)
         if "heating_kwh_last_24h" in model_feature_names:
-            features["heating_kwh_last_24h"] = historical_heating.get("heating_kwh_last_24h", 10.0)
+            features["heating_kwh_last_24h"] = historical_heating.get("heating_kwh_last_24h", DEFAULT_HEATING_KWH * 5)
     
     # Enrich with historical aggregations and time features
     enriched_features = compute_scenario_historical_features(
@@ -1030,14 +1070,14 @@ def convert_simplified_to_model_features(
                 if "avg" in feat:
                     # Use corresponding base value
                     base_name = feat.split("_avg_")[0]
-                    final_slot[feat] = features.get(base_name, 5.0)
+                    final_slot[feat] = features.get(base_name, DEFAULT_OUTDOOR_TEMP)
                 elif feat.startswith("heating_kwh"):
-                    final_slot[feat] = historical_heating.get(feat, 2.0)
+                    final_slot[feat] = historical_heating.get(feat, DEFAULT_HEATING_KWH)
                 elif feat == "heating_degree_hours_24h":
                     # Compute from target and outdoor if available
                     target = features.get("target_temp", 20.0)
-                    outdoor = features.get("outdoor_temp", 5.0)
-                    final_slot[feat] = max(0, target - outdoor) * 24
+                    outdoor = features.get("outdoor_temp", DEFAULT_OUTDOOR_TEMP)
+                    final_slot[feat] = max(0, target - outdoor) * HOURS_PER_DAY
                 else:
                     final_slot[feat] = 0.0
         final_features.append(final_slot)

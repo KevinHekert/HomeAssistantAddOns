@@ -35,6 +35,9 @@ _Logger = logging.getLogger(__name__)
 # Voor nu één sensor; later lijst vanuit config/integratie
 WIND_ENTITY_ID = "sensor.knmi_windsnelheid"
 
+# Precision for prediction output values
+PREDICTION_DECIMAL_PLACES = 4
+
 # Global model instance
 _heating_model: HeatingDemandModel | None = None
 
@@ -824,13 +827,13 @@ def predict_heating_demand_scenario():
         for ts, pred in zip(parsed_timestamps, predictions):
             prediction_results.append({
                 "timestamp": ts.isoformat(),
-                "predicted_kwh": round(pred, 4),
+                "predicted_kwh": round(pred, PREDICTION_DECIMAL_PLACES),
             })
         
         return jsonify({
             "status": "success",
             "predictions": prediction_results,
-            "total_kwh": round(sum(predictions), 4),
+            "total_kwh": round(sum(predictions), PREDICTION_DECIMAL_PLACES),
             "slots_count": len(predictions),
             "model_info": {
                 "training_timestamp": model.training_timestamp.isoformat() if model.training_timestamp else None,

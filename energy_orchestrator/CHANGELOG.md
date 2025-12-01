@@ -2,6 +2,15 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.52] - 2025-12-01
+
+- Added comprehensive technical and functional documentation (README.md)
+- Documented all calculations: time-weighted averaging, historical aggregations, feature engineering
+- Documented model storage location (`/data/heating_demand_model.joblib`)
+- Added complete API reference with request/response examples
+- Added usage examples for Python and Home Assistant automations
+- Documented database schema and architecture
+
 ## [0.0.0.51] - 2025-12-01
 
 - Fixed resampling to properly return statistics (ResampleStats) with slots_processed, slots_saved, slots_skipped

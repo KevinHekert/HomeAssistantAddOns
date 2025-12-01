@@ -192,7 +192,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
     # Summary log: only log at INFO level if new samples were inserted
     if inserted > 0:
         _Logger.info(
-            "Retrieved and saved %d measurements from %s.",
+            "Opgehaald en opgeslagen: %d metingen van %s.",
             inserted,
             entity_id,
         )

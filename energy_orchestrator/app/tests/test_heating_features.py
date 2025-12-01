@@ -556,3 +556,389 @@ class TestFeatureDatasetStatsTimeRange:
         # Check time range makes sense
         assert stats.data_start_time < stats.data_end_time
         assert stats.available_history_hours > 0
+
+
+class TestValidateSimplifiedScenario:
+    """Tests for validate_simplified_scenario function."""
+    
+    def test_empty_timeslots(self):
+        """Empty timeslots list returns invalid."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        result = validate_simplified_scenario([])
+        
+        assert not result.valid
+        assert any("at least one" in err for err in result.errors)
+    
+    def test_valid_scenario(self):
+        """Valid scenario with all required fields passes."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [{
+            "timestamp": next_hour.isoformat(),
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+        }]
+        
+        result = validate_simplified_scenario(timeslots)
+        
+        assert result.valid
+        assert len(result.errors) == 0
+    
+    def test_missing_required_field(self):
+        """Missing required field returns invalid."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [{
+            "timestamp": next_hour.isoformat(),
+            "outdoor_temperature": 5.0,
+            # Missing wind_speed, humidity, pressure, target_temperature
+        }]
+        
+        result = validate_simplified_scenario(timeslots)
+        
+        assert not result.valid
+        assert any("Missing required field" in err for err in result.errors)
+    
+    def test_null_required_field(self):
+        """Null required field returns invalid."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [{
+            "timestamp": next_hour.isoformat(),
+            "outdoor_temperature": None,  # Null value
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+        }]
+        
+        result = validate_simplified_scenario(timeslots)
+        
+        assert not result.valid
+        assert any("null" in err.lower() for err in result.errors)
+    
+    def test_past_timestamp(self):
+        """Past timestamp returns invalid."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        past_time = datetime.now() - timedelta(hours=2)
+        timeslots = [{
+            "timestamp": past_time.isoformat(),
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+        }]
+        
+        result = validate_simplified_scenario(timeslots)
+        
+        assert not result.valid
+        assert any("future" in err.lower() for err in result.errors)
+    
+    def test_invalid_timestamp_format(self):
+        """Invalid timestamp format returns invalid."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        timeslots = [{
+            "timestamp": "not-a-date",
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+        }]
+        
+        result = validate_simplified_scenario(timeslots)
+        
+        assert not result.valid
+        assert any("Invalid timestamp" in err or "format" in err.lower() for err in result.errors)
+    
+    def test_invalid_numeric_field(self):
+        """Invalid numeric field returns invalid."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [{
+            "timestamp": next_hour.isoformat(),
+            "outdoor_temperature": "not-a-number",
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+        }]
+        
+        result = validate_simplified_scenario(timeslots)
+        
+        assert not result.valid
+        assert any("must be a number" in err for err in result.errors)
+    
+    def test_multiple_timeslots_validation(self):
+        """Multiple timeslots are all validated."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        past_time = datetime.now() - timedelta(hours=1)
+        
+        timeslots = [
+            {  # Valid
+                "timestamp": next_hour.isoformat(),
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+            {  # Invalid - past timestamp
+                "timestamp": past_time.isoformat(),
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+        ]
+        
+        result = validate_simplified_scenario(timeslots)
+        
+        assert not result.valid
+        # Error should reference timeslot 1
+        assert any("Timeslot 1" in err for err in result.errors)
+    
+    def test_optional_indoor_temperature(self):
+        """Optional indoor_temperature is validated if present."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [{
+            "timestamp": next_hour.isoformat(),
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+            "indoor_temperature": 19.5,  # Optional field
+        }]
+        
+        result = validate_simplified_scenario(timeslots)
+        
+        assert result.valid
+    
+    def test_invalid_optional_indoor_temperature(self):
+        """Invalid optional indoor_temperature returns invalid."""
+        from ml.heating_features import validate_simplified_scenario
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [{
+            "timestamp": next_hour.isoformat(),
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+            "indoor_temperature": "not-a-number",
+        }]
+        
+        result = validate_simplified_scenario(timeslots)
+        
+        assert not result.valid
+        assert any("indoor_temperature" in err and "number" in err for err in result.errors)
+
+
+class TestConvertSimplifiedToModelFeatures:
+    """Tests for convert_simplified_to_model_features function."""
+    
+    def test_empty_timeslots(self):
+        """Empty timeslots returns empty lists."""
+        from ml.heating_features import convert_simplified_to_model_features
+        
+        features, timestamps = convert_simplified_to_model_features([], [])
+        
+        assert features == []
+        assert timestamps == []
+    
+    def test_basic_conversion(self):
+        """Basic conversion maps simplified fields to model fields."""
+        from ml.heating_features import convert_simplified_to_model_features
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [{
+            "timestamp": next_hour.isoformat(),
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+            "indoor_temperature": 19.5,
+        }]
+        
+        model_features = ["outdoor_temp", "wind", "humidity", "pressure", "target_temp", "indoor_temp"]
+        
+        features, timestamps = convert_simplified_to_model_features(
+            timeslots, model_features, include_historical_heating=False
+        )
+        
+        assert len(features) == 1
+        assert len(timestamps) == 1
+        
+        # Check field mapping
+        assert features[0]["outdoor_temp"] == 5.0
+        assert features[0]["wind"] == 3.0
+        assert features[0]["humidity"] == 75.0
+        assert features[0]["pressure"] == 1013.0
+        assert features[0]["target_temp"] == 20.0
+        assert features[0]["indoor_temp"] == 19.5
+    
+    def test_adds_time_features(self):
+        """Conversion adds time features from timestamp."""
+        from ml.heating_features import convert_simplified_to_model_features
+        
+        # Create a specific timestamp for predictable results
+        ts = datetime(2024, 6, 15, 14, 0, 0)  # Saturday 2pm
+        timeslots = [{
+            "timestamp": ts.isoformat(),
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+        }]
+        
+        model_features = ["outdoor_temp", "hour_of_day", "day_of_week", "is_weekend", "is_night"]
+        
+        features, _ = convert_simplified_to_model_features(
+            timeslots, model_features, include_historical_heating=False
+        )
+        
+        assert features[0]["hour_of_day"] == 14
+        assert features[0]["day_of_week"] == 5  # Saturday
+        assert features[0]["is_weekend"] == 1
+        assert features[0]["is_night"] == 0
+    
+    def test_adds_historical_aggregations(self):
+        """Conversion adds historical aggregation features."""
+        from ml.heating_features import convert_simplified_to_model_features
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [
+            {
+                "timestamp": (next_hour).isoformat(),
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+            {
+                "timestamp": (next_hour + timedelta(hours=1)).isoformat(),
+                "outdoor_temperature": 4.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+        ]
+        
+        model_features = ["outdoor_temp", "outdoor_temp_avg_1h", "outdoor_temp_avg_6h"]
+        
+        features, _ = convert_simplified_to_model_features(
+            timeslots, model_features, include_historical_heating=False
+        )
+        
+        # First slot: 1h avg = 5.0 (only one value)
+        assert features[0]["outdoor_temp_avg_1h"] == 5.0
+        
+        # Second slot: 1h avg = 4.0 (current value with window=1)
+        assert features[1]["outdoor_temp_avg_1h"] == 4.0
+    
+    def test_uses_target_temp_for_missing_indoor(self):
+        """When indoor_temperature is missing, uses target_temperature."""
+        from ml.heating_features import convert_simplified_to_model_features
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [{
+            "timestamp": next_hour.isoformat(),
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+            # No indoor_temperature
+        }]
+        
+        model_features = ["outdoor_temp", "indoor_temp", "target_temp"]
+        
+        features, _ = convert_simplified_to_model_features(
+            timeslots, model_features, include_historical_heating=False
+        )
+        
+        # indoor_temp should be set to target_temp
+        assert features[0]["indoor_temp"] == 20.0
+    
+    def test_computes_heating_degree_hours(self):
+        """Conversion computes heating degree hours."""
+        from ml.heating_features import convert_simplified_to_model_features
+        
+        next_hour = datetime.now() + timedelta(hours=1)
+        timeslots = [{
+            "timestamp": next_hour.isoformat(),
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,  # 15 degree difference
+        }]
+        
+        model_features = ["outdoor_temp", "target_temp", "heating_degree_hours_24h"]
+        
+        features, _ = convert_simplified_to_model_features(
+            timeslots, model_features, include_historical_heating=False
+        )
+        
+        # For single slot, heating_degree_hours = (20 - 5) * 1 = 15
+        assert features[0]["heating_degree_hours_24h"] == 15.0
+    
+    def test_parses_timestamp_strings(self):
+        """Timestamps are correctly parsed from strings."""
+        from ml.heating_features import convert_simplified_to_model_features
+        
+        ts_str = "2024-06-15T14:00:00"
+        timeslots = [{
+            "timestamp": ts_str,
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+        }]
+        
+        _, timestamps = convert_simplified_to_model_features(timeslots, [], False)
+        
+        assert len(timestamps) == 1
+        assert timestamps[0] == datetime(2024, 6, 15, 14, 0, 0)
+    
+    def test_handles_timezone_in_timestamp(self):
+        """Timestamps with timezone info are handled correctly."""
+        from ml.heating_features import convert_simplified_to_model_features
+        
+        ts_str = "2024-06-15T14:00:00Z"  # UTC
+        timeslots = [{
+            "timestamp": ts_str,
+            "outdoor_temperature": 5.0,
+            "wind_speed": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": 20.0,
+        }]
+        
+        _, timestamps = convert_simplified_to_model_features(timeslots, [], False)
+        
+        assert len(timestamps) == 1
+        assert timestamps[0].hour == 14

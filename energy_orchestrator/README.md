@@ -448,6 +448,130 @@ POST /api/predictions/heating_demand_profile
 
 ---
 
+### Predict Heating Demand - Simplified Scenario API ⭐ NEW
+
+Predict heating demand using simplified, human-readable inputs. The system automatically calculates all required model features internally.
+
+```http
+POST /api/predictions/scenario
+```
+
+**Request body:**
+
+```json
+{
+  "timeslots": [
+    {
+      "timestamp": "2024-01-15T14:00:00",
+      "outdoor_temperature": 5.0,
+      "wind_speed": 3.0,
+      "humidity": 75.0,
+      "pressure": 1013.0,
+      "target_temperature": 20.0,
+      "indoor_temperature": 19.5
+    },
+    {
+      "timestamp": "2024-01-15T15:00:00",
+      "outdoor_temperature": 4.5,
+      "wind_speed": 3.5,
+      "humidity": 76.0,
+      "pressure": 1013.0,
+      "target_temperature": 20.0
+    }
+  ]
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "predictions": [
+    {
+      "timestamp": "2024-01-15T14:00:00",
+      "predicted_kwh": 1.2345
+    },
+    {
+      "timestamp": "2024-01-15T15:00:00",
+      "predicted_kwh": 0.9876
+    }
+  ],
+  "total_kwh": 2.2221,
+  "slots_count": 2,
+  "model_info": {
+    "training_timestamp": "2024-01-15T10:30:00"
+  }
+}
+```
+
+**Required Fields (per timeslot):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | string | ISO 8601 datetime, **must be in the future** |
+| `outdoor_temperature` | number | Forecasted outdoor temperature (°C) |
+| `wind_speed` | number | Forecasted wind speed (m/s) |
+| `humidity` | number | Forecasted relative humidity (%) |
+| `pressure` | number | Forecasted air pressure (hPa) |
+| `target_temperature` | number | Planned indoor setpoint (°C) |
+
+**Optional Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `indoor_temperature` | number | Expected indoor temperature (°C). If not provided, uses target_temperature. |
+
+**Automatically Computed by the System:**
+
+The following features are derived internally and **should NOT be sent**:
+
+- Time features: `hour_of_day`, `day_of_week`, `is_weekend`, `is_night`
+- Historical aggregations: `outdoor_temp_avg_*`, `indoor_temp_avg_*`, `target_temp_avg_*`
+- Heating metrics: `heating_degree_hours_24h`, `heating_kwh_last_*`
+
+**Validation Rules:**
+
+- All timestamps must be in the future; past timestamps are rejected
+- All required fields must be present and non-null
+- All numeric fields must be valid numbers
+
+---
+
+### Get Simplified Scenario Example
+
+Get a pre-filled example for the simplified scenario API.
+
+```http
+GET /api/examples/scenario
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "example": {
+    "timeslots": [
+      {
+        "timestamp": "2024-01-15T14:00:00",
+        "outdoor_temperature": 5.0,
+        "wind_speed": 3.5,
+        "humidity": 75.0,
+        "pressure": 1013.0,
+        "target_temperature": 20.0
+      }
+    ]
+  },
+  "description": "24-hour prediction with typical winter day temperature variation and setpoint schedule",
+  "model_available": true,
+  "required_fields": ["timestamp", "outdoor_temperature", "wind_speed", "humidity", "pressure", "target_temperature"],
+  "optional_fields": ["indoor_temperature"]
+}
+```
+
+---
+
 ### Enrich Scenario with Historical Features
 
 Compute historical aggregation features from user-provided scenario data. This is useful when preparing prediction requests with user-specified weather forecasts.
@@ -590,9 +714,61 @@ POST /api/predictions/validate_start_time
 2. **Wait for data** - Let the add-on collect at least 1-2 days of data
 3. **Trigger resampling** - Call `POST /resample` via the UI button
 4. **Train the model** - Call `POST /api/train/heating_demand`
-5. **Make predictions** - Call `POST /api/predictions/heating_demand_profile`
+5. **Make predictions** - Call `POST /api/predictions/scenario` (simplified) or `POST /api/predictions/heating_demand_profile` (advanced)
 
-### Python Example: Making Predictions
+### Python Example: Simplified Scenario API (Recommended)
+
+The simplified API is the easiest way to get predictions. Just provide weather forecasts and setpoint schedules - the system handles all feature engineering internally.
+
+```python
+import requests
+from datetime import datetime, timedelta
+
+# Check model status
+status = requests.get("http://addon-url:8099/api/model/status")
+print(status.json())
+
+if status.json()["status"] == "available":
+    # Calculate future timestamps
+    now = datetime.now()
+    next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    
+    # Build simple scenario with weather forecast and setpoints
+    scenario = {
+        "timeslots": [
+            {
+                "timestamp": (next_hour).isoformat(),
+                "outdoor_temperature": 5.0,      # Weather forecast
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,      # Your desired setpoint
+            },
+            {
+                "timestamp": (next_hour + timedelta(hours=1)).isoformat(),
+                "outdoor_temperature": 4.5,
+                "wind_speed": 3.5,
+                "humidity": 76.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+        ]
+    }
+    
+    response = requests.post(
+        "http://addon-url:8099/api/predictions/scenario",
+        json=scenario
+    )
+    
+    result = response.json()
+    print(f"Total predicted heating: {result['total_kwh']:.2f} kWh")
+    for pred in result['predictions']:
+        print(f"  {pred['timestamp']}: {pred['predicted_kwh']:.2f} kWh")
+```
+
+### Python Example: Advanced API (Full Control)
+
+If you need full control over all model features, use the advanced API:
 
 ```python
 import requests
@@ -638,9 +814,45 @@ if status.json()["status"] == "available":
     print(f"Predicted heating demand: {result['predictions'][0]:.2f} kWh")
 ```
 
-### Home Assistant Automation Example
+### Home Assistant Automation Example (Simplified API)
 
 > **Note:** Replace `homeassistant.local:8099` with your actual add-on URL. When using ingress, you may need to use the internal add-on hostname.
+
+```yaml
+automation:
+  - alias: "Get heating demand prediction (Simplified API)"
+    trigger:
+      - platform: time_pattern
+        hours: "*"
+        minutes: "0"
+    action:
+      - service: rest_command.get_heating_prediction_simple
+        response_variable: prediction
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.predicted_heating_kwh
+        data:
+          value: "{{ prediction.content.predictions[0].predicted_kwh }}"
+
+rest_command:
+  get_heating_prediction_simple:
+    url: "http://homeassistant.local:8099/api/predictions/scenario"
+    method: POST
+    content_type: application/json
+    payload: >
+      {
+        "timeslots": [{
+          "timestamp": "{{ (now() + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0).isoformat() }}",
+          "outdoor_temperature": {{ states('sensor.outdoor_temperature') | float(5) }},
+          "wind_speed": {{ states('sensor.wind_speed') | float(3) }},
+          "humidity": {{ states('sensor.humidity') | float(75) }},
+          "pressure": {{ states('sensor.air_pressure') | float(1013) }},
+          "target_temperature": {{ states('sensor.thermostat_setpoint') | float(20) }}
+        }]
+      }
+```
+
+### Home Assistant Automation Example (Advanced API)
 
 ```yaml
 automation:

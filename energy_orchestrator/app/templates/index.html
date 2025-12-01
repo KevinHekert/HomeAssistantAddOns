@@ -227,6 +227,17 @@
     </div>
 
     <div class="card">
+        <h3>🌡️ Scenario-Based Prediction (Simplified)</h3>
+        <p class="example-description">Predict heating demand using simple, human-readable inputs. No need to calculate model features - just provide weather forecast and setpoint schedule.</p>
+        <button class="action-btn secondary" id="loadScenarioExampleBtn" onclick="loadScenarioExample()">Load Example (24h)</button>
+        <button class="action-btn success" id="runScenarioPredictionBtn" onclick="runScenarioPrediction()">Run Prediction</button>
+        <p class="example-description" style="margin-top: 0.5rem;">Required per timeslot: timestamp (future), outdoor_temperature, wind_speed, humidity, pressure, target_temperature. Optional: indoor_temperature</p>
+        <textarea id="scenarioInput" placeholder='{"timeslots": [{"timestamp": "2024-01-15T14:00:00", "outdoor_temperature": 5.0, "wind_speed": 3.0, "humidity": 75.0, "pressure": 1013.0, "target_temperature": 20.0}, ...]}'></textarea>
+        <div id="scenarioStatus" class="status-message"></div>
+        <div id="scenarioResult"></div>
+    </div>
+
+    <div class="card">
         <h3>🔮 Single Slot Prediction</h3>
         <p class="example-description">Predict heating demand for a single 5-minute time slot.</p>
         <button class="action-btn secondary" id="loadSingleExampleBtn" onclick="loadSingleSlotExample()">Load Example</button>
@@ -601,6 +612,116 @@
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ Error: ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function loadScenarioExample() {
+            const btn = document.getElementById('loadScenarioExampleBtn');
+            const statusDiv = document.getElementById('scenarioStatus');
+            const textarea = document.getElementById('scenarioInput');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading example...';
+            
+            try {
+                const response = await fetch('api/examples/scenario');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    textarea.value = JSON.stringify(data.example, null, 2);
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.description;
+                    if (!data.model_available) {
+                        statusDiv.textContent += '\n⚠️ Model not available - train the model first';
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error: ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function runScenarioPrediction() {
+            const btn = document.getElementById('runScenarioPredictionBtn');
+            const statusDiv = document.getElementById('scenarioStatus');
+            const resultDiv = document.getElementById('scenarioResult');
+            const textarea = document.getElementById('scenarioInput');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Running prediction...';
+            resultDiv.innerHTML = '';
+            
+            try {
+                const requestData = JSON.parse(textarea.value);
+                
+                const response = await fetch('api/predictions/scenario', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ Prediction completed successfully - ' + data.slots_count + ' timeslots processed';
+                    
+                    const predictions = data.predictions;
+                    const predValues = predictions.map(p => p.predicted_kwh);
+                    const maxVal = Math.max(...predValues, 0.1);
+                    
+                    // Create simple bar chart
+                    let chartHtml = '<div class="chart-container"><h4 style="margin-top:0">Hourly Heating Demand</h4>';
+                    chartHtml += '<div class="chart-wrapper">';
+                    predictions.forEach((pred, idx) => {
+                        const height = (pred.predicted_kwh / maxVal) * 100;
+                        const width = Math.max(100 / predictions.length - 1, 5);
+                        chartHtml += `<div class="bar" style="height: ${height}%; width: ${width}%" title="${pred.timestamp}: ${pred.predicted_kwh.toFixed(3)} kWh"></div>`;
+                    });
+                    chartHtml += '</div>';
+                    chartHtml += '<div class="chart-labels">';
+                    if (predictions.length >= 4) {
+                        const step = Math.floor(predictions.length / 4);
+                        chartHtml += `<span>${predictions[0].timestamp.split('T')[1]}</span>`;
+                        chartHtml += `<span>${predictions[step].timestamp.split('T')[1]}</span>`;
+                        chartHtml += `<span>${predictions[step*2].timestamp.split('T')[1]}</span>`;
+                        chartHtml += `<span>${predictions[step*3].timestamp.split('T')[1]}</span>`;
+                        chartHtml += `<span>${predictions[predictions.length-1].timestamp.split('T')[1]}</span>`;
+                    }
+                    chartHtml += '</div></div>';
+                    
+                    // Create table
+                    chartHtml += '<table class="results-table"><thead><tr><th>Timestamp</th><th>Predicted kWh</th></tr></thead><tbody>';
+                    predictions.forEach(pred => {
+                        chartHtml += `<tr><td>${pred.timestamp}</td><td>${pred.predicted_kwh.toFixed(4)}</td></tr>`;
+                    });
+                    chartHtml += '</tbody></table>';
+                    chartHtml += `<div class="total-kwh">Total Consumption: ${data.total_kwh.toFixed(4)} kWh</div>`;
+                    
+                    resultDiv.innerHTML = chartHtml;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    let message = '✗ ' + data.message;
+                    if (data.errors && data.errors.length > 0) {
+                        message += '\n\nErrors:\n' + data.errors.join('\n');
+                    }
+                    if (data.required_fields) {
+                        message += '\n\nRequired fields: ' + data.required_fields.join(', ');
+                    }
+                    statusDiv.textContent = message;
                 }
             } catch (error) {
                 statusDiv.className = 'status-message error';

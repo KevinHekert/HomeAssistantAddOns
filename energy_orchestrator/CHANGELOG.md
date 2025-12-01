@@ -2,6 +2,19 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.54] - 2025-12-01
+
+- **Simplified Scenario API**: Added new `/api/predictions/scenario` endpoint that accepts human-readable inputs
+  - Users can now send simple weather forecast data (outdoor_temperature, wind_speed, humidity, pressure) and setpoint schedule (target_temperature)
+  - All low-level model features (time features, historical aggregations) are computed internally
+  - Timestamps must be in the future; past timestamps are rejected with clear validation errors
+- Added `/api/examples/scenario` endpoint to get pre-filled 24-hour scenario example
+- Added new UI section "Scenario-Based Prediction (Simplified)" with bar chart and table visualization
+- Internal: Added validation functions for simplified scenario input
+- Internal: Added conversion function to translate simplified inputs to model features
+- Added 29 new tests for new simplified scenario functionality
+- Updated documentation with new simplified API endpoints
+
 ## [0.0.0.53] - 2025-12-01
 
 - **Enhanced model training**: Model now uses ALL available historical data for training (no artificial limit)

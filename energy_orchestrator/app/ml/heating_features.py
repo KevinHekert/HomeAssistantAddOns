@@ -1,0 +1,443 @@
+"""
+Heating demand feature extraction ETL.
+
+This module builds a feature dataset from resampled sensor samples
+for training heating demand prediction models.
+
+Key principles:
+- Heat pump outputs (flow/return temperature, HP_POWER_W) are NOT used as input features.
+- HP_KWH_TOTAL is used only to compute the target (heating energy demand).
+- DHW_ACTIVE is only used to filter out DHW (domestic hot water) slots.
+"""
+
+import logging
+from datetime import datetime, timedelta
+from dataclasses import dataclass
+from typing import Optional
+
+import pandas as pd
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session
+
+from db import ResampledSample
+from db.core import engine
+
+_Logger = logging.getLogger(__name__)
+
+# Feature categories used as model inputs (exogenous variables only)
+INPUT_CATEGORIES = [
+    "outdoor_temp",
+    "wind",
+    "humidity",
+    "pressure",
+    "indoor_temp",
+    "target_temp",
+]
+
+# Categories used for target calculation (not as input features)
+TARGET_CATEGORIES = [
+    "hp_kwh_total",
+]
+
+# Categories used for filtering (not as input features)
+FILTER_CATEGORIES = [
+    "dhw_active",
+]
+
+# Prediction horizon in minutes
+PREDICTION_HORIZON_MINUTES = 60
+SLOTS_PER_HOUR = 12  # 5-minute slots
+
+
+@dataclass
+class FeatureDatasetStats:
+    """Statistics about the generated feature dataset."""
+    total_slots: int
+    valid_slots: int
+    dropped_missing_features: int
+    dropped_missing_target: int
+    dropped_insufficient_history: int
+    features_used: list[str]
+    has_7d_features: bool
+
+
+def _load_resampled_data(session: Session) -> pd.DataFrame:
+    """
+    Load all resampled samples into a DataFrame.
+    
+    Returns:
+        DataFrame with columns: slot_start, category, value
+    """
+    stmt = select(
+        ResampledSample.slot_start,
+        ResampledSample.category,
+        ResampledSample.value,
+    ).order_by(ResampledSample.slot_start)
+    
+    result = session.execute(stmt).fetchall()
+    
+    if not result:
+        return pd.DataFrame(columns=["slot_start", "category", "value"])
+    
+    df = pd.DataFrame(result, columns=["slot_start", "category", "value"])
+    return df
+
+
+def _pivot_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Pivot data from long to wide format.
+    
+    Args:
+        df: DataFrame with columns slot_start, category, value
+        
+    Returns:
+        DataFrame with slot_start as index and categories as columns
+    """
+    if df.empty:
+        return pd.DataFrame()
+    
+    pivot = df.pivot(index="slot_start", columns="category", values="value")
+    pivot = pivot.sort_index()
+    return pivot
+
+
+def _compute_historical_aggregations(
+    pivot_df: pd.DataFrame,
+    available_history_hours: float,
+) -> pd.DataFrame:
+    """
+    Compute historical aggregation features.
+    
+    Args:
+        pivot_df: Pivoted DataFrame with slot_start as index
+        available_history_hours: Hours of data available
+        
+    Returns:
+        DataFrame with aggregation features added
+    """
+    df = pivot_df.copy()
+    
+    # Historical window sizes in number of 5-minute slots
+    slots_1h = 12
+    slots_6h = 72
+    slots_24h = 288
+    slots_7d = 2016
+    
+    # Outdoor temperature history
+    if "outdoor_temp" in df.columns:
+        df["outdoor_temp_avg_1h"] = df["outdoor_temp"].rolling(
+            window=slots_1h, min_periods=1
+        ).mean()
+        df["outdoor_temp_avg_6h"] = df["outdoor_temp"].rolling(
+            window=slots_6h, min_periods=slots_1h
+        ).mean()
+        df["outdoor_temp_avg_24h"] = df["outdoor_temp"].rolling(
+            window=slots_24h, min_periods=slots_6h
+        ).mean()
+        
+        # 7-day average only if we have enough history
+        if available_history_hours >= 168:  # 7 days
+            df["outdoor_temp_avg_7d"] = df["outdoor_temp"].rolling(
+                window=slots_7d, min_periods=slots_24h
+            ).mean()
+    
+    # Indoor temperature history
+    if "indoor_temp" in df.columns:
+        df["indoor_temp_avg_6h"] = df["indoor_temp"].rolling(
+            window=slots_6h, min_periods=slots_1h
+        ).mean()
+        df["indoor_temp_avg_24h"] = df["indoor_temp"].rolling(
+            window=slots_24h, min_periods=slots_6h
+        ).mean()
+    
+    # Target temperature (setpoint) history
+    if "target_temp" in df.columns:
+        df["target_temp_avg_6h"] = df["target_temp"].rolling(
+            window=slots_6h, min_periods=slots_1h
+        ).mean()
+        df["target_temp_avg_24h"] = df["target_temp"].rolling(
+            window=slots_24h, min_periods=slots_6h
+        ).mean()
+    
+    # Heating degree hours
+    if "target_temp" in df.columns and "outdoor_temp" in df.columns:
+        # Degree difference per slot (5 min = 1/12 hour)
+        degree_diff = (df["target_temp"] - df["outdoor_temp"]).clip(lower=0)
+        
+        # Sum over 24 hours (288 slots * 5 min / 60 = 24 hours)
+        # Each slot contributes (degree_diff * 5/60) degree-hours
+        df["heating_degree_hours_24h"] = degree_diff.rolling(
+            window=slots_24h, min_periods=slots_6h
+        ).sum() * (5 / 60)
+        
+        if available_history_hours >= 168:
+            df["heating_degree_hours_7d"] = degree_diff.rolling(
+                window=slots_7d, min_periods=slots_24h
+            ).sum() * (5 / 60)
+    
+    # Historical heating kWh (from hp_kwh_total differences)
+    if "hp_kwh_total" in df.columns:
+        # Compute 5-minute deltas
+        kwh_delta = df["hp_kwh_total"].diff()
+        
+        # Filter out implausible deltas (negative or very large)
+        # Assuming max 10 kW heat pump: 10 kW * 5/60 h = 0.833 kWh per 5 min
+        kwh_delta = kwh_delta.clip(lower=0, upper=1.0)
+        
+        # Sum over historical windows (heating only - DHW filtering done later)
+        df["heating_kwh_last_6h"] = kwh_delta.rolling(
+            window=slots_6h, min_periods=slots_1h
+        ).sum()
+        df["heating_kwh_last_24h"] = kwh_delta.rolling(
+            window=slots_24h, min_periods=slots_6h
+        ).sum()
+        
+        if available_history_hours >= 168:
+            df["heating_kwh_last_7d"] = kwh_delta.rolling(
+                window=slots_7d, min_periods=slots_24h
+            ).sum()
+    
+    return df
+
+
+def _compute_target(
+    df: pd.DataFrame,
+    horizon_slots: int = SLOTS_PER_HOUR,
+) -> pd.DataFrame:
+    """
+    Compute the target: heating energy demand in kWh over prediction horizon.
+    
+    Args:
+        df: DataFrame with hp_kwh_total column
+        horizon_slots: Number of 5-min slots in prediction horizon
+        
+    Returns:
+        DataFrame with target_heating_kwh_1h column added
+    """
+    if "hp_kwh_total" not in df.columns:
+        _Logger.warning("hp_kwh_total not available, cannot compute target")
+        df["target_heating_kwh_1h"] = None
+        return df
+    
+    # Compute forward-looking kWh delta
+    # For each slot t, compute sum of kWh deltas from t to t+horizon
+    kwh_values = df["hp_kwh_total"].values
+    n = len(kwh_values)
+    target = [None] * n
+    
+    for i in range(n - horizon_slots):
+        start_kwh = kwh_values[i]
+        end_kwh = kwh_values[i + horizon_slots]
+        
+        if pd.notna(start_kwh) and pd.notna(end_kwh):
+            delta = end_kwh - start_kwh
+            # Filter implausible values
+            if 0 <= delta <= 20:  # Max 20 kWh in 1 hour seems reasonable
+                target[i] = delta
+    
+    df["target_heating_kwh_1h"] = target
+    
+    # Filter out DHW slots if dhw_active is available
+    if "dhw_active" in df.columns:
+        # Mark slots as DHW if dhw_active > 0.5 (assuming binary 0/1)
+        # We need to check the entire horizon window for DHW activity
+        dhw_values = df["dhw_active"].values
+        
+        for i in range(n - horizon_slots):
+            if pd.notna(target[i]):
+                # Check if any slot in the horizon has DHW active
+                horizon_dhw = dhw_values[i:i + horizon_slots]
+                if any(pd.notna(v) and v > 0.5 for v in horizon_dhw):
+                    target[i] = None  # Exclude DHW slots from training
+        
+        df["target_heating_kwh_1h"] = target
+    
+    return df
+
+
+def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add time-related features.
+    
+    Args:
+        df: DataFrame with DatetimeIndex
+        
+    Returns:
+        DataFrame with time features added
+    """
+    if df.empty:
+        return df
+    
+    df = df.copy()
+    
+    # Get datetime index
+    if isinstance(df.index, pd.DatetimeIndex):
+        dt_index = df.index
+    else:
+        dt_index = pd.DatetimeIndex(df.index)
+    
+    df["hour_of_day"] = dt_index.hour
+    df["day_of_week"] = dt_index.dayofweek
+    df["is_weekend"] = (dt_index.dayofweek >= 5).astype(int)
+    df["is_night"] = ((dt_index.hour >= 23) | (dt_index.hour < 7)).astype(int)
+    
+    return df
+
+
+def build_heating_feature_dataset(
+    min_samples: int = 100,
+) -> tuple[Optional[pd.DataFrame], FeatureDatasetStats]:
+    """
+    Build the heating demand feature dataset from resampled samples.
+    
+    This function:
+    1. Loads resampled samples from the database
+    2. Pivots data to wide format
+    3. Computes historical aggregation features
+    4. Computes the target (heating energy demand)
+    5. Adds time features
+    6. Returns a clean dataset ready for model training
+    
+    Args:
+        min_samples: Minimum number of valid samples required
+        
+    Returns:
+        Tuple of (feature_dataframe, stats)
+        feature_dataframe is None if insufficient data
+    """
+    stats = FeatureDatasetStats(
+        total_slots=0,
+        valid_slots=0,
+        dropped_missing_features=0,
+        dropped_missing_target=0,
+        dropped_insufficient_history=0,
+        features_used=[],
+        has_7d_features=False,
+    )
+    
+    try:
+        with Session(engine) as session:
+            # Step 1: Load data
+            _Logger.info("Loading resampled samples...")
+            raw_df = _load_resampled_data(session)
+            
+            if raw_df.empty:
+                _Logger.warning("No resampled samples found")
+                return None, stats
+            
+            # Step 2: Pivot data
+            pivot_df = _pivot_data(raw_df)
+            stats.total_slots = len(pivot_df)
+            
+            if pivot_df.empty:
+                _Logger.warning("No data after pivoting")
+                return None, stats
+            
+            _Logger.info(
+                "Loaded %d time slots with categories: %s",
+                len(pivot_df),
+                list(pivot_df.columns),
+            )
+            
+            # Calculate available history
+            time_range = pivot_df.index.max() - pivot_df.index.min()
+            available_hours = time_range.total_seconds() / 3600
+            _Logger.info("Available history: %.1f hours", available_hours)
+            
+            # Step 3: Compute historical aggregations
+            df = _compute_historical_aggregations(pivot_df, available_hours)
+            
+            # Step 4: Compute target
+            df = _compute_target(df)
+            
+            # Step 5: Add time features
+            df = _add_time_features(df)
+            
+            # Step 6: Select features for the model
+            # Input features (exogenous only)
+            base_features = [c for c in INPUT_CATEGORIES if c in df.columns]
+            
+            # Historical aggregation features
+            agg_features = [
+                "outdoor_temp_avg_1h",
+                "outdoor_temp_avg_6h",
+                "outdoor_temp_avg_24h",
+                "indoor_temp_avg_6h",
+                "indoor_temp_avg_24h",
+                "target_temp_avg_6h",
+                "target_temp_avg_24h",
+                "heating_degree_hours_24h",
+                "heating_kwh_last_6h",
+                "heating_kwh_last_24h",
+            ]
+            
+            # 7-day features if available
+            features_7d = [
+                "outdoor_temp_avg_7d",
+                "heating_degree_hours_7d",
+                "heating_kwh_last_7d",
+            ]
+            
+            if available_hours >= 168:
+                agg_features.extend(features_7d)
+                stats.has_7d_features = True
+            
+            # Time features
+            time_features = ["hour_of_day", "day_of_week", "is_weekend", "is_night"]
+            
+            # Combine all features
+            all_features = base_features + [f for f in agg_features if f in df.columns] + time_features
+            target_col = "target_heating_kwh_1h"
+            
+            # Filter to rows with valid target
+            before_target_filter = len(df)
+            df_valid = df[df[target_col].notna()].copy()
+            stats.dropped_missing_target = before_target_filter - len(df_valid)
+            
+            if df_valid.empty:
+                _Logger.warning("No valid target values found")
+                return None, stats
+            
+            # Filter to rows with all required features
+            available_features = [f for f in all_features if f in df_valid.columns]
+            before_feature_filter = len(df_valid)
+            
+            # Check which features have enough non-null values
+            final_features = []
+            for feat in available_features:
+                null_ratio = df_valid[feat].isna().mean()
+                if null_ratio < 0.5:  # Keep features with <50% missing
+                    final_features.append(feat)
+                else:
+                    _Logger.info("Dropping feature %s (%.1f%% missing)", feat, null_ratio * 100)
+            
+            # Drop rows with any missing values in final features + target
+            cols_to_check = final_features + [target_col]
+            df_clean = df_valid[cols_to_check].dropna()
+            
+            stats.dropped_missing_features = before_feature_filter - len(df_clean)
+            stats.valid_slots = len(df_clean)
+            stats.features_used = final_features
+            
+            _Logger.info(
+                "Dataset stats: total=%d, valid=%d, dropped_target=%d, dropped_features=%d",
+                stats.total_slots,
+                stats.valid_slots,
+                stats.dropped_missing_target,
+                stats.dropped_missing_features,
+            )
+            _Logger.info("Features used: %s", final_features)
+            
+            if stats.valid_slots < min_samples:
+                _Logger.warning(
+                    "Insufficient samples: %d < %d required",
+                    stats.valid_slots,
+                    min_samples,
+                )
+                return None, stats
+            
+            return df_clean, stats
+            
+    except Exception as e:
+        _Logger.error("Error building feature dataset: %s", e, exc_info=True)
+        return None, stats

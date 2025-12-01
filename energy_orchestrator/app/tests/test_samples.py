@@ -263,3 +263,50 @@ class TestGetLatestSampleTimestamp:
 
         result = get_latest_sample_timestamp("sensor.test")
         assert result == datetime(2024, 1, 1, 13, 0, 0)
+
+
+class TestGetSensorInfo:
+    """Test the get_sensor_info function."""
+
+    def test_no_samples(self, patch_engine):
+        """Returns empty list when no samples exist."""
+        from db.samples import get_sensor_info
+        result = get_sensor_info()
+        assert result == []
+
+    def test_single_sensor(self, patch_engine):
+        """Returns info for single sensor."""
+        from db.samples import get_sensor_info
+        
+        log_sample("sensor.test", datetime(2024, 1, 1, 12, 0, 0), 10.0, "m/s")
+        log_sample("sensor.test", datetime(2024, 1, 1, 13, 0, 0), 15.0, "m/s")
+        
+        result = get_sensor_info()
+        assert len(result) == 1
+        assert result[0]["entity_id"] == "sensor.test"
+        assert result[0]["first_timestamp"] == "2024-01-01T12:00:00"
+        assert result[0]["last_timestamp"] == "2024-01-01T13:00:00"
+        assert result[0]["sample_count"] == 2
+
+    def test_multiple_sensors(self, patch_engine):
+        """Returns info for multiple sensors."""
+        from db.samples import get_sensor_info
+        
+        log_sample("sensor.a", datetime(2024, 1, 1, 10, 0, 0), 1.0, "°C")
+        log_sample("sensor.a", datetime(2024, 1, 1, 12, 0, 0), 2.0, "°C")
+        log_sample("sensor.b", datetime(2024, 1, 1, 11, 0, 0), 3.0, "m/s")
+        
+        result = get_sensor_info()
+        assert len(result) == 2
+        
+        # Results should be ordered by entity_id
+        sensor_a = next(s for s in result if s["entity_id"] == "sensor.a")
+        sensor_b = next(s for s in result if s["entity_id"] == "sensor.b")
+        
+        assert sensor_a["sample_count"] == 2
+        assert sensor_a["first_timestamp"] == "2024-01-01T10:00:00"
+        assert sensor_a["last_timestamp"] == "2024-01-01T12:00:00"
+        
+        assert sensor_b["sample_count"] == 1
+        assert sensor_b["first_timestamp"] == "2024-01-01T11:00:00"
+        assert sensor_b["last_timestamp"] == "2024-01-01T11:00:00"

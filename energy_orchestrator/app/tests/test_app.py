@@ -280,3 +280,162 @@ class TestModelStatusEndpoint:
             assert response.status_code == 200
             data = response.get_json()
             assert data["status"] == "not_available"
+
+
+class TestSensorInfoEndpoint:
+    """Test the /api/sensors/info GET endpoint."""
+
+    def test_sensors_info_success(self, client):
+        """Get sensor info returns 200 with sensor list."""
+        mock_sensors = [
+            {
+                "entity_id": "sensor.outdoor_temp",
+                "first_timestamp": "2024-01-01T00:00:00",
+                "last_timestamp": "2024-01-15T12:00:00",
+                "sample_count": 1000,
+            },
+            {
+                "entity_id": "sensor.wind",
+                "first_timestamp": "2024-01-01T00:00:00",
+                "last_timestamp": "2024-01-15T12:00:00",
+                "sample_count": 500,
+            },
+        ]
+        with patch("app.get_sensor_info") as mock_get_info:
+            mock_get_info.return_value = mock_sensors
+
+            response = client.get("/api/sensors/info")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["count"] == 2
+            assert len(data["sensors"]) == 2
+            assert data["sensors"][0]["entity_id"] == "sensor.outdoor_temp"
+
+    def test_sensors_info_empty(self, client):
+        """Get sensor info returns empty list when no sensors."""
+        with patch("app.get_sensor_info") as mock_get_info:
+            mock_get_info.return_value = []
+
+            response = client.get("/api/sensors/info")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["count"] == 0
+            assert data["sensors"] == []
+
+    def test_sensors_info_error(self, client):
+        """Get sensor info returns 500 on error."""
+        with patch("app.get_sensor_info") as mock_get_info:
+            mock_get_info.side_effect = Exception("Database error")
+
+            response = client.get("/api/sensors/info")
+
+            assert response.status_code == 500
+            data = response.get_json()
+            assert data["status"] == "error"
+
+
+class TestSingleSlotExampleEndpoint:
+    """Test the /api/examples/single_slot GET endpoint."""
+
+    def test_single_slot_example_no_model(self, client):
+        """Get single slot example without model returns basic example."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/single_slot")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert "example" in data
+            assert "scenario_features" in data["example"]
+            assert len(data["example"]["scenario_features"]) == 1
+            assert data["model_available"] is False
+
+    def test_single_slot_example_with_model(self, client, mock_model):
+        """Get single slot example with model returns example with all features."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = mock_model
+
+            response = client.get("/api/examples/single_slot")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["model_available"] is True
+            assert data["required_features"] == ["outdoor_temp", "wind", "humidity"]
+            # Check that example contains the model features
+            features = data["example"]["scenario_features"][0]
+            assert "outdoor_temp" in features
+            assert "wind" in features
+            assert "humidity" in features
+
+
+class TestFullDayExampleEndpoint:
+    """Test the /api/examples/full_day GET endpoint."""
+
+    def test_full_day_example_no_model(self, client):
+        """Get full day example without model returns 24-hour example."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/full_day")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert "example" in data
+            assert len(data["example"]["scenario_features"]) == 24
+            assert len(data["example"]["timeslots"]) == 24
+            assert data["example"]["update_historical"] is True
+            assert data["model_available"] is False
+
+    def test_full_day_example_with_model(self, client, mock_model):
+        """Get full day example with model returns example with all features."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = mock_model
+
+            response = client.get("/api/examples/full_day")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["model_available"] is True
+            # Check that each hour slot contains required features
+            for features in data["example"]["scenario_features"]:
+                assert "outdoor_temp" in features
+                assert "hour_of_day" in features
+                assert "target_temp" in features
+
+    def test_full_day_example_temperature_variation(self, client):
+        """Full day example has realistic temperature variation."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/full_day")
+
+            data = response.get_json()
+            features = data["example"]["scenario_features"]
+            
+            # Night hours should have lower target temp
+            night_target = features[2]["target_temp"]  # 2 AM
+            day_target = features[14]["target_temp"]  # 2 PM
+            assert night_target < day_target
+
+    def test_full_day_example_setpoint_schedule(self, client):
+        """Full day example has realistic setpoint schedule."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/full_day")
+
+            data = response.get_json()
+            features = data["example"]["scenario_features"]
+            
+            # Check is_night flag
+            assert features[3]["is_night"] == 1  # 3 AM is night
+            assert features[12]["is_night"] == 0  # Noon is not night

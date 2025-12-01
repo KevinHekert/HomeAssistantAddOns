@@ -37,8 +37,8 @@ Each add-on follows the standard Home Assistant Add-on structure:
 
 ### Shell Scripts
 
-- Use `#!/bin/bash` or `#!/usr/bin/with-contenv bashio` for Home Assistant add-ons
-- Use `set -e` at the start of scripts to exit on errors
+- Use `#!/usr/bin/with-contenv bashio` for Home Assistant add-on entry scripts (the bashio framework handles error management)
+- Use `#!/bin/bash` with `set -e` for standalone utility scripts
 - Use `bashio::log.info` for logging in Home Assistant add-on scripts
 - Use `bashio::config` to read add-on configuration values
 

@@ -1,0 +1,50 @@
+name: Run Tests (Energy Orchestrator)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'energy_orchestrator/**'
+      - '.github/workflows/test-energy-orchestrator.yml'
+  pull_request:
+    paths:
+      - 'energy_orchestrator/**'
+      - '.github/workflows/test-energy-orchestrator.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+          pip install -r energy_orchestrator/requirements.txt
+
+      - name: Run tests
+        working-directory: energy_orchestrator/app
+        run: |
+          python -m pytest tests/ -v --cov=. --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: energy_orchestrator/app/coverage.xml
+          retention-days: 7

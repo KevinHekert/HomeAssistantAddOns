@@ -2,6 +2,13 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.49] - 2025-12-01
+
+- Added comprehensive unit tests for sync_state module
+- Added unit tests for Flask API endpoints (training, prediction, model status)
+- Created GitHub Actions workflow to run tests on push and pull requests
+- Improved test coverage from 102 to 120 tests
+
 ## [0.0.0.48] - 2025-12-01
 
 - Added support for binary sensor states: map on/off and true/false to 1.0/0.0 for database storage

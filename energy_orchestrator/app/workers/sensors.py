@@ -58,7 +58,7 @@ def _sync_entity(entity_id: str) -> None:
         else:
             effective_since = None
 
-        _Logger.info(
+        _Logger.debug(
             "Effective since voor %s vóór sync: %s",
             entity_id,
             effective_since,
@@ -80,13 +80,13 @@ def _sync_entity(entity_id: str) -> None:
 
                 # If effective_since is before yesterday, fast-forward without delay
                 if effective_since_aware < yesterday:
-                    _Logger.info(
+                    _Logger.debug(
                         "No data found for %s and not yet caught up to yesterday, fast-forwarding...",
                         entity_id,
                     )
                     continue
                 else:
-                    _Logger.info(
+                    _Logger.debug(
                         "No data found for %s but caught up to yesterday, stopping fast-forward.",
                         entity_id,
                     )
@@ -94,7 +94,7 @@ def _sync_entity(entity_id: str) -> None:
                 # effective_since is None means sync just started (first iteration)
                 # After first sync, sync_status will be updated with last_attempt,
                 # so continue to check progress
-                _Logger.info(
+                _Logger.debug(
                     "First sync for %s (no prior data), continuing to check progress...",
                     entity_id,
                 )

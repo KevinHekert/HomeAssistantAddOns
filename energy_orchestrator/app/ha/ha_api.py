@@ -110,7 +110,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
     if end > now_utc:
         end = now_utc
 
-    _Logger.info(
+    _Logger.debug(
         "History sync voor %s: start=%s, end=%s, now=%s",
         entity_id,
         start,
@@ -140,7 +140,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
     update_sync_attempt(entity_id, end, success=False)
 
     try:
-        _Logger.info("History-verzoek naar Home Assistant API: %s", url)
+        _Logger.debug("History-verzoek naar Home Assistant API: %s", url)
         with request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except error.URLError as e:
@@ -153,12 +153,12 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
         return 0
 
     if not data:
-        _Logger.info("Geen history-data ontvangen voor %s.", entity_id)
+        _Logger.debug("Geen history-data ontvangen voor %s.", entity_id)
         # poging blijft wel geregistreerd, maar geen success-flag
         return 0
 
     states = data[0] if isinstance(data[0], list) else data
-    _Logger.info("Aantal historypunten voor %s ontvangen: %d", entity_id, len(states))
+    _Logger.debug("Aantal historypunten voor %s ontvangen: %d", entity_id, len(states))
 
     inserted = 0
     skipped = 0
@@ -189,13 +189,20 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
     # Als we hier zijn, was de call inhoudelijk oké; we markeren deze poging als succesvol
     update_sync_attempt(entity_id, end, success=True)
 
-
-    _Logger.info(
-        "History sync voor %s afgerond: %d nieuwe, %d overgeslagen (bestonden al).",
-        entity_id,
-        inserted,
-        skipped,
-    )
+    # Summary log: only log at INFO level if new samples were inserted
+    if inserted > 0:
+        _Logger.info(
+            "Retrieved and saved %d measurements from %s.",
+            inserted,
+            entity_id,
+        )
+    else:
+        _Logger.debug(
+            "History sync voor %s afgerond: %d nieuwe, %d overgeslagen (bestonden al).",
+            entity_id,
+            inserted,
+            skipped,
+        )
 
     return inserted
 

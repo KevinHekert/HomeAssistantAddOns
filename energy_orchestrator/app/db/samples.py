@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -77,7 +78,6 @@ def get_sensor_info() -> list[dict]:
     """
     try:
         with Session(engine) as session:
-            from sqlalchemy import func
             result = (
                 session.query(
                     Sample.entity_id,

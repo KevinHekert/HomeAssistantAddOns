@@ -1,12 +1,19 @@
 import logging
+from datetime import datetime
 from flask import Flask, render_template, jsonify, request
+import pandas as pd
 from ha.ha_api import get_entity_state
 from workers import start_sensor_logging_worker
 from db.resample import resample_all_categories_to_5min
 from db.core import init_db_schema
 from db.sensor_config import sync_sensor_mappings
 from db.samples import get_sensor_info
-from ml.heating_features import build_heating_feature_dataset
+from ml.heating_features import (
+    build_heating_feature_dataset,
+    compute_scenario_historical_features,
+    get_actual_vs_predicted_data,
+    validate_prediction_start_time,
+)
 from ml.heating_demand_model import (
     HeatingDemandModel,
     ModelNotAvailableError,
@@ -117,6 +124,9 @@ def train_heating_demand():
                 "valid_slots": stats.valid_slots,
                 "features_used": stats.features_used,
                 "has_7d_features": stats.has_7d_features,
+                "data_start_time": stats.data_start_time.isoformat() if stats.data_start_time else None,
+                "data_end_time": stats.data_end_time.isoformat() if stats.data_end_time else None,
+                "available_history_hours": round(stats.available_history_hours, 1) if stats.available_history_hours else None,
             },
         })
         
@@ -384,6 +394,330 @@ def get_full_day_example():
         "model_available": model is not None and model.is_available,
         "required_features": model.feature_names if model and model.is_available else None,
     })
+
+
+@app.post("/api/predictions/enrich_scenario")
+def enrich_scenario_with_historical_features():
+    """
+    Enrich user-provided scenario features with computed historical aggregations.
+    
+    This endpoint helps users prepare their prediction requests by computing
+    historical aggregation features (1h, 6h, 24h averages) from the provided
+    scenario data.
+    
+    Request body:
+    {
+        "scenario_features": [
+            {"outdoor_temp": 5.0, "wind": 3.0, "humidity": 75.0, ...},
+            {"outdoor_temp": 4.5, "wind": 3.5, "humidity": 76.0, ...},
+            ...
+        ],
+        "timeslots": ["2024-01-15T12:00:00", "2024-01-15T13:00:00", ...]  // optional
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "enriched_features": [
+            {
+                "outdoor_temp": 5.0,
+                "outdoor_temp_avg_1h": 5.0,
+                "outdoor_temp_avg_6h": 5.0,
+                "heating_degree_hours_24h": 360.0,
+                ...
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        scenario_features = data.get("scenario_features", [])
+        timeslots_str = data.get("timeslots", [])
+        
+        if not scenario_features:
+            return jsonify({
+                "status": "error",
+                "message": "scenario_features is required and must be non-empty",
+            }), 400
+        
+        # Parse timeslots if provided
+        timeslots = None
+        if timeslots_str:
+            try:
+                timeslots = [
+                    datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    for ts in timeslots_str
+                ]
+            except ValueError as e:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Invalid timeslot format: {e}",
+                }), 400
+        
+        # Compute historical features
+        enriched = compute_scenario_historical_features(
+            scenario_features,
+            timeslots=timeslots,
+        )
+        
+        return jsonify({
+            "status": "success",
+            "enriched_features": enriched,
+            "features_added": [
+                "outdoor_temp_avg_1h", "outdoor_temp_avg_6h", "outdoor_temp_avg_24h",
+                "indoor_temp_avg_6h", "indoor_temp_avg_24h",
+                "target_temp_avg_6h", "target_temp_avg_24h",
+                "heating_degree_hours_24h",
+                "hour_of_day", "day_of_week", "is_weekend", "is_night",
+            ],
+        })
+        
+    except Exception as e:
+        _Logger.error("Error enriching scenario: %s", e, exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/predictions/compare_actual")
+def compare_predictions_with_actual():
+    """
+    Compare model predictions with actual historical data.
+    
+    This endpoint allows users to validate model accuracy by comparing
+    predictions against actual recorded data. It uses 5-minute average
+    records to compute the actual values and shows the delta between
+    the model's predictions and reality.
+    
+    Request body:
+    {
+        "start_time": "2024-01-15T12:00:00",
+        "end_time": "2024-01-15T18:00:00",
+        "slot_duration_minutes": 60  // optional, default 60
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "comparison": [
+            {
+                "slot_start": "2024-01-15T12:00:00",
+                "actual_kwh": 1.25,
+                "predicted_kwh": 1.18,
+                "delta_kwh": -0.07,
+                "delta_pct": -5.6,
+                "features": {...}
+            },
+            ...
+        ],
+        "summary": {
+            "total_actual_kwh": 7.5,
+            "total_predicted_kwh": 7.2,
+            "mae_kwh": 0.08,
+            "mape_pct": 6.5,
+            "slots_compared": 6
+        }
+    }
+    """
+    model = _get_model()
+    
+    if model is None or not model.is_available:
+        return jsonify({
+            "status": "error",
+            "message": "Model not trained. Please train the model first via POST /api/train/heating_demand",
+        }), 503
+    
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        start_time_str = data.get("start_time")
+        end_time_str = data.get("end_time")
+        slot_duration = data.get("slot_duration_minutes", 60)
+        
+        if not start_time_str or not end_time_str:
+            return jsonify({
+                "status": "error",
+                "message": "start_time and end_time are required",
+            }), 400
+        
+        try:
+            start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+            end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+        except ValueError as e:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid datetime format: {e}",
+            }), 400
+        
+        # Get actual historical data
+        actual_df, error = get_actual_vs_predicted_data(
+            start_time,
+            end_time,
+            slot_duration_minutes=slot_duration,
+        )
+        
+        if actual_df is None:
+            return jsonify({
+                "status": "error",
+                "message": error or "No data available for the specified time range",
+            }), 404
+        
+        # Prepare features for predictions
+        comparison_results = []
+        predictions = []
+        actuals = []
+        
+        for _, row in actual_df.iterrows():
+            # Build feature dictionary from actual data
+            features = {}
+            missing_features = []
+            
+            for feat in model.feature_names:
+                if feat in row and row[feat] is not None and not pd.isna(row[feat]):
+                    features[feat] = float(row[feat])
+                else:
+                    missing_features.append(feat)
+            
+            # Skip rows with missing features
+            if missing_features:
+                _Logger.debug("Skipping slot %s: missing features %s", row["slot_start"], missing_features)
+                continue
+            
+            # Get actual value
+            actual_kwh = row.get("actual_heating_kwh")
+            if actual_kwh is None or pd.isna(actual_kwh):
+                continue
+            
+            # Make prediction
+            try:
+                predicted_kwh = model.predict(features)
+            except Exception as e:
+                _Logger.warning("Prediction failed for slot %s: %s", row["slot_start"], e)
+                continue
+            
+            delta_kwh = predicted_kwh - actual_kwh
+            delta_pct = (delta_kwh / actual_kwh * 100) if actual_kwh > 0.01 else None
+            
+            comparison_results.append({
+                "slot_start": row["slot_start"].isoformat() if hasattr(row["slot_start"], "isoformat") else str(row["slot_start"]),
+                "actual_kwh": round(actual_kwh, 4),
+                "predicted_kwh": round(predicted_kwh, 4),
+                "delta_kwh": round(delta_kwh, 4),
+                "delta_pct": round(delta_pct, 1) if delta_pct is not None else None,
+            })
+            
+            predictions.append(predicted_kwh)
+            actuals.append(actual_kwh)
+        
+        if not comparison_results:
+            return jsonify({
+                "status": "error",
+                "message": "No valid slots found for comparison. Check that all required features are available.",
+            }), 404
+        
+        # Compute summary statistics
+        import numpy as np
+        predictions_arr = np.array(predictions)
+        actuals_arr = np.array(actuals)
+        
+        mae = np.mean(np.abs(predictions_arr - actuals_arr))
+        
+        # MAPE (exclude near-zero actuals)
+        nonzero_mask = actuals_arr > 0.01
+        if nonzero_mask.any():
+            mape = np.mean(np.abs((predictions_arr[nonzero_mask] - actuals_arr[nonzero_mask]) / actuals_arr[nonzero_mask])) * 100
+        else:
+            mape = None
+        
+        return jsonify({
+            "status": "success",
+            "comparison": comparison_results,
+            "summary": {
+                "total_actual_kwh": round(sum(actuals), 4),
+                "total_predicted_kwh": round(sum(predictions), 4),
+                "mae_kwh": round(mae, 4),
+                "mape_pct": round(mape, 1) if mape is not None else None,
+                "slots_compared": len(comparison_results),
+            },
+        })
+        
+    except Exception as e:
+        _Logger.error("Error comparing predictions: %s", e, exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/predictions/validate_start_time")
+def validate_start_time():
+    """
+    Validate that a prediction start time is valid (next hour or later).
+    
+    Request body:
+    {
+        "start_time": "2024-01-15T14:00:00"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "valid": true,
+        "message": "Valid prediction start time: 2024-01-15 14:00:00",
+        "next_valid_hour": "2024-01-15T14:00:00"
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        start_time_str = data.get("start_time")
+        
+        if not start_time_str:
+            return jsonify({
+                "status": "error",
+                "message": "start_time is required",
+            }), 400
+        
+        try:
+            start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+        except ValueError as e:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid datetime format: {e}",
+            }), 400
+        
+        is_valid, message = validate_prediction_start_time(start_time)
+        
+        # Compute the next valid hour for convenience
+        from datetime import timedelta
+        now = datetime.now()
+        next_valid = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        
+        return jsonify({
+            "status": "success",
+            "valid": is_valid,
+            "message": message,
+            "next_valid_hour": next_valid.isoformat(),
+        })
+        
+    except Exception as e:
+        _Logger.error("Error validating start time: %s", e, exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 if __name__ == "__main__":

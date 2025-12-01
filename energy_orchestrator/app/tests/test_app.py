@@ -439,3 +439,217 @@ class TestFullDayExampleEndpoint:
             # Check is_night flag
             assert features[3]["is_night"] == 1  # 3 AM is night
             assert features[12]["is_night"] == 0  # Noon is not night
+
+
+class TestEnrichScenarioEndpoint:
+    """Test the /api/predictions/enrich_scenario POST endpoint."""
+
+    def test_enrich_scenario_success(self, client):
+        """Successful enrichment returns 200 with enriched features."""
+        scenario = [
+            {"outdoor_temp": 5.0, "indoor_temp": 20.0, "target_temp": 21.0},
+            {"outdoor_temp": 4.5, "indoor_temp": 20.0, "target_temp": 21.0},
+        ]
+
+        response = client.post(
+            "/api/predictions/enrich_scenario",
+            json={"scenario_features": scenario},
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert len(data["enriched_features"]) == 2
+        assert "outdoor_temp_avg_1h" in data["enriched_features"][0]
+
+    def test_enrich_scenario_with_timeslots(self, client):
+        """Enrichment with timeslots adds time features."""
+        scenario = [{"outdoor_temp": 5.0, "target_temp": 20.0}]
+        timeslots = ["2024-01-15T14:00:00"]
+
+        response = client.post(
+            "/api/predictions/enrich_scenario",
+            json={"scenario_features": scenario, "timeslots": timeslots},
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["enriched_features"][0]["hour_of_day"] == 14
+
+    def test_enrich_scenario_empty_features(self, client):
+        """Enrichment with empty features returns 400."""
+        response = client.post(
+            "/api/predictions/enrich_scenario",
+            json={"scenario_features": []},
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+
+    def test_enrich_scenario_no_body(self, client):
+        """Enrichment without body returns 400."""
+        response = client.post(
+            "/api/predictions/enrich_scenario",
+            json={},
+        )
+
+        assert response.status_code == 400
+
+
+class TestCompareActualEndpoint:
+    """Test the /api/predictions/compare_actual POST endpoint."""
+
+    def test_compare_model_not_available(self, client):
+        """Compare without model returns 503."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = None
+
+            response = client.post(
+                "/api/predictions/compare_actual",
+                json={
+                    "start_time": "2024-01-15T12:00:00",
+                    "end_time": "2024-01-15T18:00:00",
+                },
+            )
+
+            assert response.status_code == 503
+
+    def test_compare_no_body(self, client, mock_model):
+        """Compare without body returns 400."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = mock_model
+
+            response = client.post(
+                "/api/predictions/compare_actual",
+                json={},
+            )
+
+            assert response.status_code == 400
+
+    def test_compare_no_data(self, client, mock_model):
+        """Compare with no data returns 404."""
+        with patch("app._get_model") as mock_get_model, \
+             patch("app.get_actual_vs_predicted_data") as mock_get_data:
+            mock_get_model.return_value = mock_model
+            mock_get_data.return_value = (None, "No data available")
+
+            response = client.post(
+                "/api/predictions/compare_actual",
+                json={
+                    "start_time": "2024-01-15T12:00:00",
+                    "end_time": "2024-01-15T18:00:00",
+                },
+            )
+
+            assert response.status_code == 404
+
+
+class TestValidateStartTimeEndpoint:
+    """Test the /api/predictions/validate_start_time POST endpoint."""
+
+    def test_validate_valid_time(self, client):
+        """Valid start time returns success."""
+        from datetime import timedelta
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+        with patch("app.validate_prediction_start_time") as mock_validate:
+            mock_validate.return_value = (True, "Valid")
+
+            response = client.post(
+                "/api/predictions/validate_start_time",
+                json={"start_time": next_hour.isoformat()},
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["valid"] is True
+
+    def test_validate_invalid_time(self, client):
+        """Invalid start time returns valid=False."""
+        with patch("app.validate_prediction_start_time") as mock_validate:
+            mock_validate.return_value = (False, "Invalid")
+
+            response = client.post(
+                "/api/predictions/validate_start_time",
+                json={"start_time": "2020-01-01T12:00:00"},
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["valid"] is False
+
+    def test_validate_no_body(self, client):
+        """Validate without body returns 400."""
+        response = client.post(
+            "/api/predictions/validate_start_time",
+            json={},
+        )
+
+        assert response.status_code == 400
+
+    def test_validate_returns_next_valid_hour(self, client):
+        """Response includes next valid hour."""
+        from datetime import timedelta
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=2)
+
+        with patch("app.validate_prediction_start_time") as mock_validate:
+            mock_validate.return_value = (True, "Valid")
+
+            response = client.post(
+                "/api/predictions/validate_start_time",
+                json={"start_time": next_hour.isoformat()},
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert "next_valid_hour" in data
+
+
+class TestTrainDatasetStatsTimeRange:
+    """Test that training endpoint returns time range info in stats."""
+
+    def test_train_returns_time_range_stats(self, client):
+        """Training response includes data time range."""
+        mock_df = pd.DataFrame({
+            "outdoor_temp": [10.0, 11.0],
+            "target_heating_kwh_1h": [1.0, 1.5],
+        })
+        mock_stats = FeatureDatasetStats(
+            total_slots=100,
+            valid_slots=80,
+            dropped_missing_features=10,
+            dropped_missing_target=5,
+            dropped_insufficient_history=5,
+            features_used=["outdoor_temp", "wind"],
+            has_7d_features=True,
+            data_start_time=datetime(2024, 1, 1, 0, 0, 0),
+            data_end_time=datetime(2024, 1, 15, 0, 0, 0),
+            available_history_hours=336.0,
+        )
+        mock_model = MagicMock()
+        mock_metrics = MagicMock()
+        mock_metrics.train_samples = 60
+        mock_metrics.val_samples = 20
+        mock_metrics.train_mae = 0.1
+        mock_metrics.val_mae = 0.15
+        mock_metrics.val_mape = 0.05
+        mock_metrics.val_r2 = 0.85
+        mock_metrics.features = ["outdoor_temp", "wind"]
+
+        with patch("app.build_heating_feature_dataset") as mock_build, \
+             patch("app.train_heating_demand_model") as mock_train:
+            mock_build.return_value = (mock_df, mock_stats)
+            mock_train.return_value = (mock_model, mock_metrics)
+
+            response = client.post("/api/train/heating_demand")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert "dataset_stats" in data
+            assert data["dataset_stats"]["data_start_time"] == "2024-01-01T00:00:00"
+            assert data["dataset_stats"]["data_end_time"] == "2024-01-15T00:00:00"
+            assert data["dataset_stats"]["available_history_hours"] == 336.0

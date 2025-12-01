@@ -2,6 +2,19 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.53] - 2025-12-01
+
+- **Enhanced model training**: Model now uses ALL available historical data for training (no artificial limit)
+- Added function to compute historical aggregations from user-provided scenario features
+- Added API endpoint `/api/predictions/enrich_scenario` to help users prepare prediction requests
+- Added API endpoint `/api/predictions/compare_actual` to compare predictions with actual historical data
+- Added API endpoint `/api/predictions/validate_start_time` to validate prediction start times
+- Added time range information to dataset statistics (data_start_time, data_end_time, available_history_hours)
+- Predictions must start at next/coming hour for accurate historical feature computation
+- Test data can be compared using 5-minute average records to see delta between model and actual values
+- Added 25 new tests for new functionality
+- Updated documentation with new API endpoints and enhanced feature descriptions
+
 ## [0.0.0.52] - 2025-12-01
 
 - Added pre-filled example fields in UI for single slot and full day heat pump usage calculation

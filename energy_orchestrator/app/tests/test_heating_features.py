@@ -332,3 +332,227 @@ class TestBuildHeatingFeatureDataset:
         
         # Should log features
         assert any("Features used" in record.message for record in caplog.records)
+
+
+class TestComputeScenarioHistoricalFeatures:
+    """Test the compute_scenario_historical_features function."""
+    
+    def test_empty_scenario(self):
+        """Empty scenario returns empty list."""
+        from ml.heating_features import compute_scenario_historical_features
+        
+        result = compute_scenario_historical_features([])
+        assert result == []
+    
+    def test_single_slot_scenario(self):
+        """Single slot scenario adds historical features."""
+        from ml.heating_features import compute_scenario_historical_features
+        
+        scenario = [{
+            "outdoor_temp": 5.0,
+            "indoor_temp": 20.0,
+            "target_temp": 21.0,
+            "wind": 3.0,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+        }]
+        
+        result = compute_scenario_historical_features(scenario)
+        
+        assert len(result) == 1
+        # Check that historical features are added
+        assert "outdoor_temp_avg_1h" in result[0]
+        assert "outdoor_temp_avg_6h" in result[0]
+        assert "outdoor_temp_avg_24h" in result[0]
+        assert "indoor_temp_avg_6h" in result[0]
+        assert "target_temp_avg_6h" in result[0]
+        assert "heating_degree_hours_24h" in result[0]
+        
+        # For single slot, 1h avg should equal current value
+        assert result[0]["outdoor_temp_avg_1h"] == 5.0
+    
+    def test_multi_slot_scenario_computes_rolling(self):
+        """Multi-slot scenario computes rolling averages."""
+        from ml.heating_features import compute_scenario_historical_features
+        
+        # 6 hourly slots with varying outdoor temp
+        scenario = [
+            {"outdoor_temp": 5.0, "indoor_temp": 20.0, "target_temp": 21.0},
+            {"outdoor_temp": 4.0, "indoor_temp": 20.0, "target_temp": 21.0},
+            {"outdoor_temp": 3.0, "indoor_temp": 20.0, "target_temp": 21.0},
+            {"outdoor_temp": 4.0, "indoor_temp": 20.0, "target_temp": 21.0},
+            {"outdoor_temp": 5.0, "indoor_temp": 20.0, "target_temp": 21.0},
+            {"outdoor_temp": 6.0, "indoor_temp": 20.0, "target_temp": 21.0},
+        ]
+        
+        result = compute_scenario_historical_features(scenario)
+        
+        assert len(result) == 6
+        
+        # Last slot should have 6h avg = mean of all 6 values
+        expected_avg = (5.0 + 4.0 + 3.0 + 4.0 + 5.0 + 6.0) / 6
+        assert abs(result[-1]["outdoor_temp_avg_6h"] - expected_avg) < 0.01
+    
+    def test_with_timeslots_adds_time_features(self):
+        """Timeslots are used to compute time features."""
+        from ml.heating_features import compute_scenario_historical_features
+        
+        scenario = [{"outdoor_temp": 5.0, "target_temp": 20.0}]
+        timeslots = [datetime(2024, 1, 15, 14, 0, 0)]  # Monday 2pm
+        
+        result = compute_scenario_historical_features(scenario, timeslots=timeslots)
+        
+        assert len(result) == 1
+        assert result[0]["hour_of_day"] == 14
+        assert result[0]["day_of_week"] == 0  # Monday
+        assert result[0]["is_weekend"] == 0
+        assert result[0]["is_night"] == 0
+    
+    def test_preserves_existing_features(self):
+        """Existing features are not overwritten."""
+        from ml.heating_features import compute_scenario_historical_features
+        
+        scenario = [{
+            "outdoor_temp": 5.0,
+            "outdoor_temp_avg_1h": 10.0,  # Should be preserved
+            "target_temp": 20.0,
+        }]
+        
+        result = compute_scenario_historical_features(scenario)
+        
+        assert result[0]["outdoor_temp_avg_1h"] == 10.0  # Preserved, not recomputed
+    
+    def test_heating_degree_hours_computation(self):
+        """Heating degree hours are computed correctly."""
+        from ml.heating_features import compute_scenario_historical_features
+        
+        # 3 hours with constant temps
+        scenario = [
+            {"outdoor_temp": 10.0, "target_temp": 20.0},  # 10 degree diff
+            {"outdoor_temp": 10.0, "target_temp": 20.0},  # 10 degree diff  
+            {"outdoor_temp": 10.0, "target_temp": 20.0},  # 10 degree diff
+        ]
+        
+        result = compute_scenario_historical_features(scenario)
+        
+        # For 3 hourly slots: sum of degree diffs * 1 hour each = 30
+        assert result[-1]["heating_degree_hours_24h"] == 30.0
+
+
+class TestGetActualVsPredictedData:
+    """Test the get_actual_vs_predicted_data function."""
+    
+    def test_no_data_returns_none(self, patch_engine):
+        """Returns None when no data is available."""
+        from ml.heating_features import get_actual_vs_predicted_data
+        
+        start = datetime(2024, 1, 15, 12, 0, 0)
+        end = datetime(2024, 1, 15, 18, 0, 0)
+        
+        df, error = get_actual_vs_predicted_data(start, end)
+        
+        assert df is None
+        assert error is not None
+    
+    def test_returns_data_for_valid_range(self, patch_engine):
+        """Returns data for a valid time range."""
+        from ml.heating_features import get_actual_vs_predicted_data
+        
+        start = datetime(2024, 1, 15, 12, 0, 0)
+        
+        # Create some test data
+        with Session(patch_engine) as session:
+            for i in range(24):  # 2 hours of 5-min data
+                slot_start = start + timedelta(minutes=5 * i)
+                session.add(ResampledSample(
+                    slot_start=slot_start,
+                    category="outdoor_temp",
+                    value=5.0 + i * 0.1,
+                    unit="°C",
+                ))
+                session.add(ResampledSample(
+                    slot_start=slot_start,
+                    category="hp_kwh_total",
+                    value=100.0 + i * 0.1,
+                    unit="kWh",
+                ))
+            session.commit()
+        
+        end = start + timedelta(hours=2)
+        df, error = get_actual_vs_predicted_data(start, end)
+        
+        assert df is not None
+        assert error is None
+        assert "outdoor_temp" in df.columns
+        assert "actual_heating_kwh" in df.columns
+
+
+class TestValidatePredictionStartTime:
+    """Test the validate_prediction_start_time function."""
+    
+    def test_valid_next_hour(self):
+        """Next hour is valid."""
+        from ml.heating_features import validate_prediction_start_time
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        
+        is_valid, message = validate_prediction_start_time(next_hour)
+        
+        assert is_valid
+        assert "Valid" in message
+    
+    def test_valid_future_hour(self):
+        """Future hours are valid."""
+        from ml.heating_features import validate_prediction_start_time
+        
+        future = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=5)
+        
+        is_valid, message = validate_prediction_start_time(future)
+        
+        assert is_valid
+    
+    def test_invalid_past_time(self):
+        """Past time is invalid."""
+        from ml.heating_features import validate_prediction_start_time
+        
+        past = datetime.now() - timedelta(hours=2)
+        past = past.replace(minute=0, second=0, microsecond=0)
+        
+        is_valid, message = validate_prediction_start_time(past)
+        
+        assert not is_valid
+        assert "past" in message.lower() or "current" in message.lower()
+    
+    def test_invalid_non_aligned_time(self):
+        """Non-hour-aligned time is invalid."""
+        from ml.heating_features import validate_prediction_start_time
+        
+        next_hour = datetime.now().replace(second=0, microsecond=0) + timedelta(hours=1)
+        non_aligned = next_hour.replace(minute=30)  # Half hour
+        
+        is_valid, message = validate_prediction_start_time(non_aligned)
+        
+        assert not is_valid
+        assert "boundary" in message.lower()
+
+
+class TestFeatureDatasetStatsTimeRange:
+    """Test that FeatureDatasetStats includes time range info."""
+    
+    def test_stats_include_time_range(self, patch_engine):
+        """Stats include data time range information."""
+        start = datetime(2024, 1, 1, 12, 0, 0)
+        
+        with Session(patch_engine) as session:
+            _create_resampled_samples(session, start, num_slots=200)
+        
+        df, stats = build_heating_feature_dataset(min_samples=50)
+        
+        assert df is not None
+        assert stats.data_start_time is not None
+        assert stats.data_end_time is not None
+        assert stats.available_history_hours is not None
+        
+        # Check time range makes sense
+        assert stats.data_start_time < stats.data_end_time
+        assert stats.available_history_hours > 0

@@ -29,6 +29,18 @@ SENSOR_ENTITIES = [
 _sensor_worker_started = False
 
 
+def _ensure_timezone_aware(dt: datetime | None) -> datetime | None:
+    """Ensure a datetime is timezone-aware (UTC).
+    
+    Database often returns naive datetimes, so we normalize them to UTC.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _sync_entity(entity_id: str) -> None:
     """
     Voer sync-cyclus(sen) uit voor een enkele entity.
@@ -36,6 +48,11 @@ def _sync_entity(entity_id: str) -> None:
     When no historic data is found and we haven't caught up to yesterday yet,
     loop faster (without the normal 5-second delay between iterations) until
     data is found or we reach today-1.
+
+    Also handles gaps in existing data: when samples exist but the last sample
+    is more than 24 hours ago and no new data is found, fast-forward through
+    the gap by checking subsequent 24-hour windows until data is found or
+    we reach yesterday.
     """
     if not entity_id:
         return
@@ -51,8 +68,18 @@ def _sync_entity(entity_id: str) -> None:
         latest_ts = get_latest_sample_timestamp(entity_id)
         status = get_sync_status(entity_id)
 
+        # Determine effective_since: use the most recent of latest_ts or last_attempt.
+        # When last_attempt is newer than latest_ts, it indicates a gap in the data
+        # (we've already tried to sync beyond the last sample but found no new data).
+        # Using last_attempt in this case allows us to progress through the gap.
         if latest_ts is not None:
             effective_since = latest_ts
+            if status is not None and status.last_attempt is not None:
+                latest_ts_aware = _ensure_timezone_aware(latest_ts)
+                last_attempt_aware = _ensure_timezone_aware(status.last_attempt)
+                
+                if last_attempt_aware > latest_ts_aware:
+                    effective_since = status.last_attempt
         elif status is not None and status.last_attempt is not None:
             effective_since = status.last_attempt
         else:
@@ -66,24 +93,26 @@ def _sync_entity(entity_id: str) -> None:
 
         inserted = sync_history_for_entity(entity_id, effective_since)
 
-        # Check if we should continue fast-forwarding:
-        # - Only when no samples were inserted (inserted == 0)
-        # - And no samples exist yet for this entity (latest_ts is None)
-        # - And effective_since is before yesterday (today - 1 day)
-        if inserted == 0 and latest_ts is None:
-            # Normalize effective_since for comparison
-            if effective_since is not None:
-                if effective_since.tzinfo is None:
-                    effective_since_aware = effective_since.replace(tzinfo=timezone.utc)
-                else:
-                    effective_since_aware = effective_since
-
+        # Check if we should continue fast-forwarding when no samples were inserted
+        if inserted == 0:
+            effective_since_aware = _ensure_timezone_aware(effective_since)
+            if effective_since_aware is not None:
                 # If effective_since is before yesterday, fast-forward without delay
+                # This applies both when:
+                # 1. No samples exist yet (latest_ts is None) - initial backfill
+                # 2. Samples exist but there's a gap > 24h (latest_ts is not None)
                 if effective_since_aware < yesterday:
-                    _Logger.debug(
-                        "No data found for %s and not yet caught up to yesterday, fast-forwarding...",
-                        entity_id,
-                    )
+                    if latest_ts is None:
+                        _Logger.debug(
+                            "No data found for %s (initial backfill) and not yet caught up to yesterday, fast-forwarding...",
+                            entity_id,
+                        )
+                    else:
+                        _Logger.debug(
+                            "No data found for %s (gap in data, last sample: %s) and not yet caught up to yesterday, fast-forwarding...",
+                            entity_id,
+                            latest_ts,
+                        )
                     continue
                 else:
                     _Logger.debug(

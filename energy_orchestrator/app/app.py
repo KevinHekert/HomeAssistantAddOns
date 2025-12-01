@@ -1,7 +1,8 @@
 import logging
-from flask import Flask, render_template
+from flask import Flask, render_template, jsonify
 from ha.ha_api import get_entity_state
 from workers import start_sensor_logging_worker
+from db.resample import resample_all_categories_to_5min
 
 
 
@@ -24,6 +25,18 @@ def index():
         wind_speed=wind_speed,
         wind_unit=wind_unit,
     )
+
+
+@app.post("/resample")
+def trigger_resample():
+    """Trigger resampling of all categories to 5-minute slots."""
+    try:
+        _Logger.info("Resample triggered via UI")
+        resample_all_categories_to_5min()
+        return jsonify({"status": "success", "message": "Resampling completed successfully"})
+    except Exception as e:
+        _Logger.error("Error during resampling: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 if __name__ == "__main__":

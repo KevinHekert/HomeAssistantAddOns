@@ -19,6 +19,45 @@
             border: 1px solid #1f2937;
             max-width: 700px;
         }
+        .resample-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 1rem;
+            transition: background 0.2s;
+        }
+        .resample-btn:hover {
+            background: #2563eb;
+        }
+        .resample-btn:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+        }
+        .status-message {
+            margin-top: 0.75rem;
+            padding: 0.5rem;
+            border-radius: 4px;
+            display: none;
+        }
+        .status-message.success {
+            background: #166534;
+            color: #86efac;
+            display: block;
+        }
+        .status-message.error {
+            background: #991b1b;
+            color: #fca5a5;
+            display: block;
+        }
+        .status-message.loading {
+            background: #1e3a8a;
+            color: #93c5fd;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -30,6 +69,45 @@
         <p><strong>Actuele windsnelheid (dummy sensor):</strong>
             {{ wind_speed if wind_speed is not none else "onbekend" }}
         </p>
+
+        <hr style="border-color: #1f2937; margin: 1.5rem 0;">
+
+        <h3>🔄 Data Resampling</h3>
+        <p>Trigger resampling to aggregate raw sensor data into 5-minute time slots.</p>
+        <button class="resample-btn" onclick="triggerResample()">Resample Data</button>
+        <div id="resampleStatus" class="status-message"></div>
     </div>
+
+    <script>
+        async function triggerResample() {
+            const btn = document.querySelector('.resample-btn');
+            const statusDiv = document.getElementById('resampleStatus');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Resampling in progress...';
+            
+            try {
+                const response = await fetch('/resample', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error: ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
 </body>
 </html>

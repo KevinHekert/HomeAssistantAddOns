@@ -2,6 +2,13 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.50] - 2025-12-01
+
+- Fixed sensor import halting when data gaps exceed 24 hours
+- Sync now fast-forwards through gaps in historical data by checking subsequent 24-hour windows
+- Uses max(latest_sample_timestamp, sync_status.last_attempt) to ensure progress through data gaps
+- Added tests for DWH sensor scenarios with large gaps in history data
+
 ## [0.0.0.49] - 2025-12-01
 
 - Added comprehensive unit tests for sync_state module

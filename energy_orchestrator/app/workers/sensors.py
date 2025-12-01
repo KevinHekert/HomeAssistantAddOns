@@ -36,6 +36,11 @@ def _sync_entity(entity_id: str) -> None:
     When no historic data is found and we haven't caught up to yesterday yet,
     loop faster (without the normal 5-second delay between iterations) until
     data is found or we reach today-1.
+
+    Also handles gaps in existing data: when samples exist but the last sample
+    is more than 24 hours ago and no new data is found, fast-forward through
+    the gap by checking subsequent 24-hour windows until data is found or
+    we reach yesterday.
     """
     if not entity_id:
         return
@@ -51,8 +56,24 @@ def _sync_entity(entity_id: str) -> None:
         latest_ts = get_latest_sample_timestamp(entity_id)
         status = get_sync_status(entity_id)
 
+        # Determine effective_since: use the most recent of latest_ts or last_attempt
+        # This ensures we progress through gaps in data
         if latest_ts is not None:
             effective_since = latest_ts
+            # If we have a last_attempt that's newer than latest_ts, use that instead
+            # This handles gaps where no samples exist for a period
+            if status is not None and status.last_attempt is not None:
+                # Normalize timestamps for comparison
+                latest_ts_aware = latest_ts
+                if latest_ts.tzinfo is None:
+                    latest_ts_aware = latest_ts.replace(tzinfo=timezone.utc)
+                
+                last_attempt_aware = status.last_attempt
+                if status.last_attempt.tzinfo is None:
+                    last_attempt_aware = status.last_attempt.replace(tzinfo=timezone.utc)
+                
+                if last_attempt_aware > latest_ts_aware:
+                    effective_since = status.last_attempt
         elif status is not None and status.last_attempt is not None:
             effective_since = status.last_attempt
         else:
@@ -66,11 +87,8 @@ def _sync_entity(entity_id: str) -> None:
 
         inserted = sync_history_for_entity(entity_id, effective_since)
 
-        # Check if we should continue fast-forwarding:
-        # - Only when no samples were inserted (inserted == 0)
-        # - And no samples exist yet for this entity (latest_ts is None)
-        # - And effective_since is before yesterday (today - 1 day)
-        if inserted == 0 and latest_ts is None:
+        # Check if we should continue fast-forwarding when no samples were inserted
+        if inserted == 0:
             # Normalize effective_since for comparison
             if effective_since is not None:
                 if effective_since.tzinfo is None:
@@ -79,11 +97,21 @@ def _sync_entity(entity_id: str) -> None:
                     effective_since_aware = effective_since
 
                 # If effective_since is before yesterday, fast-forward without delay
+                # This applies both when:
+                # 1. No samples exist yet (latest_ts is None) - initial backfill
+                # 2. Samples exist but there's a gap > 24h (latest_ts is not None)
                 if effective_since_aware < yesterday:
-                    _Logger.debug(
-                        "No data found for %s and not yet caught up to yesterday, fast-forwarding...",
-                        entity_id,
-                    )
+                    if latest_ts is None:
+                        _Logger.debug(
+                            "No data found for %s (initial backfill) and not yet caught up to yesterday, fast-forwarding...",
+                            entity_id,
+                        )
+                    else:
+                        _Logger.debug(
+                            "No data found for %s (gap in data, last sample: %s) and not yet caught up to yesterday, fast-forwarding...",
+                            entity_id,
+                            latest_ts,
+                        )
                     continue
                 else:
                     _Logger.debug(

@@ -229,7 +229,14 @@
     <div class="card">
         <h3>🌡️ Scenario-Based Prediction (Simplified)</h3>
         <p class="example-description">Predict heating demand using simple, human-readable inputs. No need to calculate model features - just provide weather forecast and setpoint schedule.</p>
-        <button class="action-btn secondary" id="loadScenarioExampleBtn" onclick="loadScenarioExample()">Load Example (24h)</button>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem;">
+            <button class="action-btn secondary" id="loadScenarioExampleBtn" onclick="loadScenarioExample()">Load Example (24h)</button>
+            <span style="color: #9ca3af;">or load from historical data:</span>
+            <select id="historicalDaySelect" onchange="loadHistoricalDay()" style="background: #111827; border: 1px solid #374151; border-radius: 8px; color: #e5e7eb; padding: 0.5rem; cursor: pointer;">
+                <option value="">Select historical day...</option>
+            </select>
+            <button class="action-btn secondary" id="refreshDaysBtn" onclick="loadAvailableDays()" style="padding: 0.5rem 1rem;">↻</button>
+        </div>
         <button class="action-btn success" id="runScenarioPredictionBtn" onclick="runScenarioPrediction()">Run Prediction</button>
         <p class="example-description" style="margin-top: 0.5rem;">Required per timeslot: timestamp (future), outdoor_temperature, wind_speed, humidity, pressure, target_temperature. Optional: indoor_temperature</p>
         <textarea id="scenarioInput" placeholder='{"timeslots": [{"timestamp": "2024-01-15T14:00:00", "outdoor_temperature": 5.0, "wind_speed": 3.0, "humidity": 75.0, "pressure": 1013.0, "target_temperature": 20.0}, ...]}'></textarea>
@@ -266,6 +273,82 @@
     </div>
 
     <script>
+        // Store historical data when loaded for comparison in table
+        let currentHistoricalData = null;
+        
+        // Load available days on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAvailableDays();
+        });
+        
+        async function loadAvailableDays() {
+            const select = document.getElementById('historicalDaySelect');
+            
+            try {
+                const response = await fetch('api/examples/available_days');
+                const data = await response.json();
+                
+                // Clear existing options except first
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+                
+                if (response.ok && data.days && data.days.length > 0) {
+                    data.days.forEach(day => {
+                        const option = document.createElement('option');
+                        option.value = day;
+                        option.textContent = day;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading available days:', error);
+            }
+        }
+        
+        async function loadHistoricalDay() {
+            const select = document.getElementById('historicalDaySelect');
+            const selectedDay = select.value;
+            
+            if (!selectedDay) {
+                currentHistoricalData = null;
+                return;
+            }
+            
+            const statusDiv = document.getElementById('scenarioStatus');
+            const textarea = document.getElementById('scenarioInput');
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading historical data for ' + selectedDay + '...';
+            
+            try {
+                const response = await fetch('api/examples/historical_day/' + selectedDay);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Store historical data for comparison
+                    currentHistoricalData = data.hourly_data;
+                    
+                    // Load scenario format into textarea
+                    textarea.value = JSON.stringify(data.scenario_format, null, 2);
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ Loaded historical data for ' + selectedDay + '. Run prediction to compare model output with actual data.';
+                    
+                    if (!data.model_available) {
+                        statusDiv.textContent += '\n⚠️ Model not available - train the model first';
+                    }
+                } else {
+                    currentHistoricalData = null;
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error: ' + data.message;
+                }
+            } catch (error) {
+                currentHistoricalData = null;
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
         async function triggerResample() {
             const btn = document.getElementById('resampleBtn');
             const statusDiv = document.getElementById('resampleStatus');
@@ -636,6 +719,9 @@
                 
                 if (response.ok) {
                     textarea.value = JSON.stringify(data.example, null, 2);
+                    // Clear historical data when loading example
+                    currentHistoricalData = null;
+                    document.getElementById('historicalDaySelect').value = '';
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = '✓ ' + data.description;
                     if (!data.model_available) {
@@ -677,19 +763,52 @@
                 
                 if (response.ok) {
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = '✓ Prediction completed successfully - ' + data.slots_count + ' timeslots processed';
+                    let statusText = '✓ Prediction completed successfully - ' + data.slots_count + ' timeslots processed';
+                    if (currentHistoricalData) {
+                        statusText += ' (comparing with actual historical data)';
+                    }
+                    statusDiv.textContent = statusText;
                     
                     const predictions = data.predictions;
                     const predValues = predictions.map(p => p.predicted_kwh);
-                    const maxVal = Math.max(...predValues, 0.1);
                     
-                    // Create simple bar chart
-                    let chartHtml = '<div class="chart-container"><h4 style="margin-top:0">Hourly Heating Demand</h4>';
+                    // Get actual values if historical data is available
+                    let actualValues = [];
+                    let hasComparison = false;
+                    if (currentHistoricalData && currentHistoricalData.length > 0) {
+                        // Build lookup by hour for comparison
+                        const actualByHour = {};
+                        currentHistoricalData.forEach(h => {
+                            const hourKey = h.timestamp.split('T')[1].substring(0, 5);
+                            actualByHour[hourKey] = h.actual_heating_kwh;
+                        });
+                        
+                        predictions.forEach(p => {
+                            const hourKey = p.timestamp.split('T')[1].substring(0, 5);
+                            actualValues.push(actualByHour[hourKey] !== undefined ? actualByHour[hourKey] : null);
+                        });
+                        hasComparison = actualValues.some(v => v !== null && v !== undefined);
+                    }
+                    
+                    const maxPred = Math.max(...predValues, 0.1);
+                    const maxActual = hasComparison ? Math.max(...actualValues.filter(v => v !== null), 0.1) : 0;
+                    const maxVal = Math.max(maxPred, maxActual, 0.1);
+                    
+                    // Create bar chart with comparison if available
+                    let chartHtml = '<div class="chart-container"><h4 style="margin-top:0">Hourly Heating Demand' + (hasComparison ? ' (Predicted vs Actual)' : '') + '</h4>';
+                    if (hasComparison) {
+                        chartHtml += '<div style="margin-bottom: 0.5rem; font-size: 0.85rem;"><span style="color: #3b82f6;">■ Predicted</span> <span style="color: #22c55e; margin-left: 1rem;">■ Actual</span></div>';
+                    }
                     chartHtml += '<div class="chart-wrapper">';
                     predictions.forEach((pred, idx) => {
-                        const height = (pred.predicted_kwh / maxVal) * 100;
-                        const width = Math.max(100 / predictions.length - 1, 5);
-                        chartHtml += `<div class="bar" style="height: ${height}%; width: ${width}%" title="${pred.timestamp}: ${pred.predicted_kwh.toFixed(3)} kWh"></div>`;
+                        const predHeight = (pred.predicted_kwh / maxVal) * 100;
+                        const width = Math.max(100 / predictions.length / (hasComparison ? 2 : 1) - 1, 3);
+                        chartHtml += `<div class="bar" style="height: ${predHeight}%; width: ${width}%; background: #3b82f6;" title="${pred.timestamp}: ${pred.predicted_kwh.toFixed(3)} kWh (predicted)"></div>`;
+                        
+                        if (hasComparison && actualValues[idx] !== null && actualValues[idx] !== undefined) {
+                            const actualHeight = (actualValues[idx] / maxVal) * 100;
+                            chartHtml += `<div class="bar" style="height: ${actualHeight}%; width: ${width}%; background: #22c55e;" title="${pred.timestamp}: ${actualValues[idx].toFixed(3)} kWh (actual)"></div>`;
+                        }
                     });
                     chartHtml += '</div>';
                     chartHtml += '<div class="chart-labels">';
@@ -703,13 +822,58 @@
                     }
                     chartHtml += '</div></div>';
                     
-                    // Create table
-                    chartHtml += '<table class="results-table"><thead><tr><th>Timestamp</th><th>Predicted kWh</th></tr></thead><tbody>';
-                    predictions.forEach(pred => {
-                        chartHtml += `<tr><td>${pred.timestamp}</td><td>${pred.predicted_kwh.toFixed(4)}</td></tr>`;
-                    });
-                    chartHtml += '</tbody></table>';
-                    chartHtml += `<div class="total-kwh">Total Consumption: ${data.total_kwh.toFixed(4)} kWh</div>`;
+                    // Create table with comparison column if available
+                    if (hasComparison) {
+                        chartHtml += '<table class="results-table"><thead><tr><th>Timestamp</th><th>Predicted kWh</th><th>Actual kWh</th><th>Δ (kWh)</th><th>Δ (%)</th></tr></thead><tbody>';
+                        let totalActual = 0;
+                        let totalDelta = 0;
+                        let countCompared = 0;
+                        predictions.forEach((pred, idx) => {
+                            const actual = actualValues[idx];
+                            const hasActual = actual !== null && actual !== undefined;
+                            const delta = hasActual ? pred.predicted_kwh - actual : null;
+                            const deltaPct = hasActual && actual > 0.01 ? (delta / actual * 100) : null;
+                            
+                            if (hasActual) {
+                                totalActual += actual;
+                                totalDelta += Math.abs(delta);
+                                countCompared++;
+                            }
+                            
+                            const deltaClass = delta !== null ? (delta > 0 ? 'color: #f87171;' : 'color: #4ade80;') : '';
+                            
+                            chartHtml += `<tr>`;
+                            chartHtml += `<td>${pred.timestamp}</td>`;
+                            chartHtml += `<td>${pred.predicted_kwh.toFixed(4)}</td>`;
+                            chartHtml += `<td>${hasActual ? actual.toFixed(4) : '-'}</td>`;
+                            chartHtml += `<td style="${deltaClass}">${delta !== null ? (delta > 0 ? '+' : '') + delta.toFixed(4) : '-'}</td>`;
+                            chartHtml += `<td style="${deltaClass}">${deltaPct !== null ? (deltaPct > 0 ? '+' : '') + deltaPct.toFixed(1) + '%' : '-'}</td>`;
+                            chartHtml += `</tr>`;
+                        });
+                        chartHtml += '</tbody></table>';
+                        
+                        // Summary statistics
+                        const mae = countCompared > 0 ? totalDelta / countCompared : 0;
+                        const mape = countCompared > 0 && totalActual > 0 ? (totalDelta / totalActual * 100) : null;
+                        
+                        chartHtml += `<div style="display: flex; gap: 2rem; margin-top: 1rem;">`;
+                        chartHtml += `<div class="total-kwh">Predicted Total: ${data.total_kwh.toFixed(4)} kWh</div>`;
+                        chartHtml += `<div class="total-kwh" style="color: #22c55e;">Actual Total: ${totalActual.toFixed(4)} kWh</div>`;
+                        chartHtml += `</div>`;
+                        chartHtml += `<div style="margin-top: 0.5rem; color: #9ca3af; font-size: 0.9rem;">`;
+                        chartHtml += `Mean Absolute Error: ${mae.toFixed(4)} kWh`;
+                        if (mape !== null) {
+                            chartHtml += ` | MAPE: ${mape.toFixed(1)}%`;
+                        }
+                        chartHtml += `</div>`;
+                    } else {
+                        chartHtml += '<table class="results-table"><thead><tr><th>Timestamp</th><th>Predicted kWh</th></tr></thead><tbody>';
+                        predictions.forEach(pred => {
+                            chartHtml += `<tr><td>${pred.timestamp}</td><td>${pred.predicted_kwh.toFixed(4)}</td></tr>`;
+                        });
+                        chartHtml += '</tbody></table>';
+                        chartHtml += `<div class="total-kwh">Total Consumption: ${data.total_kwh.toFixed(4)} kWh</div>`;
+                    }
                     
                     resultDiv.innerHTML = chartHtml;
                 } else {

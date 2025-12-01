@@ -14,6 +14,30 @@ from sqlalchemy.orm import Session
 
 from db import Base, Sample, SyncStatus
 import workers.sensors as sensors_module
+from workers.sensors import _ensure_timezone_aware
+
+
+class TestEnsureTimezoneAware:
+    """Tests for the _ensure_timezone_aware helper function."""
+
+    def test_none_returns_none(self):
+        """None input should return None."""
+        assert _ensure_timezone_aware(None) is None
+
+    def test_naive_datetime_becomes_utc(self):
+        """Naive datetime should be converted to UTC."""
+        naive_dt = datetime(2025, 12, 1, 10, 30, 0)
+        result = _ensure_timezone_aware(naive_dt)
+        assert result.tzinfo == timezone.utc
+        assert result.year == 2025
+        assert result.month == 12
+        assert result.day == 1
+
+    def test_aware_datetime_unchanged(self):
+        """Already aware datetime should be returned unchanged."""
+        aware_dt = datetime(2025, 12, 1, 10, 30, 0, tzinfo=timezone.utc)
+        result = _ensure_timezone_aware(aware_dt)
+        assert result == aware_dt
 
 
 @pytest.fixture

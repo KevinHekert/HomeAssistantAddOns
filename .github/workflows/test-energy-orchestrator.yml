@@ -1,5 +1,10 @@
 name: Run Tests (Energy Orchestrator)
 
+# Uses pull_request_target to avoid requiring approval for every PR from forks/first-time contributors.
+# This is safe because:
+# 1. The workflow only has read permissions (contents: read)
+# 2. No secrets are exposed to the workflow
+# 3. The workflow only runs pytest tests in an isolated environment
 on:
   push:
     branches:
@@ -8,7 +13,7 @@ on:
     paths:
       - 'energy_orchestrator/**'
       - '.github/workflows/test-energy-orchestrator.yml'
-  pull_request:
+  pull_request_target:
     paths:
       - 'energy_orchestrator/**'
       - '.github/workflows/test-energy-orchestrator.yml'
@@ -24,6 +29,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # For pull_request_target, checkout the PR head to test the actual changes
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5

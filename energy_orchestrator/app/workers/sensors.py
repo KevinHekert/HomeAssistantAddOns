@@ -2,6 +2,7 @@ import os
 import logging
 import time
 import threading
+from datetime import datetime, timedelta, timezone
 
 from db.core import test_db_connection, init_db_schema
 from db.samples import get_latest_sample_timestamp
@@ -29,28 +30,70 @@ _sensor_worker_started = False
 
 
 def _sync_entity(entity_id: str) -> None:
-    """Voer één sync-cyclus uit voor een enkele entity."""
+    """
+    Voer sync-cyclus(sen) uit voor een enkele entity.
+
+    When no historic data is found and we haven't caught up to yesterday yet,
+    loop faster (without the normal 5-second delay between iterations) until
+    data is found or we reach today-1.
+    """
     if not entity_id:
         return
 
-    latest_ts = get_latest_sample_timestamp(entity_id)
-    status = get_sync_status(entity_id)
+    while True:
+        latest_ts = get_latest_sample_timestamp(entity_id)
+        status = get_sync_status(entity_id)
 
-    if latest_ts is not None:
-        effective_since = latest_ts
-    elif status is not None and status.last_attempt is not None:
-        effective_since = status.last_attempt
-    else:
-        effective_since = None
+        if latest_ts is not None:
+            effective_since = latest_ts
+        elif status is not None and status.last_attempt is not None:
+            effective_since = status.last_attempt
+        else:
+            effective_since = None
 
-    _Logger.info(
-        "Effective since voor %s vóór sync: %s",
-        entity_id,
-        effective_since,
-    )
+        _Logger.info(
+            "Effective since voor %s vóór sync: %s",
+            entity_id,
+            effective_since,
+        )
 
-    sync_history_for_entity(entity_id, effective_since)
-    time.sleep(5)
+        inserted = sync_history_for_entity(entity_id, effective_since)
+
+        # Check if we should continue fast-forwarding:
+        # - Only when no samples were inserted (inserted == 0)
+        # - And no samples exist yet for this entity (latest_ts is None)
+        # - And effective_since is before yesterday (today - 1 day)
+        if inserted == 0 and latest_ts is None:
+            now_utc = datetime.now(timezone.utc)
+            yesterday = now_utc - timedelta(days=1)
+
+            # Normalize effective_since for comparison
+            if effective_since is not None:
+                if effective_since.tzinfo is None:
+                    effective_since_aware = effective_since.replace(tzinfo=timezone.utc)
+                else:
+                    effective_since_aware = effective_since
+            else:
+                # effective_since is still None, which means the sync just started
+                # from BACKFILL_IF_NO_SAMPLES_DAYS ago, so continue fast-forwarding
+                effective_since_aware = None
+
+            # If effective_since is before yesterday, fast-forward without delay
+            if effective_since_aware is None or effective_since_aware < yesterday:
+                _Logger.info(
+                    "No data found for %s and not yet caught up to yesterday, fast-forwarding...",
+                    entity_id,
+                )
+                continue
+            else:
+                _Logger.info(
+                    "No data found for %s but caught up to yesterday, stopping fast-forward.",
+                    entity_id,
+                )
+
+        # Normal case: wait before next entity
+        time.sleep(5)
+        break
 
 
 def sensor_logging_worker():

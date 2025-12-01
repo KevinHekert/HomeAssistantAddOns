@@ -98,7 +98,7 @@ def log_sample(entity_id: str, timestamp: datetime, value: float | None, unit: s
                 # Update existing sample
                 existing.value = float(value)
                 existing.unit = unit
-                _Logger.info(
+                _Logger.debug(
                     "Sample bijgewerkt: entity=%s, ts=%s, value=%s, unit=%s",
                     entity_id,
                     aligned_ts,
@@ -114,7 +114,7 @@ def log_sample(entity_id: str, timestamp: datetime, value: float | None, unit: s
                     unit=unit,
                 )
                 session.add(sample)
-                _Logger.info(
+                _Logger.debug(
                     "Sample opgeslagen: entity=%s, ts=%s, value=%s, unit=%s",
                     entity_id,
                     aligned_ts,

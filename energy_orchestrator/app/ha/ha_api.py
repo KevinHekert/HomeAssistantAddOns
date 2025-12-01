@@ -15,6 +15,34 @@ BACKFILL_IF_NO_SAMPLES_DAYS = 100
 MAX_WINDOW_DAYS = 1
 
 
+def parse_state_to_float(state: str | None) -> float | None:
+    """
+    Parse a Home Assistant state value to a float.
+
+    Handles:
+    - Numeric strings (e.g., "23.5") -> float value
+    - "on" -> 1.0
+    - "off" -> 0.0
+    - "true" -> 1.0
+    - "false" -> 0.0
+    - None or invalid values -> None
+    """
+    if state is None:
+        return None
+
+    state_lower = state.lower()
+
+    if state_lower in ("on", "true"):
+        return 1.0
+    if state_lower in ("off", "false"):
+        return 0.0
+
+    try:
+        return float(state)
+    except (TypeError, ValueError):
+        return None
+
+
 
 def parse_ha_timestamp(value: str) -> datetime | None:
     """Parseer een ISO timestamp uit Home Assistant (met eventuele 'Z')."""
@@ -57,10 +85,7 @@ def get_entity_state(entity_id: str) -> tuple[float | None, str | None]:
     attributes = data.get("attributes", {})
     unit = attributes.get("unit_of_measurement")
 
-    try:
-        value = float(state)
-    except (TypeError, ValueError):
-        value = None
+    value = parse_state_to_float(state)
 
     return value, unit
 
@@ -172,9 +197,8 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
         if ts is None:
             continue
 
-        try:
-            value = float(raw_state)
-        except (TypeError, ValueError):
+        value = parse_state_to_float(raw_state)
+        if value is None:
             continue
 
         unit = attributes.get("unit_of_measurement")

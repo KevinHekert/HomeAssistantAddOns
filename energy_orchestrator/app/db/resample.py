@@ -8,6 +8,7 @@ This module provides functionality to:
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from sqlalchemy import func
@@ -21,6 +22,17 @@ _Logger = logging.getLogger(__name__)
 
 # Fixed step size for resampling
 RESAMPLE_STEP = timedelta(minutes=5)
+
+
+@dataclass
+class ResampleStats:
+    """Statistics about the resampling operation."""
+    slots_processed: int
+    slots_saved: int
+    slots_skipped: int
+    categories: list[str]
+    start_time: datetime | None
+    end_time: datetime | None
 
 
 def get_primary_entities_by_category() -> dict[str, str]:
@@ -227,7 +239,7 @@ def _align_to_5min_boundary(dt: datetime) -> datetime:
     return dt.replace(minute=aligned_minutes, second=0, microsecond=0)
 
 
-def resample_all_categories_to_5min() -> None:
+def resample_all_categories_to_5min() -> ResampleStats:
     """
     Resample raw sensor samples into 5-minute slots for all configured categories.
 
@@ -238,6 +250,9 @@ def resample_all_categories_to_5min() -> None:
     4. Iterates over 5-minute slots and computes time-weighted averages.
     5. Only writes complete slots (all categories have values).
     6. Ensures idempotence by deleting existing rows before inserting.
+
+    Returns:
+        ResampleStats with statistics about the resampling operation.
     """
     # Step 1: Ensure DB schema exists
     init_db_schema()
@@ -249,7 +264,14 @@ def resample_all_categories_to_5min() -> None:
         _Logger.warning(
             "No active sensor mappings configured, skipping resample."
         )
-        return
+        return ResampleStats(
+            slots_processed=0,
+            slots_saved=0,
+            slots_skipped=0,
+            categories=[],
+            start_time=None,
+            end_time=None,
+        )
 
     # Step 3: Get global time range
     global_start, global_end, category_to_entity = get_global_range_for_all_categories()
@@ -258,7 +280,14 @@ def resample_all_categories_to_5min() -> None:
         _Logger.warning(
             "No global time range available for all categories, skipping resample."
         )
-        return
+        return ResampleStats(
+            slots_processed=0,
+            slots_saved=0,
+            slots_skipped=0,
+            categories=list(category_to_entity.keys()),
+            start_time=None,
+            end_time=None,
+        )
 
     # Step 4: Align global_start to 5-minute boundary
     aligned_start = _align_to_5min_boundary(global_start)
@@ -270,6 +299,11 @@ def resample_all_categories_to_5min() -> None:
         list(category_to_entity.keys()),
     )
 
+    # Track statistics
+    slots_processed = 0
+    slots_saved = 0
+    slots_skipped = 0
+
     # Step 5: Iterate over slots
     try:
         with Session(engine) as session:
@@ -277,6 +311,7 @@ def resample_all_categories_to_5min() -> None:
 
             while slot_start < global_end:
                 slot_end = slot_start + RESAMPLE_STEP
+                slots_processed += 1
 
                 # Compute values for all categories
                 slot_values: dict[str, tuple[float, str | None]] = {}
@@ -314,13 +349,31 @@ def resample_all_categories_to_5min() -> None:
                             unit=unit,
                         )
                         session.add(resampled)
+                    slots_saved += 1
+                else:
+                    slots_skipped += 1
 
                 slot_start = slot_end
 
             # Step 6: Commit all changes
             session.commit()
 
-            _Logger.info("Resample completed successfully.")
+            _Logger.info(
+                "Resample completed successfully. Processed: %d, Saved: %d, Skipped: %d",
+                slots_processed,
+                slots_saved,
+                slots_skipped,
+            )
+
+            return ResampleStats(
+                slots_processed=slots_processed,
+                slots_saved=slots_saved,
+                slots_skipped=slots_skipped,
+                categories=list(category_to_entity.keys()),
+                start_time=aligned_start,
+                end_time=global_end,
+            )
 
     except SQLAlchemyError as e:
         _Logger.error("Error during resampling: %s", e)
+        raise

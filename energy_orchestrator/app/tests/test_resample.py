@@ -9,6 +9,7 @@ Uses an in-memory SQLite database to test:
 5. Time-weighted average correctness
 6. Complete-slot semantics
 7. Idempotence
+8. ResampleStats return values
 """
 
 import pytest
@@ -20,6 +21,7 @@ from sqlalchemy.orm import Session
 from db import Base, ResampledSample, Sample, SensorMapping
 from db.resample import (
     RESAMPLE_STEP,
+    ResampleStats,
     _align_to_5min_boundary,
     compute_time_weighted_avg,
     get_global_range_for_all_categories,
@@ -874,3 +876,149 @@ class TestMultipleCategoriesResampling:
 
             assert categories_12_00 == {"WIND", "TEMP"}
             assert categories_12_05 == {"WIND", "TEMP"}
+
+
+class TestResampleStats:
+    """Test that resample_all_categories_to_5min returns correct ResampleStats."""
+
+    def test_returns_stats_no_mappings(self, patch_engine):
+        """No mappings returns stats with zero values."""
+        stats = resample_all_categories_to_5min()
+
+        assert isinstance(stats, ResampleStats)
+        assert stats.slots_processed == 0
+        assert stats.slots_saved == 0
+        assert stats.slots_skipped == 0
+        assert stats.categories == []
+        assert stats.start_time is None
+        assert stats.end_time is None
+
+    def test_returns_stats_no_samples(self, patch_engine):
+        """Mappings but no samples returns stats with categories but no times."""
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            session.commit()
+
+        stats = resample_all_categories_to_5min()
+
+        assert isinstance(stats, ResampleStats)
+        assert stats.slots_processed == 0
+        assert stats.slots_saved == 0
+        assert stats.slots_skipped == 0
+        assert "WIND" in stats.categories
+        assert stats.start_time is None
+        assert stats.end_time is None
+
+    def test_returns_stats_with_data(self, patch_engine):
+        """Single category with data returns correct stats."""
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 10, 0),
+                    value=15.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        stats = resample_all_categories_to_5min()
+
+        assert isinstance(stats, ResampleStats)
+        assert stats.slots_processed == 2
+        assert stats.slots_saved == 2
+        assert stats.slots_skipped == 0
+        assert stats.categories == ["WIND"]
+        assert stats.start_time == datetime(2024, 1, 1, 12, 0, 0)
+        assert stats.end_time == datetime(2024, 1, 1, 12, 10, 0)
+
+    def test_returns_stats_with_skipped_slots(self, patch_engine):
+        """Two categories with different time ranges shows skipped slots."""
+        with Session(patch_engine) as session:
+            # WIND: has data from 12:00 to 12:20
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            # TEMP: has data from 12:10 to 12:20
+            session.add(
+                SensorMapping(
+                    category="TEMP",
+                    entity_id="sensor.temp",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+
+            # WIND data
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 20, 0),
+                    value=15.0,
+                    unit="m/s",
+                )
+            )
+
+            # TEMP data - starts later
+            session.add(
+                Sample(
+                    entity_id="sensor.temp",
+                    timestamp=datetime(2024, 1, 1, 12, 10, 0),
+                    value=20.0,
+                    unit="°C",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.temp",
+                    timestamp=datetime(2024, 1, 1, 12, 20, 0),
+                    value=22.0,
+                    unit="°C",
+                )
+            )
+            session.commit()
+
+        stats = resample_all_categories_to_5min()
+
+        assert isinstance(stats, ResampleStats)
+        # Global range is [12:10, 12:20] → 2 slots: [12:10, 12:15) and [12:15, 12:20)
+        assert stats.slots_processed == 2
+        assert stats.slots_saved == 2
+        assert stats.slots_skipped == 0
+        assert set(stats.categories) == {"WIND", "TEMP"}

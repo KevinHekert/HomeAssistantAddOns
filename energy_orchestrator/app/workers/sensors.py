@@ -130,7 +130,7 @@ def _sync_entity(entity_id: str) -> None:
                 continue
 
         # Normal case: wait before next entity
-        time.sleep(5)
+        time.sleep(1)
         break
     else:
         # Max iterations reached - log warning and continue normally
@@ -139,7 +139,7 @@ def _sync_entity(entity_id: str) -> None:
             max_iterations,
             entity_id,
         )
-        time.sleep(5)
+        time.sleep(1)
 
 
 def sensor_logging_worker():
@@ -163,8 +163,8 @@ def sensor_logging_worker():
         except Exception as e:
             _Logger.error("Onverwachte fout in sensor logging worker-loop: %s", e)
 
-        # TODO: voor productie naar 300s; nu 10 voor sneller testen
-        time.sleep(300)
+        # Voor testing: minimaal wachten tussen loops
+        time.sleep(1)
 
 
 def start_sensor_logging_worker():

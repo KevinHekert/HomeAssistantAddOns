@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock
 import pandas as pd
 
 from app import app
+from db.resample import ResampleStats
 from ml.heating_features import FeatureDatasetStats
 
 
@@ -35,14 +36,28 @@ class TestResampleEndpoint:
     """Test the /resample POST endpoint."""
 
     def test_resample_success(self, client):
-        """Successful resample returns 200 with success message."""
+        """Successful resample returns 200 with success message and stats."""
+        mock_stats = ResampleStats(
+            slots_processed=100,
+            slots_saved=90,
+            slots_skipped=10,
+            categories=["outdoor_temp", "wind"],
+            start_time=datetime(2024, 1, 1, 12, 0, 0),
+            end_time=datetime(2024, 1, 1, 20, 0, 0),
+        )
         with patch("app.resample_all_categories_to_5min") as mock_resample:
+            mock_resample.return_value = mock_stats
+
             response = client.post("/resample")
 
             assert response.status_code == 200
             data = response.get_json()
             assert data["status"] == "success"
             assert "successfully" in data["message"]
+            assert data["stats"]["slots_processed"] == 100
+            assert data["stats"]["slots_saved"] == 90
+            assert data["stats"]["slots_skipped"] == 10
+            assert data["stats"]["categories"] == ["outdoor_temp", "wind"]
             mock_resample.assert_called_once()
 
     def test_resample_error(self, client):

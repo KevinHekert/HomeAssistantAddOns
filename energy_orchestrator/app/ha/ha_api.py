@@ -11,7 +11,7 @@ from db.sync_state import update_sync_attempt
 _Logger = logging.getLogger(__name__)
 
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN")
-BACKFILL_IF_NO_SAMPLES_DAYS = 100
+BACKFILL_IF_NO_SAMPLES_DAYS = 14
 MAX_WINDOW_DAYS = 1
 
 
@@ -124,7 +124,7 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
     window = timedelta(days=MAX_WINDOW_DAYS)
 
     if since is None:
-        # DB is leeg → begin 100 dagen terug en haal maar 1 dag op
+        # DB is leeg → begin 14 dagen terug en haal maar 1 dag op
         start = now_utc - timedelta(days=BACKFILL_IF_NO_SAMPLES_DAYS)
     else:
         # Wel samples → vanaf laatste sample, klein stukje terug voor veiligheid

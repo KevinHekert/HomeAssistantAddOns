@@ -2,6 +2,14 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.51] - 2025-12-01
+
+- Fixed resampling to properly return statistics (ResampleStats) with slots_processed, slots_saved, slots_skipped
+- Added UI buttons for model training and status checking
+- Improved resample endpoint to show detailed statistics after completion
+- Updated UI to display resampling statistics (time range, categories, slot counts)
+- Added 4 new tests for ResampleStats return values
+
 ## [0.0.0.50] - 2025-12-01
 
 - Fixed sensor import halting when data gaps exceed 24 hours

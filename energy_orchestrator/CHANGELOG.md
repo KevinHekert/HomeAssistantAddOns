@@ -2,6 +2,10 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.56] - 2025-12-01
+
+- **Version Bump**: Preparing for feature set refactoring of heat pump consumption model
+
 ## [0.0.0.55] - 2025-12-01
 
 - **Load Historical Day Examples**: Added ability to load historical days from 5-minute resampled data as scenario examples

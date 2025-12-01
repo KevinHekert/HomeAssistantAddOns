@@ -55,8 +55,19 @@ def trigger_resample():
     """Trigger resampling of all categories to 5-minute slots."""
     try:
         _Logger.info("Resample triggered via UI")
-        resample_all_categories_to_5min()
-        return jsonify({"status": "success", "message": "Resampling completed successfully"})
+        stats = resample_all_categories_to_5min()
+        return jsonify({
+            "status": "success",
+            "message": "Resampling completed successfully",
+            "stats": {
+                "slots_processed": stats.slots_processed,
+                "slots_saved": stats.slots_saved,
+                "slots_skipped": stats.slots_skipped,
+                "categories": stats.categories,
+                "start_time": stats.start_time.isoformat() if stats.start_time else None,
+                "end_time": stats.end_time.isoformat() if stats.end_time else None,
+            },
+        })
     except Exception as e:
         _Logger.error("Error during resampling: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500

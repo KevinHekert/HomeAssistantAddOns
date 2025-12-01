@@ -12,14 +12,16 @@
             color: #e5e7eb;
         }
         h1 { margin-top: 0; }
+        h3 { margin-bottom: 0.5rem; }
         .card {
             background: #020617;
             border-radius: 12px;
             padding: 1.5rem;
             border: 1px solid #1f2937;
             max-width: 700px;
+            margin-bottom: 1rem;
         }
-        .resample-btn {
+        .action-btn {
             background: #3b82f6;
             color: white;
             border: none;
@@ -27,21 +29,36 @@
             padding: 0.75rem 1.5rem;
             font-size: 1rem;
             cursor: pointer;
-            margin-top: 1rem;
+            margin-top: 0.5rem;
+            margin-right: 0.5rem;
             transition: background 0.2s;
         }
-        .resample-btn:hover {
+        .action-btn:hover {
             background: #2563eb;
         }
-        .resample-btn:disabled {
+        .action-btn:disabled {
             background: #6b7280;
             cursor: not-allowed;
         }
+        .action-btn.secondary {
+            background: #4b5563;
+        }
+        .action-btn.secondary:hover {
+            background: #6b7280;
+        }
+        .action-btn.success {
+            background: #059669;
+        }
+        .action-btn.success:hover {
+            background: #047857;
+        }
         .status-message {
             margin-top: 0.75rem;
-            padding: 0.5rem;
+            padding: 0.75rem;
             border-radius: 4px;
             display: none;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
         }
         .status-message.success {
             background: #166534;
@@ -58,29 +75,64 @@
             color: #93c5fd;
             display: block;
         }
+        .status-message.info {
+            background: #1e3a8a;
+            color: #93c5fd;
+            display: block;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        .stat-item {
+            background: #111827;
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            color: #9ca3af;
+        }
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        hr {
+            border-color: #1f2937;
+            margin: 1.5rem 0;
+        }
     </style>
 </head>
 <body>
     <h1>⚡ Energy Orchestrator</h1>
+    
     <div class="card">
-        <p>Flask UI skelet draait nu binnen Home Assistant.</p>
-        <p>Deze content komt nu uit templates/index.html.</p>
-
-        <p><strong>Actuele windsnelheid (dummy sensor):</strong>
+        <p>Flask UI draait binnen Home Assistant.</p>
+        <p><strong>Actuele windsnelheid:</strong>
             {{ wind_speed if wind_speed is not none else "onbekend" }}
         </p>
+    </div>
 
-        <hr style="border-color: #1f2937; margin: 1.5rem 0;">
-
+    <div class="card">
         <h3>🔄 Data Resampling</h3>
-        <p>Trigger resampling to aggregate raw sensor data into 5-minute time slots.</p>
-        <button class="resample-btn" onclick="triggerResample()">Resample Data</button>
+        <p>Resample raw sensor data into 5-minute time slots and save to resampled_samples table.</p>
+        <button class="action-btn" id="resampleBtn" onclick="triggerResample()">Resample Data</button>
         <div id="resampleStatus" class="status-message"></div>
+    </div>
+
+    <div class="card">
+        <h3>🤖 Model Training</h3>
+        <p>Train the heating demand prediction model using resampled data.</p>
+        <button class="action-btn success" id="trainBtn" onclick="trainModel()">Train Model</button>
+        <button class="action-btn secondary" id="statusBtn" onclick="getModelStatus()">Check Status</button>
+        <div id="modelStatus" class="status-message"></div>
     </div>
 
     <script>
         async function triggerResample() {
-            const btn = document.querySelector('.resample-btn');
+            const btn = document.getElementById('resampleBtn');
             const statusDiv = document.getElementById('resampleStatus');
             
             btn.disabled = true;
@@ -95,11 +147,102 @@
                 const data = await response.json();
                 
                 if (response.ok) {
+                    const stats = data.stats || {};
+                    let message = '✓ ' + data.message + '\n\n';
+                    message += 'Slots processed: ' + (stats.slots_processed || 0) + '\n';
+                    message += 'Slots saved: ' + (stats.slots_saved || 0) + '\n';
+                    message += 'Slots skipped: ' + (stats.slots_skipped || 0) + '\n';
+                    if (stats.categories && stats.categories.length > 0) {
+                        message += 'Categories: ' + stats.categories.join(', ') + '\n';
+                    }
+                    if (stats.start_time) {
+                        message += 'Time range: ' + stats.start_time + ' to ' + stats.end_time;
+                    }
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = '✓ ' + data.message;
+                    statusDiv.textContent = message;
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ Error: ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function trainModel() {
+            const btn = document.getElementById('trainBtn');
+            const statusDiv = document.getElementById('modelStatus');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Training model... This may take a while.';
+            
+            try {
+                const response = await fetch('api/train/heating_demand', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const metrics = data.metrics || {};
+                    const stats = data.dataset_stats || {};
+                    let message = '✓ ' + data.message + '\n\n';
+                    message += 'Training samples: ' + (metrics.train_samples || 0) + '\n';
+                    message += 'Validation samples: ' + (metrics.val_samples || 0) + '\n';
+                    message += 'Train MAE (kWh): ' + (metrics.train_mae_kwh || 'N/A') + '\n';
+                    message += 'Val MAE (kWh): ' + (metrics.val_mae_kwh || 'N/A') + '\n';
+                    message += 'Val MAPE (%): ' + (metrics.val_mape_pct || 'N/A') + '\n';
+                    message += 'Val R²: ' + (metrics.val_r2 || 'N/A') + '\n';
+                    if (metrics.features && metrics.features.length > 0) {
+                        message += '\nFeatures: ' + metrics.features.join(', ');
+                    }
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = message;
+                } else {
+                    let message = '✗ ' + (data.message || 'Training failed');
+                    if (data.stats) {
+                        message += '\n\nDataset stats:';
+                        message += '\nTotal slots: ' + (data.stats.total_slots || 0);
+                        message += '\nValid slots: ' + (data.stats.valid_slots || 0);
+                    }
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function getModelStatus() {
+            const btn = document.getElementById('statusBtn');
+            const statusDiv = document.getElementById('modelStatus');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Checking model status...';
+            
+            try {
+                const response = await fetch('api/model/status');
+                const data = await response.json();
+                
+                if (data.status === 'available') {
+                    let message = '✓ Model is available\n\n';
+                    message += 'Training timestamp: ' + (data.training_timestamp || 'Unknown') + '\n';
+                    if (data.features && data.features.length > 0) {
+                        message += 'Features: ' + data.features.join(', ');
+                    }
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = message;
+                } else {
+                    statusDiv.className = 'status-message info';
+                    statusDiv.textContent = 'ℹ️ ' + (data.message || 'No model available');
                 }
             } catch (error) {
                 statusDiv.className = 'status-message error';

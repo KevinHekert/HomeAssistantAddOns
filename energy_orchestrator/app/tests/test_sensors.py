@@ -256,7 +256,7 @@ class TestSyncEntity:
             sensors_module._sync_entity("sensor.test")
             
             # Should stop at max_iterations (200) and sleep
-            assert call_count[0] == 30
+            assert call_count[0] == 200
             mock_sleep.assert_called_once_with(1)
 
     def test_fast_forward_with_existing_samples_and_gap(self, patch_db_engine):

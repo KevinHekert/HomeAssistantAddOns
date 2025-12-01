@@ -62,7 +62,7 @@ def _sync_entity(entity_id: str) -> None:
     yesterday = now_utc - timedelta(days=1)
 
     # Safety limit to prevent infinite loops
-    max_iterations = 30  # Should cover ~30 days of backfill max
+    max_iterations = 200  # Should cover ~200 days of backfill max
 
     for iteration in range(max_iterations):
         latest_ts = get_latest_sample_timestamp(entity_id)

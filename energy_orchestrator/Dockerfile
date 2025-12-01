@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Python dependencies - install to a specific location
 COPY requirements.txt .
-RUN python3 -m pip install --no-cache-dir --break-system-packages --prefix=/install -r requirements.txt
+RUN python3 -m pip install --no-cache-dir --break-system-packages --target=/install -r requirements.txt
 
 # Final stage
 FROM $BUILD_FROM
@@ -18,7 +18,10 @@ FROM $BUILD_FROM
 RUN apk add --no-cache python3 py3-pip openblas libgfortran libstdc++
 
 # Copy installed Python packages from builder
-COPY --from=builder /install /usr/local
+COPY --from=builder /install /usr/local/lib/python-packages
+
+# Set PYTHONPATH to include the installed packages
+ENV PYTHONPATH="/usr/local/lib/python-packages:${PYTHONPATH}"
 
 WORKDIR /app
 

@@ -81,7 +81,7 @@ class TestSyncEntity:
             
             # Should call sync once and sleep once
             assert mock_sync.call_count == 1
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)
 
     def test_normal_sync_when_samples_exist(self, patch_db_engine):
         """Normal sync when entity already has samples in DB."""
@@ -103,7 +103,7 @@ class TestSyncEntity:
             
             # Should call sync once and sleep once (no fast-forward when samples exist)
             assert mock_sync.call_count == 1
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)
 
     def test_fast_forward_when_no_data_and_before_yesterday(self, patch_db_engine):
         """Fast-forward loop when no data found and not caught up to yesterday."""
@@ -140,7 +140,7 @@ class TestSyncEntity:
             # Should call sync 3 times (fast-forward twice, then stop)
             assert mock_sync.call_count == 3
             # Sleep should only be called once (after final sync)
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)
 
     def test_fast_forward_stops_when_data_found(self, patch_db_engine):
         """Fast-forward stops immediately when data is found."""
@@ -173,7 +173,7 @@ class TestSyncEntity:
             
             # Should stop after second call because data was found
             assert call_count[0] == 2
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)
 
     def test_fast_forward_stops_at_yesterday(self, patch_db_engine):
         """Fast-forward stops when we reach yesterday."""
@@ -201,7 +201,7 @@ class TestSyncEntity:
             
             # Should call sync twice (fast-forward once, then stop at yesterday)
             assert call_count[0] == 2
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)
 
     def test_no_fast_forward_when_effective_since_is_none_first_iteration(self, patch_db_engine):
         """Test behavior when effective_since starts as None (first sync ever)."""
@@ -232,7 +232,7 @@ class TestSyncEntity:
             
             # Should fast-forward: None -> 99 days ago -> caught up
             assert call_count[0] == 3
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)
 
     def test_max_iterations_limit(self, patch_db_engine):
         """Test that the safety limit prevents infinite loops."""
@@ -256,8 +256,8 @@ class TestSyncEntity:
             sensors_module._sync_entity("sensor.test")
             
             # Should stop at max_iterations (200) and sleep
-            assert call_count[0] == 200
-            mock_sleep.assert_called_once_with(5)
+            assert call_count[0] == 30
+            mock_sleep.assert_called_once_with(1)
 
     def test_fast_forward_with_existing_samples_and_gap(self, patch_db_engine):
         """Fast-forward should also work when samples exist but there's a gap > 24h.
@@ -315,7 +315,7 @@ class TestSyncEntity:
             # Should call sync 3 times: 2 fast-forward iterations, then data found
             assert call_count[0] == 3
             # Sleep should be called once at the end
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)
 
     def test_fast_forward_with_gap_stops_at_yesterday(self, patch_db_engine):
         """When samples exist with a gap, fast-forward should stop at yesterday.
@@ -367,7 +367,7 @@ class TestSyncEntity:
             # The key assertion is that it stops without running max_iterations
             assert call_count[0] < 10  # Should stop well before max iterations
             assert call_count[0] >= 2  # Should have fast-forwarded at least once
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)
 
     def test_dwh_sensor_large_gap_scenario(self, patch_db_engine):
         """Test the DWH sensor scenario from the issue: large gaps in history data.
@@ -429,7 +429,7 @@ class TestSyncEntity:
             # 6 iterations with no data (gap) + 1 iteration with data = 7 total
             assert call_count[0] == 7
             # Should complete with a single sleep at the end
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)
 
     def test_dwh_sensor_gap_with_no_new_data_ever(self, patch_db_engine):
         """Test DWH sensor scenario where no new data is ever found after the gap.
@@ -482,4 +482,4 @@ class TestSyncEntity:
             # Should complete in < 10 iterations
             assert call_count[0] < 10
             assert call_count[0] >= 4  # At least covered the gap
-            mock_sleep.assert_called_once_with(5)
+            mock_sleep.assert_called_once_with(1)

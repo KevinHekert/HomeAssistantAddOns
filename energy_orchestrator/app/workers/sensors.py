@@ -40,7 +40,14 @@ def _sync_entity(entity_id: str) -> None:
     if not entity_id:
         return
 
-    while True:
+    # Calculate yesterday once for the duration of this sync operation
+    now_utc = datetime.now(timezone.utc)
+    yesterday = now_utc - timedelta(days=1)
+
+    # Safety limit to prevent infinite loops
+    max_iterations = 200  # Should cover ~200 days of backfill max
+
+    for iteration in range(max_iterations):
         latest_ts = get_latest_sample_timestamp(entity_id)
         status = get_sync_status(entity_id)
 
@@ -64,36 +71,46 @@ def _sync_entity(entity_id: str) -> None:
         # - And no samples exist yet for this entity (latest_ts is None)
         # - And effective_since is before yesterday (today - 1 day)
         if inserted == 0 and latest_ts is None:
-            now_utc = datetime.now(timezone.utc)
-            yesterday = now_utc - timedelta(days=1)
-
             # Normalize effective_since for comparison
             if effective_since is not None:
                 if effective_since.tzinfo is None:
                     effective_since_aware = effective_since.replace(tzinfo=timezone.utc)
                 else:
                     effective_since_aware = effective_since
-            else:
-                # effective_since is still None, which means the sync just started
-                # from BACKFILL_IF_NO_SAMPLES_DAYS ago, so continue fast-forwarding
-                effective_since_aware = None
 
-            # If effective_since is before yesterday, fast-forward without delay
-            if effective_since_aware is None or effective_since_aware < yesterday:
+                # If effective_since is before yesterday, fast-forward without delay
+                if effective_since_aware < yesterday:
+                    _Logger.info(
+                        "No data found for %s and not yet caught up to yesterday, fast-forwarding...",
+                        entity_id,
+                    )
+                    continue
+                else:
+                    _Logger.info(
+                        "No data found for %s but caught up to yesterday, stopping fast-forward.",
+                        entity_id,
+                    )
+            else:
+                # effective_since is None means sync just started (first iteration)
+                # After first sync, sync_status will be updated with last_attempt,
+                # so continue to check progress
                 _Logger.info(
-                    "No data found for %s and not yet caught up to yesterday, fast-forwarding...",
+                    "First sync for %s (no prior data), continuing to check progress...",
                     entity_id,
                 )
                 continue
-            else:
-                _Logger.info(
-                    "No data found for %s but caught up to yesterday, stopping fast-forward.",
-                    entity_id,
-                )
 
         # Normal case: wait before next entity
         time.sleep(5)
         break
+    else:
+        # Max iterations reached - log warning and continue normally
+        _Logger.warning(
+            "Max fast-forward iterations (%d) reached for %s, stopping.",
+            max_iterations,
+            entity_id,
+        )
+        time.sleep(5)
 
 
 def sensor_logging_worker():

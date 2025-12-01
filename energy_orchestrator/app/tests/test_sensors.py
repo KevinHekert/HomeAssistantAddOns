@@ -209,3 +209,28 @@ class TestSyncEntity:
             # Should fast-forward: None -> 99 days ago -> caught up
             assert call_count[0] == 3
             mock_sleep.assert_called_once_with(5)
+
+    def test_max_iterations_limit(self, patch_db_engine):
+        """Test that the safety limit prevents infinite loops."""
+        now_utc = datetime.now(timezone.utc)
+        
+        call_count = [0]
+        
+        def mock_get_sync_status(entity_id):
+            """Always return a timestamp before yesterday to simulate infinite loop scenario."""
+            call_count[0] += 1
+            status = MagicMock()
+            # Always return a date far in the past
+            status.last_attempt = now_utc - timedelta(days=50)
+            return status
+
+        with patch.object(sensors_module, "sync_history_for_entity", return_value=0), \
+             patch.object(sensors_module, "get_sync_status", side_effect=mock_get_sync_status), \
+             patch.object(sensors_module, "get_latest_sample_timestamp", return_value=None), \
+             patch.object(sensors_module.time, "sleep") as mock_sleep:
+            
+            sensors_module._sync_entity("sensor.test")
+            
+            # Should stop at max_iterations (200) and sleep
+            assert call_count[0] == 200
+            mock_sleep.assert_called_once_with(5)

@@ -1,5 +1,5 @@
 import logging
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify
 from ha.ha_api import get_entity_state
 from workers import start_sensor_logging_worker
 from db.resample import resample_all_categories_to_5min

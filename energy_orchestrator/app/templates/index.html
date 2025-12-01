@@ -89,10 +89,7 @@
             
             try {
                 const response = await fetch('/resample', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
+                    method: 'POST'
                 });
                 
                 const data = await response.json();

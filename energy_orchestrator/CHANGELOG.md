@@ -4,6 +4,12 @@ All notable changes to this add-on will be documented in this file.
 
 ## [0.0.0.52] - 2025-12-01
 
+- Added pre-filled example fields in UI for single slot and full day heat pump usage calculation
+- Added sensor information section in UI showing first and last datetime per sensor
+- Added API endpoints: /api/examples/single_slot, /api/examples/full_day, /api/sensors/info
+- Added results display with table and bar chart for predictions
+- Added 12 new tests for new API endpoints and get_sensor_info function
+- Improved UI with editable JSON input fields for predictions
 - Added comprehensive technical and functional documentation (README.md)
 - Documented all calculations: time-weighted averaging, historical aggregations, feature engineering
 - Documented model storage location (`/data/heating_demand_model.joblib`)

@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -66,6 +67,40 @@ def sample_exists(entity_id: str, timestamp: datetime) -> bool:
             e,
         )
         return True  # bij twijfel: liever niet dubbel inserten
+
+
+def get_sensor_info() -> list[dict]:
+    """
+    Get first and last timestamp for each unique entity_id in the samples table.
+    
+    Returns:
+        List of dicts with entity_id, first_timestamp, last_timestamp, and sample_count
+    """
+    try:
+        with Session(engine) as session:
+            result = (
+                session.query(
+                    Sample.entity_id,
+                    func.min(Sample.timestamp).label("first_timestamp"),
+                    func.max(Sample.timestamp).label("last_timestamp"),
+                    func.count(Sample.id).label("sample_count"),
+                )
+                .group_by(Sample.entity_id)
+                .order_by(Sample.entity_id)
+                .all()
+            )
+            return [
+                {
+                    "entity_id": row.entity_id,
+                    "first_timestamp": row.first_timestamp.isoformat() if row.first_timestamp else None,
+                    "last_timestamp": row.last_timestamp.isoformat() if row.last_timestamp else None,
+                    "sample_count": row.sample_count,
+                }
+                for row in result
+            ]
+    except SQLAlchemyError as e:
+        _Logger.error("Error getting sensor info: %s", e)
+        return []
 
 
 def log_sample(entity_id: str, timestamp: datetime, value: float | None, unit: str | None) -> None:

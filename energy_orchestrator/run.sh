@@ -24,6 +24,9 @@ export HUMIDITY_ENTITY_ID="$(bashio::config 'humidity_entity_id')"
 export PRESSURE_ENTITY_ID="$(bashio::config 'pressure_entity_id')"
 export HP_KWH_TOTAL_ENTITY_ID="$(bashio::config 'hp_kwh_total_entity_id')"
 export DHW_TEMP_ENTITY_ID="$(bashio::config 'dhw_temp_entity_id')"
+export INDOOR_TEMP_ENTITY_ID="$(bashio::config 'indoor_temp_entity_id')"
+export TARGET_TEMP_ENTITY_ID="$(bashio::config 'target_temp_entity_id')"
+export DHW_ACTIVE_ENTITY_ID="$(bashio::config 'dhw_active_entity_id')"
 
 cd /app
 exec python app.py

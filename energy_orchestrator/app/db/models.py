@@ -16,6 +16,10 @@ class Sample(Base):
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
+    __table_args__ = (
+        UniqueConstraint("entity_id", "timestamp", name="uq_entity_timestamp"),
+    )
+
 
 class SyncStatus(Base):
     __tablename__ = "sync_status"

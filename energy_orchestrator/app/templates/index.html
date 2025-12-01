@@ -772,6 +772,16 @@
                     const predictions = data.predictions;
                     const predValues = predictions.map(p => p.predicted_kwh);
                     
+                    // Helper function to extract hour key from timestamp
+                    function getHourKey(timestamp) {
+                        if (!timestamp || typeof timestamp !== 'string') return null;
+                        const tIndex = timestamp.indexOf('T');
+                        if (tIndex === -1) return null;
+                        const timePart = timestamp.substring(tIndex + 1);
+                        if (timePart.length < 5) return null;
+                        return timePart.substring(0, 5);
+                    }
+                    
                     // Get actual values if historical data is available
                     let actualValues = [];
                     let hasComparison = false;
@@ -779,19 +789,22 @@
                         // Build lookup by hour for comparison
                         const actualByHour = {};
                         currentHistoricalData.forEach(h => {
-                            const hourKey = h.timestamp.split('T')[1].substring(0, 5);
-                            actualByHour[hourKey] = h.actual_heating_kwh;
+                            const hourKey = getHourKey(h.timestamp);
+                            if (hourKey !== null) {
+                                actualByHour[hourKey] = h.actual_heating_kwh;
+                            }
                         });
                         
                         predictions.forEach(p => {
-                            const hourKey = p.timestamp.split('T')[1].substring(0, 5);
-                            actualValues.push(actualByHour[hourKey] !== undefined ? actualByHour[hourKey] : null);
+                            const hourKey = getHourKey(p.timestamp);
+                            actualValues.push(hourKey !== null && actualByHour[hourKey] !== undefined ? actualByHour[hourKey] : null);
                         });
                         hasComparison = actualValues.some(v => v !== null && v !== undefined);
                     }
                     
                     const maxPred = Math.max(...predValues, 0.1);
-                    const maxActual = hasComparison ? Math.max(...actualValues.filter(v => v !== null), 0.1) : 0;
+                    const filteredActuals = actualValues.filter(v => v !== null && v !== undefined);
+                    const maxActual = hasComparison && filteredActuals.length > 0 ? Math.max(...filteredActuals, 0.1) : 0;
                     const maxVal = Math.max(maxPred, maxActual, 0.1);
                     
                     // Create bar chart with comparison if available

@@ -1215,17 +1215,18 @@ def get_historical_day_hourly_data(
             # Aggregate by hour
             # For most columns: mean
             # For hp_kwh_total: max - min (delta for the hour)
+            def _hp_kwh_agg(x):
+                """Compute kWh delta for the hour (max - min)."""
+                if len(x) > 0 and not x.isna().all():
+                    return x.max() - x.min()
+                return None
+            
             agg_funcs = {}
             for col in pivot_df.columns:
                 if col == "hour":
                     continue
                 elif col == "hp_kwh_total":
-                    # Compute kWh delta for the hour
-                    def hp_kwh_agg(x, c=col):
-                        if len(x) > 0 and not x.isna().all():
-                            return x.max() - x.min()
-                        return None
-                    agg_funcs[col] = hp_kwh_agg
+                    agg_funcs[col] = _hp_kwh_agg
                 else:
                     agg_funcs[col] = "mean"
             

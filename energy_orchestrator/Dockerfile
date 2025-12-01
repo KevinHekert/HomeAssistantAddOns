@@ -15,7 +15,7 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages --target=/inst
 FROM $BUILD_FROM
 
 # Runtime dependencies
-RUN apk add --no-cache python3 py3-pip openblas libgfortran libstdc++
+RUN apk add --no-cache python3 py3-pip openblas libgfortran libstdc++ libgomp
 
 # Copy installed Python packages from builder
 COPY --from=builder /install /usr/local/lib/python-packages

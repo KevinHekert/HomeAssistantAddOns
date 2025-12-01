@@ -2,7 +2,7 @@ ARG BUILD_FROM
 FROM $BUILD_FROM AS builder
 
 # Build dependencies for compiling packages like scikit-learn
-RUN apk add --no-cache python3 py3-pip \
+RUN apk add --no-cache python3 py3-pip python3-dev \
     gcc g++ gfortran musl-dev openblas-dev
 
 WORKDIR /app

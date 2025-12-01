@@ -653,3 +653,231 @@ class TestTrainDatasetStatsTimeRange:
             assert data["dataset_stats"]["data_start_time"] == "2024-01-01T00:00:00"
             assert data["dataset_stats"]["data_end_time"] == "2024-01-15T00:00:00"
             assert data["dataset_stats"]["available_history_hours"] == 336.0
+
+
+class TestScenarioPredictionEndpoint:
+    """Test the /api/predictions/scenario POST endpoint."""
+
+    def test_scenario_success(self, client, mock_model):
+        """Successful scenario prediction returns 200 with predictions."""
+        from datetime import timedelta
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        scenario_timeslots = [
+            {
+                "timestamp": (next_hour).isoformat(),
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+            {
+                "timestamp": (next_hour + timedelta(hours=1)).isoformat(),
+                "outdoor_temperature": 4.5,
+                "wind_speed": 3.5,
+                "humidity": 76.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+        ]
+
+        with patch("app._get_model") as mock_get_model, \
+             patch("app.predict_scenario") as mock_predict, \
+             patch("app.convert_simplified_to_model_features") as mock_convert:
+            mock_get_model.return_value = mock_model
+            mock_predict.return_value = [1.5, 1.2]
+            mock_convert.return_value = (
+                [{"outdoor_temp": 5.0}, {"outdoor_temp": 4.5}],
+                [next_hour, next_hour + timedelta(hours=1)],
+            )
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": scenario_timeslots},
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert len(data["predictions"]) == 2
+            assert data["total_kwh"] == 2.7
+            assert data["slots_count"] == 2
+            assert "timestamp" in data["predictions"][0]
+            assert "predicted_kwh" in data["predictions"][0]
+
+    def test_scenario_model_not_available(self, client):
+        """Prediction without model returns 503."""
+        from datetime import timedelta
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = None
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": [{"timestamp": next_hour.isoformat()}]},
+            )
+
+            assert response.status_code == 503
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "Model not trained" in data["message"]
+
+    def test_scenario_no_request_body(self, client, mock_model):
+        """Prediction without valid JSON returns 400."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = mock_model
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={},
+            )
+
+            assert response.status_code == 400
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "required" in data["message"]
+
+    def test_scenario_empty_timeslots(self, client, mock_model):
+        """Prediction with empty timeslots returns 400."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = mock_model
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": []},
+            )
+
+            assert response.status_code == 400
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "required" in data["message"] and "non-empty" in data["message"]
+
+    def test_scenario_missing_required_fields(self, client, mock_model):
+        """Prediction with missing required fields returns 400."""
+        from datetime import timedelta
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = mock_model
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": [
+                    {"timestamp": next_hour.isoformat(), "outdoor_temperature": 5.0}
+                    # Missing wind_speed, humidity, pressure, target_temperature
+                ]},
+            )
+
+            assert response.status_code == 400
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "errors" in data
+            assert any("Missing required field" in err for err in data["errors"])
+
+    def test_scenario_past_timestamp(self, client, mock_model):
+        """Prediction with past timestamp returns 400."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = mock_model
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": [
+                    {
+                        "timestamp": "2020-01-01T12:00:00",  # Past timestamp
+                        "outdoor_temperature": 5.0,
+                        "wind_speed": 3.0,
+                        "humidity": 75.0,
+                        "pressure": 1013.0,
+                        "target_temperature": 20.0,
+                    }
+                ]},
+            )
+
+            assert response.status_code == 400
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "errors" in data
+            assert any("future" in err.lower() for err in data["errors"])
+
+    def test_scenario_includes_required_fields_in_response(self, client, mock_model):
+        """Error response includes required_fields."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = mock_model
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": []},
+            )
+
+            assert response.status_code == 400
+            data = response.get_json()
+            assert "required_fields" in data
+            assert "timestamp" in data["required_fields"]
+            assert "outdoor_temperature" in data["required_fields"]
+
+
+class TestScenarioExampleEndpoint:
+    """Test the /api/examples/scenario GET endpoint."""
+
+    def test_scenario_example_success(self, client):
+        """Get scenario example returns 200 with 24-hour example."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/scenario")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert "example" in data
+            assert "timeslots" in data["example"]
+            assert len(data["example"]["timeslots"]) == 24
+            assert data["model_available"] is False
+            assert "required_fields" in data
+            assert "optional_fields" in data
+
+    def test_scenario_example_structure(self, client):
+        """Scenario example has correct structure for each timeslot."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/scenario")
+
+            data = response.get_json()
+            slot = data["example"]["timeslots"][0]
+            
+            # Check all required fields are present
+            assert "timestamp" in slot
+            assert "outdoor_temperature" in slot
+            assert "wind_speed" in slot
+            assert "humidity" in slot
+            assert "pressure" in slot
+            assert "target_temperature" in slot
+
+    def test_scenario_example_with_model(self, client, mock_model):
+        """Scenario example shows model_available when model exists."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = mock_model
+
+            response = client.get("/api/examples/scenario")
+
+            data = response.get_json()
+            assert data["model_available"] is True
+
+    def test_scenario_example_timestamps_are_future(self, client):
+        """Scenario example timestamps are in the future."""
+        with patch("app._get_model") as mock_get_model:
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/scenario")
+
+            data = response.get_json()
+            now = datetime.now()
+            
+            for slot in data["example"]["timeslots"]:
+                ts = datetime.fromisoformat(slot["timestamp"])
+                assert ts > now

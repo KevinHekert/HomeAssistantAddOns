@@ -12,7 +12,7 @@ Key principles:
 
 import logging
 from datetime import datetime, timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import pandas as pd
@@ -23,6 +23,42 @@ from db import ResampledSample
 from db.core import engine
 
 _Logger = logging.getLogger(__name__)
+
+
+# Required fields for simplified scenario input
+SIMPLIFIED_REQUIRED_FIELDS = [
+    "timestamp",
+    "outdoor_temperature",
+    "wind_speed",
+    "humidity",
+    "pressure",
+    "target_temperature",
+]
+
+# Optional fields for simplified scenario input
+SIMPLIFIED_OPTIONAL_FIELDS = [
+    "indoor_temperature",
+]
+
+
+@dataclass
+class SimplifiedTimeslot:
+    """Simplified scenario input for a single hour timeslot."""
+    timestamp: datetime
+    outdoor_temperature: float
+    wind_speed: float
+    humidity: float
+    pressure: float
+    target_temperature: float
+    indoor_temperature: Optional[float] = None
+
+
+@dataclass
+class ScenarioValidationResult:
+    """Result of scenario validation."""
+    valid: bool
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 # Feature categories used as model inputs (exogenous variables only)
 INPUT_CATEGORIES = [
@@ -721,3 +757,289 @@ def build_heating_feature_dataset(
     except Exception as e:
         _Logger.error("Error building feature dataset: %s", e, exc_info=True)
         return None, stats
+
+
+def validate_simplified_scenario(
+    timeslots: list[dict],
+) -> ScenarioValidationResult:
+    """
+    Validate simplified scenario input.
+    
+    Args:
+        timeslots: List of simplified timeslot dictionaries
+        
+    Returns:
+        ScenarioValidationResult with validation status
+    """
+    result = ScenarioValidationResult(valid=True)
+    
+    if not timeslots:
+        result.valid = False
+        result.errors.append("Scenario must contain at least one timeslot")
+        return result
+    
+    now = datetime.now()
+    
+    for idx, slot in enumerate(timeslots):
+        slot_errors = []
+        
+        # Check required fields
+        for field in SIMPLIFIED_REQUIRED_FIELDS:
+            if field not in slot:
+                slot_errors.append(f"Missing required field: {field}")
+            elif slot[field] is None:
+                slot_errors.append(f"Field '{field}' cannot be null")
+        
+        if slot_errors:
+            result.valid = False
+            result.errors.extend([f"Timeslot {idx}: {e}" for e in slot_errors])
+            continue
+        
+        # Parse and validate timestamp
+        try:
+            ts_value = slot["timestamp"]
+            if isinstance(ts_value, str):
+                ts = datetime.fromisoformat(ts_value.replace("Z", "+00:00"))
+                # Convert to naive datetime for comparison
+                if ts.tzinfo is not None:
+                    ts = ts.replace(tzinfo=None)
+            elif isinstance(ts_value, datetime):
+                ts = ts_value
+            else:
+                result.valid = False
+                result.errors.append(f"Timeslot {idx}: timestamp must be ISO 8601 string or datetime")
+                continue
+            
+            # Validate timestamp is in the future
+            if ts <= now:
+                result.valid = False
+                result.errors.append(
+                    f"Timeslot {idx}: timestamp must be in the future. "
+                    f"Got: {ts.isoformat()}, Now: {now.isoformat()}"
+                )
+        except ValueError as e:
+            result.valid = False
+            result.errors.append(f"Timeslot {idx}: Invalid timestamp format: {e}")
+            continue
+        
+        # Validate numeric fields
+        numeric_fields = [
+            "outdoor_temperature",
+            "wind_speed",
+            "humidity",
+            "pressure",
+            "target_temperature",
+        ]
+        for field in numeric_fields:
+            value = slot.get(field)
+            if value is not None:
+                try:
+                    float(value)
+                except (ValueError, TypeError):
+                    result.valid = False
+                    result.errors.append(
+                        f"Timeslot {idx}: Field '{field}' must be a number"
+                    )
+        
+        # Validate optional indoor_temperature if present
+        indoor_temp = slot.get("indoor_temperature")
+        if indoor_temp is not None:
+            try:
+                float(indoor_temp)
+            except (ValueError, TypeError):
+                result.valid = False
+                result.errors.append(
+                    f"Timeslot {idx}: Field 'indoor_temperature' must be a number"
+                )
+    
+    return result
+
+
+def get_historical_heating_kwh(hours: int = 24) -> dict[str, float]:
+    """
+    Get historical heating kWh values from the database.
+    
+    Args:
+        hours: Number of hours of history to retrieve
+        
+    Returns:
+        Dictionary with heating_kwh_last_6h and heating_kwh_last_24h
+    """
+    result = {
+        "heating_kwh_last_6h": 0.0,
+        "heating_kwh_last_24h": 0.0,
+    }
+    
+    try:
+        with Session(engine) as session:
+            now = datetime.now()
+            start_6h = now - timedelta(hours=6)
+            start_24h = now - timedelta(hours=24)
+            
+            # Get hp_kwh_total values for the time range
+            stmt = select(
+                ResampledSample.slot_start,
+                ResampledSample.value,
+            ).where(
+                ResampledSample.category == "hp_kwh_total",
+                ResampledSample.slot_start >= start_24h,
+            ).order_by(ResampledSample.slot_start)
+            
+            rows = session.execute(stmt).fetchall()
+            
+            if len(rows) < 2:
+                return result
+            
+            # Compute kWh deltas
+            values = [(r[0], r[1]) for r in rows]
+            
+            # Last 6 hours
+            values_6h = [v for v in values if v[0] >= start_6h]
+            if len(values_6h) >= 2:
+                result["heating_kwh_last_6h"] = values_6h[-1][1] - values_6h[0][1]
+            
+            # Last 24 hours
+            if len(values) >= 2:
+                result["heating_kwh_last_24h"] = values[-1][1] - values[0][1]
+            
+            # Clamp to reasonable values (0-100 kWh)
+            result["heating_kwh_last_6h"] = max(0.0, min(100.0, result["heating_kwh_last_6h"]))
+            result["heating_kwh_last_24h"] = max(0.0, min(100.0, result["heating_kwh_last_24h"]))
+            
+    except Exception as e:
+        _Logger.warning("Failed to get historical heating kWh: %s", e)
+    
+    return result
+
+
+def convert_simplified_to_model_features(
+    timeslots: list[dict],
+    model_feature_names: list[str],
+    include_historical_heating: bool = True,
+) -> tuple[list[dict], list[datetime]]:
+    """
+    Convert simplified scenario input to model-ready features.
+    
+    This function takes user-friendly inputs (weather forecast, setpoints)
+    and converts them to the full feature set required by the model.
+    
+    The following features are derived internally:
+    - Time features: hour_of_day, day_of_week, is_weekend, is_night
+    - Historical aggregations: outdoor_temp_avg_*, indoor_temp_avg_*, 
+      target_temp_avg_*, heating_degree_hours_24h
+    - Historical heating: heating_kwh_last_* (from DB or defaults)
+    
+    Args:
+        timeslots: List of simplified timeslot dictionaries with:
+            - timestamp: ISO 8601 datetime string
+            - outdoor_temperature: Predicted outdoor temp
+            - wind_speed: Predicted wind speed
+            - humidity: Predicted humidity
+            - pressure: Predicted pressure
+            - target_temperature: Planned setpoint
+            - indoor_temperature: (optional) Expected indoor temp
+        model_feature_names: List of features the model expects
+        include_historical_heating: Whether to fetch historical heating kWh
+        
+    Returns:
+        Tuple of (model_features list, parsed_timestamps list)
+        
+    Example:
+        >>> slots = [
+        ...     {
+        ...         "timestamp": "2024-01-15T14:00:00",
+        ...         "outdoor_temperature": 5.0,
+        ...         "wind_speed": 3.0,
+        ...         "humidity": 75.0,
+        ...         "pressure": 1013.0,
+        ...         "target_temperature": 20.0,
+        ...     }
+        ... ]
+        >>> features, timestamps = convert_simplified_to_model_features(
+        ...     slots, model.feature_names
+        ... )
+    """
+    if not timeslots:
+        return [], []
+    
+    # Parse timestamps
+    parsed_timestamps = []
+    for slot in timeslots:
+        ts_value = slot["timestamp"]
+        if isinstance(ts_value, str):
+            ts = datetime.fromisoformat(ts_value.replace("Z", "+00:00"))
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
+        else:
+            ts = ts_value
+        parsed_timestamps.append(ts)
+    
+    # Convert simplified fields to model field names
+    # Simplified name -> model name mapping
+    field_mapping = {
+        "outdoor_temperature": "outdoor_temp",
+        "wind_speed": "wind",
+        "humidity": "humidity",
+        "pressure": "pressure",
+        "target_temperature": "target_temp",
+        "indoor_temperature": "indoor_temp",
+    }
+    
+    # Build base features
+    base_features = []
+    for slot in timeslots:
+        features = {}
+        for simple_name, model_name in field_mapping.items():
+            if simple_name in slot and slot[simple_name] is not None:
+                features[model_name] = float(slot[simple_name])
+        base_features.append(features)
+    
+    # Add default indoor_temp if not provided (use target_temp as estimate)
+    for i, features in enumerate(base_features):
+        if "indoor_temp" not in features and "target_temp" in features:
+            # Use target temp as indoor temp estimate
+            features["indoor_temp"] = features["target_temp"]
+    
+    # Get historical heating kWh from database
+    historical_heating = {}
+    if include_historical_heating:
+        historical_heating = get_historical_heating_kwh()
+    
+    # Add historical heating to first slot, then rolling sum for subsequent
+    for i, features in enumerate(base_features):
+        if "heating_kwh_last_6h" in model_feature_names:
+            features["heating_kwh_last_6h"] = historical_heating.get("heating_kwh_last_6h", 2.0)
+        if "heating_kwh_last_24h" in model_feature_names:
+            features["heating_kwh_last_24h"] = historical_heating.get("heating_kwh_last_24h", 10.0)
+    
+    # Enrich with historical aggregations and time features
+    enriched_features = compute_scenario_historical_features(
+        base_features,
+        timeslots=parsed_timestamps,
+    )
+    
+    # Ensure all model features are present
+    final_features = []
+    for features in enriched_features:
+        final_slot = {}
+        for feat in model_feature_names:
+            if feat in features:
+                final_slot[feat] = features[feat]
+            else:
+                # Provide default values for missing features
+                if "avg" in feat:
+                    # Use corresponding base value
+                    base_name = feat.split("_avg_")[0]
+                    final_slot[feat] = features.get(base_name, 5.0)
+                elif feat.startswith("heating_kwh"):
+                    final_slot[feat] = historical_heating.get(feat, 2.0)
+                elif feat == "heating_degree_hours_24h":
+                    # Compute from target and outdoor if available
+                    target = features.get("target_temp", 20.0)
+                    outdoor = features.get("outdoor_temp", 5.0)
+                    final_slot[feat] = max(0, target - outdoor) * 24
+                else:
+                    final_slot[feat] = 0.0
+        final_features.append(final_slot)
+    
+    return final_features, parsed_timestamps

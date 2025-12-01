@@ -13,6 +13,10 @@ from ml.heating_features import (
     compute_scenario_historical_features,
     get_actual_vs_predicted_data,
     validate_prediction_start_time,
+    validate_simplified_scenario,
+    convert_simplified_to_model_features,
+    SIMPLIFIED_REQUIRED_FIELDS,
+    SIMPLIFIED_OPTIONAL_FIELDS,
 )
 from ml.heating_demand_model import (
     HeatingDemandModel,
@@ -718,6 +722,198 @@ def validate_start_time():
     except Exception as e:
         _Logger.error("Error validating start time: %s", e, exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/predictions/scenario")
+def predict_heating_demand_scenario():
+    """
+    Predict heating demand using simplified scenario inputs.
+    
+    This endpoint accepts human-readable inputs instead of low-level model features.
+    All time-based features and historical aggregations are computed internally.
+    
+    Request body:
+    {
+        "timeslots": [
+            {
+                "timestamp": "2024-01-15T14:00:00",     // Required, ISO 8601, must be future
+                "outdoor_temperature": 5.0,             // Required
+                "wind_speed": 3.0,                      // Required
+                "humidity": 75.0,                       // Required
+                "pressure": 1013.0,                     // Required
+                "target_temperature": 20.0,             // Required
+                "indoor_temperature": 19.5              // Optional
+            },
+            ...
+        ]
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "predictions": [
+            {
+                "timestamp": "2024-01-15T14:00:00",
+                "predicted_kwh": 1.2345
+            },
+            ...
+        ],
+        "total_kwh": 24.5,
+        "model_info": {...}
+    }
+    
+    Errors:
+    - 400: Missing required fields, invalid timestamps, past timestamps
+    - 503: Model not trained
+    """
+    model = _get_model()
+    
+    if model is None or not model.is_available:
+        return jsonify({
+            "status": "error",
+            "message": "Model not trained. Please train the model first via POST /api/train/heating_demand",
+        }), 503
+    
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        timeslots = data.get("timeslots", [])
+        
+        if not timeslots:
+            return jsonify({
+                "status": "error",
+                "message": "timeslots is required and must be non-empty",
+                "required_fields": SIMPLIFIED_REQUIRED_FIELDS,
+                "optional_fields": SIMPLIFIED_OPTIONAL_FIELDS,
+            }), 400
+        
+        # Validate simplified scenario input
+        validation = validate_simplified_scenario(timeslots)
+        
+        if not validation.valid:
+            return jsonify({
+                "status": "error",
+                "message": "Validation failed",
+                "errors": validation.errors,
+                "required_fields": SIMPLIFIED_REQUIRED_FIELDS,
+                "optional_fields": SIMPLIFIED_OPTIONAL_FIELDS,
+            }), 400
+        
+        # Convert simplified input to model features
+        model_features, parsed_timestamps = convert_simplified_to_model_features(
+            timeslots,
+            model.feature_names,
+            include_historical_heating=True,
+        )
+        
+        # Make predictions
+        predictions = predict_scenario(
+            model,
+            model_features,
+            update_historical=True,
+        )
+        
+        # Build response with timestamp-prediction pairs
+        prediction_results = []
+        for ts, pred in zip(parsed_timestamps, predictions):
+            prediction_results.append({
+                "timestamp": ts.isoformat(),
+                "predicted_kwh": round(pred, 4),
+            })
+        
+        return jsonify({
+            "status": "success",
+            "predictions": prediction_results,
+            "total_kwh": round(sum(predictions), 4),
+            "slots_count": len(predictions),
+            "model_info": {
+                "training_timestamp": model.training_timestamp.isoformat() if model.training_timestamp else None,
+            },
+        })
+        
+    except ModelNotAvailableError:
+        return jsonify({
+            "status": "error",
+            "message": "Model not available",
+        }), 503
+    except ValueError as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 400
+    except Exception as e:
+        _Logger.error("Error predicting heating demand scenario: %s", e, exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/examples/scenario")
+def get_scenario_example():
+    """
+    Get a pre-filled example for the simplified scenario API.
+    
+    Returns an example request body with 24 hours of future predictions
+    using the simplified input format.
+    """
+    from datetime import timedelta
+    
+    # Start at the next hour
+    now = datetime.now()
+    start_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    
+    # Generate 24 hours of example timeslots
+    example_timeslots = []
+    for hour_offset in range(24):
+        ts = start_hour + timedelta(hours=hour_offset)
+        hour = ts.hour
+        
+        # Simulate realistic outdoor temperature variation
+        if 0 <= hour < 6:
+            outdoor_temp = 2.0
+        elif 6 <= hour < 10:
+            outdoor_temp = 3.0 + (hour - 6) * 0.5
+        elif 10 <= hour < 14:
+            outdoor_temp = 5.0 + (hour - 10) * 0.5
+        elif 14 <= hour < 18:
+            outdoor_temp = 7.0 - (hour - 14) * 0.5
+        else:
+            outdoor_temp = 5.0 - (hour - 18) * 0.5
+        
+        # Setpoint schedule
+        if 6 <= hour < 22:
+            target_temp = 20.0
+        else:
+            target_temp = 17.0
+        
+        example_timeslots.append({
+            "timestamp": ts.isoformat(),
+            "outdoor_temperature": round(outdoor_temp, 1),
+            "wind_speed": 3.5,
+            "humidity": 75.0,
+            "pressure": 1013.0,
+            "target_temperature": target_temp,
+        })
+    
+    model = _get_model()
+    
+    return jsonify({
+        "status": "success",
+        "example": {
+            "timeslots": example_timeslots,
+        },
+        "description": "24-hour prediction with typical winter day temperature variation and setpoint schedule",
+        "model_available": model is not None and model.is_available,
+        "required_fields": SIMPLIFIED_REQUIRED_FIELDS,
+        "optional_fields": SIMPLIFIED_OPTIONAL_FIELDS,
+    })
 
 
 if __name__ == "__main__":

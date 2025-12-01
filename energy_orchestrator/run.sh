@@ -15,5 +15,15 @@ export DB_USER
 export DB_PASSWORD
 export DB_NAME
 
+# Sensor entity IDs uit add-on configuratie
+export WIND_ENTITY_ID="$(bashio::config 'wind_entity_id')"
+export OUTDOOR_TEMP_ENTITY_ID="$(bashio::config 'outdoor_temp_entity_id')"
+export FLOW_TEMP_ENTITY_ID="$(bashio::config 'flow_temp_entity_id')"
+export RETURN_TEMP_ENTITY_ID="$(bashio::config 'return_temp_entity_id')"
+export HUMIDITY_ENTITY_ID="$(bashio::config 'humidity_entity_id')"
+export PRESSURE_ENTITY_ID="$(bashio::config 'pressure_entity_id')"
+export HP_KWH_TOTAL_ENTITY_ID="$(bashio::config 'hp_kwh_total_entity_id')"
+export DHW_TEMP_ENTITY_ID="$(bashio::config 'dhw_temp_entity_id')"
+
 cd /app
 exec python app.py

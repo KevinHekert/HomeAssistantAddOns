@@ -3,6 +3,8 @@ from flask import Flask, render_template, jsonify
 from ha.ha_api import get_entity_state
 from workers import start_sensor_logging_worker
 from db.resample import resample_all_categories_to_5min
+from db.core import init_db_schema
+from db.sensor_config import sync_sensor_mappings
 
 
 
@@ -40,5 +42,8 @@ def trigger_resample():
 
 
 if __name__ == "__main__":
+    # Initialize database schema and sensor mappings before starting workers
+    init_db_schema()
+    sync_sensor_mappings()
     start_sensor_logging_worker()
     app.run(host="0.0.0.0", port=8099, debug=False)

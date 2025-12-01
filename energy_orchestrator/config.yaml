@@ -1,5 +1,5 @@
 name: Energy Orchestrator
-version: "0.0.0.37"
+version: "0.0.0.38"
 slug: energy_orchestrator
 description: Flask UI voor toekomstige energie-optimisatie.
 arch:
@@ -21,9 +21,25 @@ options:
   db_user: energy_orchestrator
   db_password: ""
   db_name: energy_orchestrator
+  wind_entity_id: sensor.knmi_windsnelheid
+  outdoor_temp_entity_id: sensor.smile_outdoor_temperature
+  flow_temp_entity_id: sensor.opentherm_water_temperature
+  return_temp_entity_id: sensor.opentherm_return_temperature
+  humidity_entity_id: sensor.knmi_luchtvochtigheid
+  pressure_entity_id: sensor.knmi_luchtdruk
+  hp_kwh_total_entity_id: sensor.extra_total
+  dhw_temp_entity_id: sensor.opentherm_dhw_temperature
 
 schema:
   db_host: str
   db_user: str
   db_password: str
   db_name: str
+  wind_entity_id: str?
+  outdoor_temp_entity_id: str?
+  flow_temp_entity_id: str?
+  return_temp_entity_id: str?
+  humidity_entity_id: str?
+  pressure_entity_id: str?
+  hp_kwh_total_entity_id: str?
+  dhw_temp_entity_id: str?

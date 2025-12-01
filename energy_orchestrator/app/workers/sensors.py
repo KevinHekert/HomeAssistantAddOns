@@ -20,6 +20,9 @@ SENSOR_ENTITIES = [
     os.environ.get("PRESSURE_ENTITY_ID", "sensor.knmi_luchtdruk"),
     os.environ.get("HP_KWH_TOTAL_ENTITY_ID", "sensor.extra_total"),
     os.environ.get("DHW_TEMP_ENTITY_ID", "sensor.opentherm_dhw_temperature"),
+    os.environ.get("INDOOR_TEMP_ENTITY_ID", "sensor.anna_temperature"),
+    os.environ.get("TARGET_TEMP_ENTITY_ID", "sensor.anna_setpoint"),
+    os.environ.get("DHW_ACTIVE_ENTITY_ID", "binary_sensor.dhw_active"),
 ]
 
 _sensor_worker_started = False

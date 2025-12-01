@@ -91,13 +91,13 @@ The add-on continuously syncs sensor history from Home Assistant:
 
 Data is stored in the `samples` table with:
 - `entity_id`: The Home Assistant entity
-- `timestamp`: Sample timestamp (aligned to 5-second boundaries)
+- `timestamp`: Sample timestamp (aligned to 5-second boundaries for consistent storage)
 - `value`: Numeric sensor value
 - `unit`: Unit of measurement
 
 ### Resampling to 5-Minute Slots
 
-Raw samples are aggregated into uniform 5-minute time slots using **time-weighted averaging**:
+Raw samples (stored at 5-second granularity) are aggregated into uniform 5-minute time slots using **time-weighted averaging**:
 
 1. **Category mapping**: Each sensor is mapped to a logical category (e.g., `outdoor_temp`, `wind`)
 2. **Time-weighted calculation**: Uses last-known-value (zero-order hold) interpolation
@@ -163,7 +163,7 @@ The model computes rolling statistics to capture thermal dynamics:
 | `heating_kwh_last_24h` | 24 hours | Sum of kWh consumption |
 | `heating_kwh_last_7d` | 7 days | Sum of kWh consumption* |
 
-\* 7-day features are only included when at least 168 hours of history is available.
+\* 7-day features are only included when at least 7 days (168 hours / 2016 five-minute slots) of history is available.
 
 #### Time Features
 
@@ -479,6 +479,8 @@ if status.json()["status"] == "available":
 
 ### Home Assistant Automation Example
 
+> **Note:** Replace `homeassistant.local:8099` with your actual add-on URL. When using ingress, you may need to use the internal add-on hostname.
+
 ```yaml
 automation:
   - alias: "Get heating demand prediction"
@@ -497,15 +499,35 @@ automation:
 
 rest_command:
   get_heating_prediction:
-    url: "http://local-addon:8099/api/predictions/heating_demand_profile"
+    url: "http://homeassistant.local:8099/api/predictions/heating_demand_profile"
     method: POST
     content_type: application/json
+    # Note: You need to provide ALL required features.
+    # Check GET /api/model/status for the complete list of features.
+    # The features below are examples - adapt to your actual sensor entity IDs.
     payload: >
       {
         "scenario_features": [{
-          "outdoor_temp": {{ states('sensor.outdoor_temp') | float }},
-          "wind": {{ states('sensor.wind_speed') | float }},
-          ...
+          "outdoor_temp": {{ states('sensor.outdoor_temperature') | float(0) }},
+          "wind": {{ states('sensor.wind_speed') | float(0) }},
+          "humidity": {{ states('sensor.humidity') | float(80) }},
+          "pressure": {{ states('sensor.air_pressure') | float(1013) }},
+          "indoor_temp": {{ states('sensor.living_room_temperature') | float(20) }},
+          "target_temp": {{ states('sensor.thermostat_setpoint') | float(20) }},
+          "hour_of_day": {{ now().hour }},
+          "day_of_week": {{ now().weekday() }},
+          "is_weekend": {{ 1 if now().weekday() >= 5 else 0 }},
+          "is_night": {{ 1 if now().hour >= 23 or now().hour < 7 else 0 }},
+          "outdoor_temp_avg_1h": {{ states('sensor.outdoor_temperature') | float(0) }},
+          "outdoor_temp_avg_6h": {{ states('sensor.outdoor_temperature') | float(0) }},
+          "outdoor_temp_avg_24h": {{ states('sensor.outdoor_temperature') | float(0) }},
+          "indoor_temp_avg_6h": {{ states('sensor.living_room_temperature') | float(20) }},
+          "indoor_temp_avg_24h": {{ states('sensor.living_room_temperature') | float(20) }},
+          "target_temp_avg_6h": {{ states('sensor.thermostat_setpoint') | float(20) }},
+          "target_temp_avg_24h": {{ states('sensor.thermostat_setpoint') | float(20) }},
+          "heating_degree_hours_24h": 300.0,
+          "heating_kwh_last_6h": 2.5,
+          "heating_kwh_last_24h": 10.0
         }]
       }
 ```

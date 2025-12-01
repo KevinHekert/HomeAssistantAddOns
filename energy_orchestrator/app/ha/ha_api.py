@@ -32,9 +32,9 @@ def parse_state_to_float(state: str | None) -> float | None:
 
     state_lower = state.lower()
 
-    if state_lower == "on" or state_lower == "true":
+    if state_lower in ("on", "true"):
         return 1.0
-    if state_lower == "off" or state_lower == "false":
+    if state_lower in ("off", "false"):
         return 0.0
 
     try:

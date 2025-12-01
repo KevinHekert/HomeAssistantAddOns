@@ -165,6 +165,8 @@ The model computes rolling statistics to capture thermal dynamics:
 
 \* 7-day features are only included when at least 7 days (168 hours / 2016 five-minute slots) of history is available.
 
+> **Note:** Historical aggregations can also be computed from user-provided temperature forecasts for upcoming days. Use the `/api/predictions/enrich_scenario` endpoint to derive these features from your scenario data.
+
 #### Time Features
 
 | Feature | Description |
@@ -173,6 +175,24 @@ The model computes rolling statistics to capture thermal dynamics:
 | `day_of_week` | Day (0=Monday, 6=Sunday) |
 | `is_weekend` | 1 if Saturday/Sunday, else 0 |
 | `is_night` | 1 if hour is 23:00-06:59, else 0 |
+
+### Making Predictions
+
+Predictions are always for future time periods. The request should contain:
+
+- **User-provided inputs (predicted/forecasted values):**
+  - Predicted outdoor temperature (hourly)
+  - Predicted wind speed (hourly)
+  - Predicted humidity (hourly)
+  - Predicted pressure (hourly)
+  - Hourly set temperature (target/setpoint)
+
+- **System-derived inputs (optional, or use `/api/predictions/enrich_scenario`):**
+  - Historical temperature averages (can be derived from forecast)
+  - Heating degree hours
+  - Time features (hour_of_day, day_of_week, etc.)
+
+**Important:** Predictions should start at the next or coming hour. This ensures the system has the latest historical data available for accurate predictions.
 
 #### Target Variable
 
@@ -304,10 +324,15 @@ POST /api/train/heating_demand
     "total_slots": 12000,
     "valid_slots": 10000,
     "features_used": ["outdoor_temp", "wind", ...],
-    "has_7d_features": true
+    "has_7d_features": true,
+    "data_start_time": "2024-01-01T00:00:00",
+    "data_end_time": "2024-03-15T00:00:00",
+    "available_history_hours": 1776.0
   }
 }
 ```
+
+> **Note:** The model uses ALL available historical data for training. There is no artificial limit (e.g., 7 days). If your model is trained for over a year, a wide variation of days/weather conditions will be available for better predictions.
 
 **Response (insufficient data):**
 
@@ -418,6 +443,142 @@ POST /api/predictions/heating_demand_profile
 | `timeslots` | array | Optional timestamps for the predictions |
 | `scenario_features` | array | Required. List of feature dictionaries (one per slot) |
 | `update_historical` | boolean | If true, update historical kWh features based on prior predictions in the scenario |
+
+> **Important:** Predictions should always start at the next or coming hour. This ensures accurate historical feature computation based on the latest available data.
+
+---
+
+### Enrich Scenario with Historical Features
+
+Compute historical aggregation features from user-provided scenario data. This is useful when preparing prediction requests with user-specified weather forecasts.
+
+```http
+POST /api/predictions/enrich_scenario
+```
+
+**Request body:**
+
+```json
+{
+  "scenario_features": [
+    {"outdoor_temp": 5.0, "indoor_temp": 20.0, "target_temp": 21.0, "wind": 3.0, "humidity": 75.0, "pressure": 1013.0},
+    {"outdoor_temp": 4.5, "indoor_temp": 20.0, "target_temp": 21.0, "wind": 3.5, "humidity": 76.0, "pressure": 1013.0}
+  ],
+  "timeslots": ["2024-01-15T12:00:00", "2024-01-15T13:00:00"]
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "enriched_features": [
+    {
+      "outdoor_temp": 5.0,
+      "outdoor_temp_avg_1h": 5.0,
+      "outdoor_temp_avg_6h": 5.0,
+      "outdoor_temp_avg_24h": 5.0,
+      "heating_degree_hours_24h": 16.0,
+      "hour_of_day": 12,
+      "day_of_week": 0,
+      "is_weekend": 0,
+      "is_night": 0
+    },
+    ...
+  ],
+  "features_added": ["outdoor_temp_avg_1h", "outdoor_temp_avg_6h", ...]
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `scenario_features` | array | Required. List of feature dictionaries with base sensor values |
+| `timeslots` | array | Optional. Timestamps for computing time features |
+
+---
+
+### Compare Predictions with Actual Data
+
+Compare model predictions against actual historical data. This endpoint uses 5-minute average records to show the delta between model predictions and actual recorded values.
+
+```http
+POST /api/predictions/compare_actual
+```
+
+**Request body:**
+
+```json
+{
+  "start_time": "2024-01-15T12:00:00",
+  "end_time": "2024-01-15T18:00:00",
+  "slot_duration_minutes": 60
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "comparison": [
+    {
+      "slot_start": "2024-01-15T12:00:00",
+      "actual_kwh": 1.25,
+      "predicted_kwh": 1.18,
+      "delta_kwh": -0.07,
+      "delta_pct": -5.6
+    },
+    ...
+  ],
+  "summary": {
+    "total_actual_kwh": 7.5,
+    "total_predicted_kwh": 7.2,
+    "mae_kwh": 0.08,
+    "mape_pct": 6.5,
+    "slots_compared": 6
+  }
+}
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `start_time` | string | Required. Start of the comparison period (ISO 8601) |
+| `end_time` | string | Required. End of the comparison period (ISO 8601) |
+| `slot_duration_minutes` | integer | Optional. Duration per slot (default 60 minutes) |
+
+---
+
+### Validate Prediction Start Time
+
+Validate that a prediction start time is at the next hour or later.
+
+```http
+POST /api/predictions/validate_start_time
+```
+
+**Request body:**
+
+```json
+{
+  "start_time": "2024-01-15T14:00:00"
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "valid": true,
+  "message": "Valid prediction start time: 2024-01-15 14:00:00",
+  "next_valid_hour": "2024-01-15T14:00:00"
+}
+```
 
 ---
 

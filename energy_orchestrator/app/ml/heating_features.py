@@ -59,6 +59,9 @@ class FeatureDatasetStats:
     dropped_insufficient_history: int
     features_used: list[str]
     has_7d_features: bool
+    data_start_time: Optional[datetime] = None
+    data_end_time: Optional[datetime] = None
+    available_history_hours: Optional[float] = None
 
 
 def _load_resampled_data(session: Session) -> pd.DataFrame:
@@ -284,6 +287,264 @@ def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def compute_scenario_historical_features(
+    scenario_features: list[dict],
+    timeslots: Optional[list[datetime]] = None,
+) -> list[dict]:
+    """
+    Compute historical aggregation features from scenario data.
+    
+    This function derives historical features (1h, 6h, 24h averages) from
+    user-provided scenario features. This is useful when making predictions
+    for future time periods where historical data doesn't exist yet.
+    
+    For predictions starting at the next hour, the system uses actual historical
+    data. For further predictions, this function can derive historical aggregations
+    from the user-provided scenario.
+    
+    Args:
+        scenario_features: List of feature dictionaries with hourly values.
+            Must include: outdoor_temp, wind, humidity, pressure, 
+            indoor_temp, target_temp
+        timeslots: Optional list of timestamps for each slot. If not provided,
+            time features (hour_of_day, day_of_week, etc.) must be included
+            in scenario_features.
+            
+    Returns:
+        List of feature dictionaries with historical aggregations added.
+        
+    Example:
+        >>> scenario = [
+        ...     {"outdoor_temp": 5.0, "target_temp": 20.0, ...},
+        ...     {"outdoor_temp": 4.5, "target_temp": 20.0, ...},
+        ... ]
+        >>> enriched = compute_scenario_historical_features(scenario)
+        >>> # Now each slot has outdoor_temp_avg_1h, heating_degree_hours_24h, etc.
+    """
+    if not scenario_features:
+        return []
+    
+    # Convert to DataFrame for easier computation
+    df = pd.DataFrame(scenario_features)
+    n_slots = len(df)
+    
+    # If timeslots provided, use them for time features
+    if timeslots:
+        dt_index = pd.DatetimeIndex(timeslots)
+        df.index = dt_index
+        
+        # Add time features if not present
+        if "hour_of_day" not in df.columns:
+            df["hour_of_day"] = dt_index.hour
+        if "day_of_week" not in df.columns:
+            df["day_of_week"] = dt_index.dayofweek
+        if "is_weekend" not in df.columns:
+            df["is_weekend"] = (dt_index.dayofweek >= 5).astype(int)
+        if "is_night" not in df.columns:
+            df["is_night"] = ((dt_index.hour >= 23) | (dt_index.hour < 7)).astype(int)
+    
+    # Compute rolling averages from scenario data
+    # For hourly predictions (1 slot = 1 hour in user input):
+    # - 1h average = current value (or rolling 1)
+    # - 6h average = rolling 6 or expanding mean
+    # - 24h average = rolling 24 or expanding mean
+    
+    # Outdoor temperature historical features
+    if "outdoor_temp" in df.columns:
+        # Use expanding mean for early slots, then rolling
+        if "outdoor_temp_avg_1h" not in df.columns:
+            df["outdoor_temp_avg_1h"] = df["outdoor_temp"].rolling(
+                window=1, min_periods=1
+            ).mean()
+        if "outdoor_temp_avg_6h" not in df.columns:
+            df["outdoor_temp_avg_6h"] = df["outdoor_temp"].rolling(
+                window=min(6, n_slots), min_periods=1
+            ).mean()
+        if "outdoor_temp_avg_24h" not in df.columns:
+            df["outdoor_temp_avg_24h"] = df["outdoor_temp"].rolling(
+                window=min(24, n_slots), min_periods=1
+            ).mean()
+    
+    # Indoor temperature historical features
+    if "indoor_temp" in df.columns:
+        if "indoor_temp_avg_6h" not in df.columns:
+            df["indoor_temp_avg_6h"] = df["indoor_temp"].rolling(
+                window=min(6, n_slots), min_periods=1
+            ).mean()
+        if "indoor_temp_avg_24h" not in df.columns:
+            df["indoor_temp_avg_24h"] = df["indoor_temp"].rolling(
+                window=min(24, n_slots), min_periods=1
+            ).mean()
+    
+    # Target temperature historical features
+    if "target_temp" in df.columns:
+        if "target_temp_avg_6h" not in df.columns:
+            df["target_temp_avg_6h"] = df["target_temp"].rolling(
+                window=min(6, n_slots), min_periods=1
+            ).mean()
+        if "target_temp_avg_24h" not in df.columns:
+            df["target_temp_avg_24h"] = df["target_temp"].rolling(
+                window=min(24, n_slots), min_periods=1
+            ).mean()
+    
+    # Heating degree hours
+    if "target_temp" in df.columns and "outdoor_temp" in df.columns:
+        degree_diff = (df["target_temp"] - df["outdoor_temp"]).clip(lower=0)
+        if "heating_degree_hours_24h" not in df.columns:
+            # For hourly data: each hour contributes degree_diff * 1 hour
+            df["heating_degree_hours_24h"] = degree_diff.rolling(
+                window=min(24, n_slots), min_periods=1
+            ).sum()
+    
+    # Convert back to list of dicts
+    return df.to_dict(orient="records")
+
+
+def get_actual_vs_predicted_data(
+    start_time: datetime,
+    end_time: datetime,
+    slot_duration_minutes: int = 60,
+) -> tuple[Optional[pd.DataFrame], Optional[str]]:
+    """
+    Retrieve actual historical data for comparison with model predictions.
+    
+    This function fetches resampled data for a specific time range and aggregates
+    it to the requested slot duration. It returns the actual heating kWh values
+    that can be compared against model predictions.
+    
+    Args:
+        start_time: Start of the time range (aligned to slot boundary)
+        end_time: End of the time range
+        slot_duration_minutes: Duration of each prediction slot (default 60 minutes)
+        
+    Returns:
+        Tuple of (DataFrame with actual values, error message if any)
+        DataFrame contains: slot_start, outdoor_temp, wind, humidity, pressure,
+            indoor_temp, target_temp, actual_heating_kwh, and computed features.
+            
+    Example:
+        >>> from datetime import datetime, timedelta
+        >>> start = datetime(2024, 1, 15, 12, 0, 0)
+        >>> end = start + timedelta(hours=24)
+        >>> df, error = get_actual_vs_predicted_data(start, end)
+        >>> if df is not None:
+        ...     # Compare df['actual_heating_kwh'] with model predictions
+    """
+    try:
+        with Session(engine) as session:
+            # Load resampled data for the time range
+            stmt = select(
+                ResampledSample.slot_start,
+                ResampledSample.category,
+                ResampledSample.value,
+            ).where(
+                ResampledSample.slot_start >= start_time,
+                ResampledSample.slot_start < end_time,
+            ).order_by(ResampledSample.slot_start)
+            
+            result = session.execute(stmt).fetchall()
+            
+            if not result:
+                return None, f"No data available for time range {start_time} to {end_time}"
+            
+            # Convert to DataFrame
+            raw_df = pd.DataFrame(result, columns=["slot_start", "category", "value"])
+            
+            # Pivot to wide format
+            pivot_df = raw_df.pivot(
+                index="slot_start", 
+                columns="category", 
+                values="value"
+            ).sort_index()
+            
+            if pivot_df.empty:
+                return None, "No data after pivoting"
+            
+            # Aggregate to requested slot duration (default 1 hour = 12 five-minute slots)
+            slots_per_agg = slot_duration_minutes // 5
+            
+            if slots_per_agg > 1:
+                # Group by hour slots and aggregate
+                pivot_df["slot_group"] = (
+                    pivot_df.index.to_series()
+                    .apply(lambda x: x.replace(minute=0, second=0, microsecond=0) + 
+                           timedelta(hours=(x.minute // slot_duration_minutes)))
+                )
+                
+                # For most categories: take the mean
+                # For hp_kwh_total: take the max - min (the delta)
+                agg_funcs = {}
+                for col in pivot_df.columns:
+                    if col == "slot_group":
+                        continue
+                    elif col == "hp_kwh_total":
+                        agg_funcs[col] = lambda x: x.max() - x.min() if len(x) > 0 else None
+                    else:
+                        agg_funcs[col] = "mean"
+                
+                hourly_df = pivot_df.groupby("slot_group").agg(agg_funcs)
+                hourly_df.index.name = "slot_start"
+            else:
+                hourly_df = pivot_df.copy()
+            
+            # Rename hp_kwh_total to actual_heating_kwh
+            if "hp_kwh_total" in hourly_df.columns:
+                hourly_df = hourly_df.rename(columns={"hp_kwh_total": "actual_heating_kwh"})
+            
+            # Add time features
+            hourly_df = _add_time_features(hourly_df)
+            
+            # Reset index for output
+            hourly_df = hourly_df.reset_index()
+            
+            return hourly_df, None
+            
+    except Exception as e:
+        _Logger.error("Error fetching actual data: %s", e, exc_info=True)
+        return None, str(e)
+
+
+def validate_prediction_start_time(start_time: datetime) -> tuple[bool, str]:
+    """
+    Validate that a prediction start time is at the next hour or later.
+    
+    Predictions should always start at the next or coming hour to ensure
+    we have the latest historical data for accurate predictions.
+    
+    Args:
+        start_time: The proposed start time for predictions
+        
+    Returns:
+        Tuple of (is_valid, message)
+        
+    Example:
+        >>> from datetime import datetime, timedelta
+        >>> now = datetime.now()
+        >>> next_hour = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        >>> is_valid, msg = validate_prediction_start_time(next_hour)
+        >>> assert is_valid
+    """
+    now = datetime.now()
+    
+    # Calculate the next hour boundary
+    next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    
+    # Check if start_time is aligned to hour boundary
+    if start_time.minute != 0 or start_time.second != 0:
+        return False, f"Prediction start time must be aligned to hour boundary. Got: {start_time}"
+    
+    # Check if start_time is in the past
+    if start_time < now:
+        return False, f"Prediction start time cannot be in the past. Got: {start_time}, Now: {now}"
+    
+    # Check if start_time is at least at the next hour
+    # Allow some tolerance for current hour if we're very early in it
+    if start_time < now.replace(minute=0, second=0, microsecond=0):
+        return False, f"Prediction start time must be at least the current hour. Got: {start_time}"
+    
+    return True, f"Valid prediction start time: {start_time}"
+
+
 def build_heating_feature_dataset(
     min_samples: int = 100,
 ) -> tuple[Optional[pd.DataFrame], FeatureDatasetStats]:
@@ -339,10 +600,22 @@ def build_heating_feature_dataset(
                 list(pivot_df.columns),
             )
             
-            # Calculate available history
-            time_range = pivot_df.index.max() - pivot_df.index.min()
+            # Calculate available history and populate stats
+            data_start = pivot_df.index.min()
+            data_end = pivot_df.index.max()
+            time_range = data_end - data_start
             available_hours = time_range.total_seconds() / 3600
-            _Logger.info("Available history: %.1f hours", available_hours)
+            
+            stats.data_start_time = data_start.to_pydatetime() if hasattr(data_start, 'to_pydatetime') else data_start
+            stats.data_end_time = data_end.to_pydatetime() if hasattr(data_end, 'to_pydatetime') else data_end
+            stats.available_history_hours = available_hours
+            
+            _Logger.info(
+                "Available history: %.1f hours (from %s to %s)", 
+                available_hours,
+                data_start,
+                data_end,
+            )
             
             # Step 3: Compute historical aggregations
             df = _compute_historical_aggregations(pivot_df, available_hours)

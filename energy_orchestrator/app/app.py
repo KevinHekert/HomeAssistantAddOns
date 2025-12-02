@@ -2130,6 +2130,8 @@ def get_sensor_feature_cards():
         # We show all sensors so users can see what's available and configure them
         for sensor_def in all_sensor_defs:
             sensor_config = sensor_category_conf.get_sensor_config(sensor_def.category_name)
+            # sensor_config should always exist since __post_init__ creates defaults,
+            # but we check to be safe in case of configuration corruption
             if sensor_config:
                 raw_sensors[sensor_def.category_name] = {
                     "display_name": sensor_def.display_name,

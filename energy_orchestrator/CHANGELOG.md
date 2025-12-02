@@ -2,6 +2,25 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.86] - 2025-12-02
+
+- **Fixed Sensor Visibility Issue**: Sensors are now correctly displayed on the configuration page
+  - **Root Causes Fixed**:
+    - Added missing `.data-table` CSS class that was referenced in JavaScript but not defined in stylesheet
+    - Fixed undefined CSS variables (`--success-color`, `--warning-color`, `--secondary-color`) to use correct variables (`--accent-green`, `--accent-orange`, `--text-muted`)
+    - Updated `/api/features/sensor_cards` endpoint to dynamically discover sensors instead of using hardcoded list
+  - **Dynamic Sensor Discovery**:
+    - `/api/features/sensor_cards` now queries `get_sensor_category_config()` to get all configured sensors
+    - Includes all sensors (core, experimental, and virtual) not just a hardcoded subset
+    - Shows all sensors regardless of enabled/disabled status so users can configure them
+    - Uses actual sensor metadata from configuration instead of hardcoded display names and units
+  - **UI Improvements**:
+    - Raw sensors table now displays correctly with proper styling and borders
+    - Status badges (Core/Enabled/Disabled) render with correct colors
+    - Input fields for entity ID and unit have proper styling
+    - All configured sensors are visible in the Feature Configuration section
+  - **Impact**: Users can now see and configure all their sensors in both the Configuration tab (feature selection) and Sensor Configuration tab (entity ID and statistics configuration)
+
 ## [0.0.0.85] - 2025-12-02
 
 - **Feature Configuration Improvements**

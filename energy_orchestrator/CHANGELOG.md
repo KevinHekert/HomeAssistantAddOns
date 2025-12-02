@@ -2,6 +2,14 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.67] - 2025-12-02
+
+- **Historical Day Prediction Timestamps**: When loading historical data for scenario predictions, timestamps are now adjusted to be 2 days after today (day after tomorrow)
+  - The `scenario_format` in `/api/examples/historical_day/<date>` now contains future timestamps for prediction
+  - Original historical timestamps are preserved in `hourly_data` for comparison purposes
+  - This allows comparing predictions with actual historical data while using valid future timestamps for the prediction API
+- Added test for timestamp adjustment in historical day scenario format
+
 ## [0.0.0.66] - 2025-12-02
 
 - **Sync Configuration UI**: Added UI controls to configure sensor sync settings

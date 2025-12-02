@@ -2126,18 +2126,19 @@ def get_sensor_feature_cards():
         # Build dynamic sensor metadata from configured sensors
         raw_sensors: dict[str, dict] = {}
         
-        # Add all configured raw sensors (both core and experimental)
+        # Add all configured raw sensors (both core and experimental, enabled or disabled)
+        # We show all sensors so users can see what's available and configure them
         for sensor_def in all_sensor_defs:
             sensor_config = sensor_category_conf.get_sensor_config(sensor_def.category_name)
-            if sensor_config and sensor_config.enabled:
+            if sensor_config:
                 raw_sensors[sensor_def.category_name] = {
                     "display_name": sensor_def.display_name,
                     "unit": sensor_config.unit if sensor_config.unit else sensor_def.unit,
                     "type": sensor_def.sensor_type.value,
                 }
         
-        # Add all enabled virtual sensors
-        for virtual_sensor in virtual_sensors_conf.get_enabled_sensors():
+        # Add all virtual sensors (enabled or disabled)
+        for virtual_sensor in virtual_sensors_conf.sensors.values():
             raw_sensors[virtual_sensor.name] = {
                 "display_name": virtual_sensor.display_name,
                 "unit": virtual_sensor.unit,

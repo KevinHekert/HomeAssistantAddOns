@@ -2,6 +2,19 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.88] - 2025-12-02
+
+- **Fixed Sensor Cards: All Time-Based Statistics Now Visible**
+  - **Issue**: Sensor cards (e.g., humidity, temperature, pressure) only showed one checkbox for the base sensor value, missing checkboxes for configured time-based statistics (avg_1h, avg_6h, avg_24h, avg_7d)
+  - **Root Cause**: The `/api/features/sensor_cards` endpoint only displayed features statically defined in CORE_FEATURES and EXPERIMENTAL_FEATURES, ignoring user-configured statistics from Feature Stats Configuration
+  - **Fix**: Modified endpoint to dynamically query feature_stats_config and include all enabled time-based statistics
+  - **Behavior**: Each sensor card now shows:
+    - A checkbox for the base sensor value (e.g., "humidity")
+    - Individual checkboxes for each configured time-based statistic (e.g., "humidity_avg_1h", "humidity_avg_6h", "humidity_avg_24h")
+  - **Example**: If you configured humidity to generate avg_1h, avg_6h, and avg_24h statistics in the "Feature Stats Configuration" tab, the humidity card now displays 4 checkboxes (1 for current value + 3 for averages)
+  - **Applies to all sensors**: This fix works for all sensors (raw and virtual), not just humidity
+  - Added comprehensive test suite in `test_sensor_cards.py` to validate the fix
+
 ## [0.0.0.87] - 2025-12-02
 
 - **UI Improvement: Sensor Cards Display**

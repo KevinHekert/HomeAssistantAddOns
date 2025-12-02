@@ -2,6 +2,21 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.74] - 2025-12-02
+
+- **Core Feature Expansion**: Moved two features from experimental to core baseline (15 core features total, was 13)
+  - `indoor_temp_avg_6h`: 6-hour average indoor temperature - essential for thermal mass tracking
+  - `outdoor_temp_avg_1h`: 1-hour outdoor temperature average - essential for near-term weather response
+  - These features are now always active and cannot be disabled
+- **Improved Training Feedback**: Training output now shows dynamic dataset information
+  - Data range: Shows exact start and end timestamps of training data
+  - History: Shows total hours of data available (~days)
+  - Feature breakdown: Shows count of raw sensor vs calculated features
+  - Clearer separation of sections: Dataset, Performance, and Features Used
+- **UI Update**: Updated feature count display from 13 to 15 core features
+- **Tests**: Added 2 new tests for the new core features (`indoor_temp_avg_6h`, `outdoor_temp_avg_1h`)
+- Updated existing tests to reflect new core feature count (13 → 15)
+
 ## [0.0.0.73] - 2025-12-02
 
 - **Two-Step Model Feature Display**: Added display of features used by each step in the two-step model

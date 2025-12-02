@@ -15,7 +15,7 @@ All features are derived from 5-minute averaged samples:
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 import json
@@ -587,7 +587,6 @@ def convert_utc_to_local_hour(utc_timestamp: datetime, config: Optional[FeatureC
         
         # Make timestamp timezone-aware if naive
         if utc_timestamp.tzinfo is None:
-            from datetime import timezone
             utc_timestamp = utc_timestamp.replace(tzinfo=timezone.utc)
         
         # Convert to local timezone

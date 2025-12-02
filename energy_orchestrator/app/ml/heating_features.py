@@ -11,7 +11,7 @@ Key principles:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from db import ResampledSample
 from db.core import engine
+from ml.feature_config import get_feature_config
 
 _Logger = logging.getLogger(__name__)
 
@@ -333,14 +334,12 @@ def _add_time_features(df: pd.DataFrame, use_configured_timezone: bool = True) -
     
     # Convert to local timezone for hour_of_day if configured
     if use_configured_timezone:
-        from ml.feature_config import get_feature_config
         config = get_feature_config()
         tz = config.get_timezone_info()
         
         try:
             # If index is timezone-naive, assume UTC
             if dt_index.tz is None:
-                from datetime import timezone
                 dt_index_utc = dt_index.tz_localize(timezone.utc)
             else:
                 dt_index_utc = dt_index
@@ -717,7 +716,6 @@ def build_heating_feature_dataset(
             df = _add_time_features(df)
             
             # Step 6: Select features for the model using feature configuration
-            from ml.feature_config import get_feature_config
             config = get_feature_config()
             
             # Get active feature names from configuration

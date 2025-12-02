@@ -1104,12 +1104,17 @@
                             const checked = f.enabled ? 'checked' : '';
                             const disabled = f.is_core ? 'disabled' : '';
                             
+                            // Escape feature name for safety (feature names are alphanumeric with underscores)
+                            const safeName = f.name.replace(/[^a-zA-Z0-9_]/g, '');
+                            const safeDesc = f.description.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            const safeUnit = f.unit.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            
                             html += `<div class="feature-item ${itemClass}">`;
-                            html += `<div class="feature-toggle"><input type="checkbox" ${checked} ${disabled} onchange="toggleFeature('${f.name}', this.checked)"></div>`;
+                            html += `<div class="feature-toggle"><input type="checkbox" ${checked} ${disabled} data-feature="${safeName}" onchange="toggleFeature(this.dataset.feature, this.checked)"></div>`;
                             html += `<div class="feature-info">`;
-                            html += `<div class="feature-name">${f.name}<span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
-                            html += `<div class="feature-description">${f.description}</div>`;
-                            html += `<div class="feature-meta">Unit: ${f.unit}${f.time_window !== 'none' ? ' | Window: ' + f.time_window : ''}</div>`;
+                            html += `<div class="feature-name">${safeName}<span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                            html += `<div class="feature-description">${safeDesc}</div>`;
+                            html += `<div class="feature-meta">Unit: ${safeUnit}${f.time_window !== 'none' ? ' | Window: ' + f.time_window : ''}</div>`;
                             html += `</div>`;
                             html += `</div>`;
                         });

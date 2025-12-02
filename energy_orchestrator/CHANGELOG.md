@@ -2,6 +2,30 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.85] - 2025-12-02
+
+- **Feature Configuration Improvements**
+  - **Core features can now be disabled**: CORE features are labeled as 'CORE' in UI but can still be toggled on/off
+  - **Sync feature statistics with ML configuration**: Feature statistics (avg_1h, avg_6h, avg_24h, avg_7d) are now only calculated for features that are enabled in the ML configuration
+    - Added `sync_stats_config_with_features()` function to synchronize feature stats with active ML features
+    - Added `derive_stats_from_feature_config()` to determine which sensor statistics are needed based on enabled features
+    - `calculate_feature_statistics()` now syncs with feature config before calculating (optional parameter)
+  - **New API endpoints for feature management**:
+    - `/api/features/special_cards` - Returns special feature cards for Time/Date and Usage calculated features
+    - `/api/features/sensor_cards` - Returns sensor cards with their aggregation features
+    - `/api/features/toggle` - Updated to handle both CORE and EXPERIMENTAL features (previously only experimental)
+  - **Special feature cards**:
+    - **Time & Date Features**: hour_of_day, day_of_week, is_weekend, is_night (system-generated card)
+    - **Heating Usage Features**: heating_kwh_last_1h/6h/24h/7d, heating_degree_hours_24h/7d (system-generated card)
+  - **Feature storage changes**:
+    - FeatureConfiguration now stores both `core_enabled` and `experimental_enabled` dictionaries
+    - Both core and experimental features can be toggled via `enable_feature()` / `disable_feature()` methods
+  - **Improved test coverage**:
+    - Added comprehensive tests for feature stats synchronization in `test_feature_stats_sync.py`
+    - Tests verify that feature statistics respect ML feature configuration
+
+- Resolves issue: Features should only be calculated and displayed when enabled in configuration
+
 ## [0.0.0.84] - 2025-12-02
 
 - **Fix "Show Sensors & Statistics" button error**

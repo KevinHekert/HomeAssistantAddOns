@@ -2,6 +2,21 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.69] - 2025-12-02
+
+- **Scenario Prediction Uses Two-Step When Enabled**: The simplified scenario prediction endpoint now automatically uses the two-step model when enabled
+  - When two-step prediction is enabled in Feature Configuration and the two-step model is trained, `/api/predictions/scenario` will use the two-step approach
+  - Response includes `is_active` and `activity_probability` for each timeslot when using two-step
+  - Response includes summary with active/inactive hour counts
+  - UI displays active/inactive status with 🔥/❄️ icons for each hour
+  - Falls back to single-step model if two-step is not available
+- **UI Improvements for Two-Step Scenario Predictions**:
+  - Status message indicates "(using two-step prediction)" when enabled
+  - Results table shows "Active" column with status icons (🔥 Active / ❄️ Inactive)
+  - Results table shows "Activity Prob." column with classifier probability
+  - Summary box shows count of active vs inactive hours
+- Added 4 new tests for two-step scenario prediction functionality
+
 ## [0.0.0.68] - 2025-12-02
 
 - **Two-Step Prediction UI Improvements**: Redesigned the two-step prediction feature for better visibility and clarity

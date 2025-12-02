@@ -972,6 +972,10 @@ def predict_heating_demand_scenario():
     This endpoint accepts human-readable inputs instead of low-level model features.
     All time-based features and historical aggregations are computed internally.
     
+    When two-step prediction is enabled in the feature configuration and the two-step
+    model is available, this endpoint will automatically use the two-step model for
+    improved accuracy.
+    
     Request body:
     {
         "timeslots": [
@@ -1006,7 +1010,21 @@ def predict_heating_demand_scenario():
     - 400: Missing required fields, invalid timestamps, past timestamps
     - 503: Model not trained
     """
-    model = _get_model()
+    # Check if two-step prediction is enabled and the model is available
+    config = get_feature_config()
+    use_two_step = False
+    two_step_model = None
+    
+    if config.is_two_step_prediction_enabled():
+        two_step_model = _get_two_step_model()
+        if two_step_model is not None and two_step_model.is_available:
+            use_two_step = True
+    
+    # Get the appropriate model
+    if use_two_step:
+        model = two_step_model
+    else:
+        model = _get_model()
     
     if model is None or not model.is_available:
         return jsonify({
@@ -1052,35 +1070,85 @@ def predict_heating_demand_scenario():
             include_historical_heating=True,
         )
         
-        # Make predictions
-        predictions = predict_scenario(
-            model,
-            model_features,
-            update_historical=True,
-        )
-        
-        # Build response with timestamp-prediction pairs
-        prediction_results = []
-        for ts, pred in zip(parsed_timestamps, predictions):
-            prediction_results.append({
-                "timestamp": ts.isoformat(),
-                "predicted_kwh": round(pred, PREDICTION_DECIMAL_PLACES),
+        # Make predictions using the appropriate model
+        if use_two_step:
+            # Use two-step model
+            two_step_predictions = predict_two_step_scenario(
+                model,
+                model_features,
+                update_historical=True,
+            )
+            
+            # Build response with two-step prediction details
+            prediction_results = []
+            total_kwh = 0.0
+            active_count = 0
+            inactive_count = 0
+            
+            for ts, pred in zip(parsed_timestamps, two_step_predictions):
+                prediction_results.append({
+                    "timestamp": ts.isoformat(),
+                    "predicted_kwh": round(pred.predicted_kwh, PREDICTION_DECIMAL_PLACES),
+                    "is_active": pred.is_active,
+                    "activity_probability": round(pred.classifier_probability, 4),
+                })
+                total_kwh += pred.predicted_kwh
+                if pred.is_active:
+                    active_count += 1
+                else:
+                    inactive_count += 1
+            
+            return jsonify({
+                "status": "success",
+                "predictions": prediction_results,
+                "total_kwh": round(total_kwh, PREDICTION_DECIMAL_PLACES),
+                "slots_count": len(two_step_predictions),
+                "model_info": {
+                    "training_timestamp": model.training_timestamp.isoformat() if model.training_timestamp else None,
+                    "two_step_prediction": True,
+                    "activity_threshold_kwh": round(model.activity_threshold_kwh, 4),
+                },
+                "summary": {
+                    "active_hours": active_count,
+                    "inactive_hours": inactive_count,
+                },
             })
-        
-        return jsonify({
-            "status": "success",
-            "predictions": prediction_results,
-            "total_kwh": round(sum(predictions), PREDICTION_DECIMAL_PLACES),
-            "slots_count": len(predictions),
-            "model_info": {
-                "training_timestamp": model.training_timestamp.isoformat() if model.training_timestamp else None,
-            },
-        })
+        else:
+            # Use standard single-step model
+            predictions = predict_scenario(
+                model,
+                model_features,
+                update_historical=True,
+            )
+            
+            # Build response with timestamp-prediction pairs
+            prediction_results = []
+            for ts, pred in zip(parsed_timestamps, predictions):
+                prediction_results.append({
+                    "timestamp": ts.isoformat(),
+                    "predicted_kwh": round(pred, PREDICTION_DECIMAL_PLACES),
+                })
+            
+            return jsonify({
+                "status": "success",
+                "predictions": prediction_results,
+                "total_kwh": round(sum(predictions), PREDICTION_DECIMAL_PLACES),
+                "slots_count": len(predictions),
+                "model_info": {
+                    "training_timestamp": model.training_timestamp.isoformat() if model.training_timestamp else None,
+                    "two_step_prediction": False,
+                },
+            })
         
     except ModelNotAvailableError:
         return jsonify({
             "status": "error",
             "message": "Model not available",
+        }), 503
+    except TwoStepModelNotAvailableError:
+        return jsonify({
+            "status": "error",
+            "message": "Two-step model not available",
         }), 503
     except ValueError as e:
         return jsonify({

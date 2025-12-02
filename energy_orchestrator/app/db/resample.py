@@ -167,6 +167,22 @@ def flush_resampled_samples() -> int:
         raise
 
 
+def get_latest_resampled_slot_start() -> datetime | None:
+    """
+    Get the latest slot_start datetime from the resampled_samples table.
+    
+    Returns:
+        The maximum slot_start datetime, or None if the table is empty.
+    """
+    try:
+        with Session(engine) as session:
+            result = session.query(func.max(ResampledSample.slot_start)).scalar()
+            return result
+    except SQLAlchemyError as e:
+        _Logger.error("Error getting latest resampled slot start: %s", e)
+        return None
+
+
 def get_primary_entities_by_category() -> dict[str, str]:
     """
     Determine the primary entity_id per category from sensor_mappings.
@@ -469,10 +485,30 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
 
     # Step 4: Align global_start to boundary based on sample rate
     aligned_start = _align_to_boundary(global_start, sample_rate_minutes)
+    
+    # Step 4.5: For incremental resampling (when flush=False), start from
+    # the latest resampled slot minus 2 * sample_rate_minutes.
+    # This ensures we re-process recent slots that may have incomplete data.
+    effective_start = aligned_start
+    if not flush:
+        latest_resampled = get_latest_resampled_slot_start()
+        if latest_resampled is not None:
+            # Go back 2 * sample_rate_minutes from the latest resampled slot
+            incremental_start = latest_resampled - timedelta(minutes=2 * sample_rate_minutes)
+            # Align to boundary
+            incremental_start = _align_to_boundary(incremental_start, sample_rate_minutes)
+            # Use incremental start only if it's after the global aligned start
+            if incremental_start > aligned_start:
+                effective_start = incremental_start
+                _Logger.info(
+                    "Incremental resample: starting from %s (latest resampled: %s)",
+                    effective_start,
+                    latest_resampled,
+                )
 
     _Logger.info(
-        "Starting resample: aligned_start=%s, global_end=%s, categories=%s, sample_rate=%dm",
-        aligned_start,
+        "Starting resample: effective_start=%s, global_end=%s, categories=%s, sample_rate=%dm",
+        effective_start,
         global_end,
         list(category_to_entity.keys()),
         sample_rate_minutes,
@@ -486,7 +522,7 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
     # Step 5: Iterate over slots
     try:
         with Session(engine) as session:
-            slot_start = aligned_start
+            slot_start = effective_start
 
             while slot_start < global_end:
                 slot_end = slot_start + resample_step
@@ -550,7 +586,7 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
                 slots_saved=slots_saved,
                 slots_skipped=slots_skipped,
                 categories=list(category_to_entity.keys()),
-                start_time=aligned_start,
+                start_time=effective_start,
                 end_time=global_end,
                 sample_rate_minutes=sample_rate_minutes,
                 table_flushed=table_flushed,

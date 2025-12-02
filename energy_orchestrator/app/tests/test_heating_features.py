@@ -49,29 +49,29 @@ def _create_resampled_samples(session: Session, start_time: datetime, num_slots:
     """
     Create test resampled samples with all required categories.
     
-    Creates data for 5-minute slots with realistic values.
+    Creates data for 5-minute slots with realistic values and units.
     """
     categories = {
-        "outdoor_temp": (5.0, 0.1),  # base, increment
-        "wind": (3.0, 0.05),
-        "humidity": (75.0, -0.1),
-        "pressure": (1013.0, 0.01),
-        "indoor_temp": (20.0, 0.02),
-        "target_temp": (21.0, 0),
-        "hp_kwh_total": (1000.0, 0.1),  # Cumulative, increment each slot
-        "dhw_active": (0.0, 0),  # No DHW activity
+        "outdoor_temp": (5.0, 0.1, "°C"),  # base, increment, unit
+        "wind": (3.0, 0.05, "m/s"),
+        "humidity": (75.0, -0.1, "%"),
+        "pressure": (1013.0, 0.01, "hPa"),
+        "indoor_temp": (20.0, 0.02, "°C"),
+        "target_temp": (21.0, 0, "°C"),
+        "hp_kwh_total": (1000.0, 0.1, "kWh"),  # Cumulative, increment each slot
+        "dhw_active": (0.0, 0, ""),  # No DHW activity
     }
     
     for i in range(num_slots):
         slot_start = start_time + timedelta(minutes=5 * i)
         
-        for category, (base, increment) in categories.items():
+        for category, (base, increment, unit) in categories.items():
             value = base + increment * i
             session.add(ResampledSample(
                 slot_start=slot_start,
                 category=category,
                 value=value,
-                unit="test",
+                unit=unit,
             ))
     
     session.commit()
@@ -86,7 +86,7 @@ class TestLoadResampledData:
             df = _load_resampled_data(session)
         
         assert df.empty
-        assert list(df.columns) == ["slot_start", "category", "value"]
+        assert list(df.columns) == ["slot_start", "category", "value", "unit"]
     
     def test_loads_data_correctly(self, patch_engine):
         """Data is loaded correctly from database."""
@@ -111,6 +111,11 @@ class TestLoadResampledData:
         
         assert len(df) == 2
         assert set(df["category"]) == {"outdoor_temp", "wind"}
+        # Verify units are loaded correctly
+        outdoor_row = df[df["category"] == "outdoor_temp"].iloc[0]
+        wind_row = df[df["category"] == "wind"].iloc[0]
+        assert outdoor_row["unit"] == "°C"
+        assert wind_row["unit"] == "m/s"
 
 
 class TestPivotData:
@@ -1216,12 +1221,20 @@ class TestTrainingDataRange:
         data_range = TrainingDataRange()
         assert data_range.first is None
         assert data_range.last is None
+        assert data_range.unit is None
 
     def test_training_data_range_partial_values(self):
         """TrainingDataRange can have partial values."""
         data_range = TrainingDataRange(first=100.0)
         assert data_range.first == 100.0
         assert data_range.last is None
+
+    def test_training_data_range_with_unit(self):
+        """TrainingDataRange stores unit correctly."""
+        data_range = TrainingDataRange(first=45.0, last=50.0, unit="°C")
+        assert data_range.first == 45.0
+        assert data_range.last == 50.0
+        assert data_range.unit == "°C"
 
 
 class TestFeatureDatasetStatsSensorRanges:
@@ -1298,3 +1311,31 @@ class TestFeatureDatasetStatsSensorRanges:
         assert outdoor_range is not None
         assert outdoor_range.first == 5.0  # First slot value
         assert abs(outdoor_range.last - (5.0 + 0.1 * 199)) < 0.001  # Last slot value
+
+    def test_sensor_ranges_include_units_from_source_data(self, patch_engine):
+        """Sensor ranges include correct units extracted from source data."""
+        start = datetime(2024, 1, 1, 12, 0, 0)
+        
+        with Session(patch_engine) as session:
+            _create_resampled_samples(session, start, num_slots=200)
+        
+        df, stats = build_heating_feature_dataset(min_samples=50)
+        
+        assert df is not None
+        
+        # Check units are correctly extracted from the database
+        expected_units = {
+            "outdoor_temp": "°C",
+            "wind": "m/s",
+            "humidity": "%",
+            "pressure": "hPa",
+            "indoor_temp": "°C",
+            "target_temp": "°C",
+            "hp_kwh_total": "kWh",
+            "dhw_active": "",
+        }
+        
+        for category, expected_unit in expected_units.items():
+            if category in stats.sensor_ranges:
+                assert stats.sensor_ranges[category].unit == expected_unit, \
+                    f"Category {category} has unit {stats.sensor_ranges[category].unit}, expected {expected_unit}"

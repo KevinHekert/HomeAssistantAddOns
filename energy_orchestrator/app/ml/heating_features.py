@@ -97,6 +97,7 @@ class TrainingDataRange:
     """First and last values for a training data column."""
     first: Optional[float] = None
     last: Optional[float] = None
+    unit: Optional[str] = None
 
 
 @dataclass
@@ -126,20 +127,21 @@ def _load_resampled_data(session: Session) -> pd.DataFrame:
     Load all resampled samples into a DataFrame.
     
     Returns:
-        DataFrame with columns: slot_start, category, value
+        DataFrame with columns: slot_start, category, value, unit
     """
     stmt = select(
         ResampledSample.slot_start,
         ResampledSample.category,
         ResampledSample.value,
+        ResampledSample.unit,
     ).order_by(ResampledSample.slot_start)
     
     result = session.execute(stmt).fetchall()
     
     if not result:
-        return pd.DataFrame(columns=["slot_start", "category", "value"])
+        return pd.DataFrame(columns=["slot_start", "category", "value", "unit"])
     
-    df = pd.DataFrame(result, columns=["slot_start", "category", "value"])
+    df = pd.DataFrame(result, columns=["slot_start", "category", "value", "unit"])
     return df
 
 
@@ -148,7 +150,8 @@ def _pivot_data(df: pd.DataFrame) -> pd.DataFrame:
     Pivot data from long to wide format.
     
     Args:
-        df: DataFrame with columns slot_start, category, value
+        df: DataFrame with columns slot_start, category, value, unit.
+            The unit column is not used in pivoting but is present in input.
         
     Returns:
         DataFrame with slot_start as index and categories as columns
@@ -720,6 +723,14 @@ def build_heating_feature_dataset(
                 data_end,
             )
             
+            # Extract units per category from raw data using groupby for better performance
+            category_units: dict[str, str | None] = (
+                raw_df.dropna(subset=["unit"])
+                .groupby("category")["unit"]
+                .first()
+                .to_dict()
+            )
+            
             # Capture training data range for all sensor categories
             for category in pivot_df.columns:
                 category_values = pivot_df[category].dropna()
@@ -727,6 +738,7 @@ def build_heating_feature_dataset(
                     stats.sensor_ranges[category] = TrainingDataRange(
                         first=float(category_values.iloc[0]),
                         last=float(category_values.iloc[-1]),
+                        unit=category_units.get(category),
                     )
             
             # For hp_kwh_total, compute the delta (energy consumed during training period)
@@ -738,6 +750,7 @@ def build_heating_feature_dataset(
                     stats.hp_kwh_total_range = TrainingDataRange(
                         first=float(hp_values.iloc[0]),
                         last=float(hp_values.iloc[-1]),
+                        unit=category_units.get("hp_kwh_total"),
                     )
             
             # Set legacy dhw_temp_range for backward compatibility
@@ -747,6 +760,7 @@ def build_heating_feature_dataset(
                     stats.dhw_temp_range = TrainingDataRange(
                         first=float(dhw_values.iloc[0]),
                         last=float(dhw_values.iloc[-1]),
+                        unit=category_units.get("dhw_temp"),
                     )
             
             # Step 3: Compute historical aggregations

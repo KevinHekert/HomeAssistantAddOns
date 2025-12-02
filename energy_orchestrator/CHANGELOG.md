@@ -20,9 +20,17 @@ All notable changes to this add-on will be documented in this file.
   - **Feature storage changes**:
     - FeatureConfiguration now stores both `core_enabled` and `experimental_enabled` dictionaries
     - Both core and experimental features can be toggled via `enable_feature()` / `disable_feature()` methods
+  - **UI Implementation**:
+    - **Auto-load on page open**: Feature configuration loads automatically when Configuration tab is shown (removed manual "Load Features" button)
+    - **Special feature cards displayed**: Time & Date and Heating Usage features shown in dedicated cards
+    - **Sensor feature cards**: Each sensor (outdoor_temp, indoor_temp, etc.) shows its aggregation features with checkboxes
+    - **Feature badges**: All features show CORE or EXPERIMENTAL badges
+    - **Toggleable checkboxes**: All features (including CORE) can be enabled/disabled via checkboxes
+    - **Auto-refresh**: UI automatically refreshes after toggling features to show updated state
   - **Improved test coverage**:
     - Added comprehensive tests for feature stats synchronization in `test_feature_stats_sync.py`
     - Tests verify that feature statistics respect ML feature configuration
+    - All 55 tests pass
 
 - Resolves issue: Features should only be calculated and displayed when enabled in configuration
 

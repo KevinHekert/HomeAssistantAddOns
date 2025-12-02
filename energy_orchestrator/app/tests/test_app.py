@@ -1048,6 +1048,53 @@ class TestHistoricalDayEndpoint:
             assert data["status"] == "error"
             assert "Database error" in data["message"]
 
+    def test_historical_day_scenario_timestamp_adjusted(self, client):
+        """Scenario format timestamps are adjusted to 2 days after today."""
+        from datetime import timedelta
+        
+        hourly_data = [
+            {
+                "timestamp": "2024-01-15T12:00:00",
+                "outdoor_temperature": 8.0,
+            },
+            {
+                "timestamp": "2024-01-15T13:00:00",
+                "outdoor_temperature": 9.0,
+            },
+        ]
+        with patch("app.get_historical_day_hourly_data") as mock_get_data, \
+             patch("app._get_model") as mock_get_model:
+            mock_get_data.return_value = (hourly_data, None)
+            mock_get_model.return_value = None
+
+            response = client.get("/api/examples/historical_day/2024-01-15")
+
+            data = response.get_json()
+            
+            # Calculate expected prediction date (2 days from today)
+            today = datetime.now().date()
+            prediction_date = today + timedelta(days=2)
+            
+            # Check that scenario_format timestamps are adjusted
+            scenario_ts_1 = datetime.fromisoformat(
+                data["scenario_format"]["timeslots"][0]["timestamp"]
+            )
+            scenario_ts_2 = datetime.fromisoformat(
+                data["scenario_format"]["timeslots"][1]["timestamp"]
+            )
+            
+            # Verify the date is 2 days after today
+            assert scenario_ts_1.date() == prediction_date
+            assert scenario_ts_2.date() == prediction_date
+            
+            # Verify the hours are preserved
+            assert scenario_ts_1.hour == 12
+            assert scenario_ts_2.hour == 13
+            
+            # Verify original hourly_data timestamps remain unchanged
+            assert data["hourly_data"][0]["timestamp"] == "2024-01-15T12:00:00"
+            assert data["hourly_data"][1]["timestamp"] == "2024-01-15T13:00:00"
+
 
 class TestSampleRateEndpoint:
     """Test the /api/sample_rate GET endpoint."""

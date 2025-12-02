@@ -411,27 +411,12 @@ def update_sync_config():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# Sensor units mapping for display in UI
-SENSOR_UNITS = {
-    "outdoor_temp": "°C",
-    "indoor_temp": "°C",
-    "target_temp": "°C",
-    "dhw_temp": "°C",
-    "flow_temp": "°C",
-    "return_temp": "°C",
-    "wind": "m/s",
-    "humidity": "%",
-    "pressure": "hPa",
-    "hp_kwh_total": "kWh",
-    "dhw_active": "",
-}
-
-
 def _build_training_data_response(stats: FeatureDatasetStats) -> dict:
     """
     Build the training_data response with all sensor categories.
     
     For hp_kwh_total, shows the delta (energy consumed) instead of raw cumulative values.
+    Unit information is extracted from the actual data in the samples table.
     """
     training_data = {}
     
@@ -442,13 +427,13 @@ def _build_training_data_response(stats: FeatureDatasetStats) -> dict:
                 "delta": stats.hp_kwh_delta,
                 "first": range_data.first,
                 "last": range_data.last,
-                "unit": SENSOR_UNITS.get(category, ""),
+                "unit": range_data.unit or "",
             }
         else:
             training_data[category] = {
                 "first": range_data.first,
                 "last": range_data.last,
-                "unit": SENSOR_UNITS.get(category, ""),
+                "unit": range_data.unit or "",
             }
     
     return training_data

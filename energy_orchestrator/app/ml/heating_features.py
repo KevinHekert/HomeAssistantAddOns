@@ -97,6 +97,7 @@ class TrainingDataRange:
     """First and last values for a training data column."""
     first: Optional[float] = None
     last: Optional[float] = None
+    unit: Optional[str] = None
 
 
 @dataclass
@@ -126,20 +127,21 @@ def _load_resampled_data(session: Session) -> pd.DataFrame:
     Load all resampled samples into a DataFrame.
     
     Returns:
-        DataFrame with columns: slot_start, category, value
+        DataFrame with columns: slot_start, category, value, unit
     """
     stmt = select(
         ResampledSample.slot_start,
         ResampledSample.category,
         ResampledSample.value,
+        ResampledSample.unit,
     ).order_by(ResampledSample.slot_start)
     
     result = session.execute(stmt).fetchall()
     
     if not result:
-        return pd.DataFrame(columns=["slot_start", "category", "value"])
+        return pd.DataFrame(columns=["slot_start", "category", "value", "unit"])
     
-    df = pd.DataFrame(result, columns=["slot_start", "category", "value"])
+    df = pd.DataFrame(result, columns=["slot_start", "category", "value", "unit"])
     return df
 
 
@@ -720,6 +722,16 @@ def build_heating_feature_dataset(
                 data_end,
             )
             
+            # Extract units per category from raw data (use first non-null unit for each category)
+            category_units: dict[str, str | None] = {}
+            for category in raw_df["category"].unique():
+                cat_data = raw_df[raw_df["category"] == category]
+                units = cat_data["unit"].dropna()
+                if not units.empty:
+                    category_units[category] = str(units.iloc[0])
+                else:
+                    category_units[category] = None
+            
             # Capture training data range for all sensor categories
             for category in pivot_df.columns:
                 category_values = pivot_df[category].dropna()
@@ -727,6 +739,7 @@ def build_heating_feature_dataset(
                     stats.sensor_ranges[category] = TrainingDataRange(
                         first=float(category_values.iloc[0]),
                         last=float(category_values.iloc[-1]),
+                        unit=category_units.get(category),
                     )
             
             # For hp_kwh_total, compute the delta (energy consumed during training period)
@@ -738,6 +751,7 @@ def build_heating_feature_dataset(
                     stats.hp_kwh_total_range = TrainingDataRange(
                         first=float(hp_values.iloc[0]),
                         last=float(hp_values.iloc[-1]),
+                        unit=category_units.get("hp_kwh_total"),
                     )
             
             # Set legacy dhw_temp_range for backward compatibility
@@ -747,6 +761,7 @@ def build_heating_feature_dataset(
                     stats.dhw_temp_range = TrainingDataRange(
                         first=float(dhw_values.iloc[0]),
                         last=float(dhw_values.iloc[-1]),
+                        unit=category_units.get("dhw_temp"),
                     )
             
             # Step 3: Compute historical aggregations

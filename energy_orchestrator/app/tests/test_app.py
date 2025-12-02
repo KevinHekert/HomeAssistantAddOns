@@ -178,13 +178,13 @@ class TestTrainHeatingDemandEndpoint:
             features_used=["outdoor_temp", "wind"],
             has_7d_features=False,
             sensor_ranges={
-                "dhw_temp": TrainingDataRange(first=45.0, last=50.0),
-                "hp_kwh_total": TrainingDataRange(first=1000.0, last=1500.0),
-                "outdoor_temp": TrainingDataRange(first=5.0, last=10.0),
+                "dhw_temp": TrainingDataRange(first=45.0, last=50.0, unit="°C"),
+                "hp_kwh_total": TrainingDataRange(first=1000.0, last=1500.0, unit="kWh"),
+                "outdoor_temp": TrainingDataRange(first=5.0, last=10.0, unit="°C"),
             },
             hp_kwh_delta=500.0,
-            dhw_temp_range=TrainingDataRange(first=45.0, last=50.0),
-            hp_kwh_total_range=TrainingDataRange(first=1000.0, last=1500.0),
+            dhw_temp_range=TrainingDataRange(first=45.0, last=50.0, unit="°C"),
+            hp_kwh_total_range=TrainingDataRange(first=1000.0, last=1500.0, unit="kWh"),
         )
         mock_model = MagicMock()
         mock_metrics = MagicMock()
@@ -216,7 +216,7 @@ class TestTrainHeatingDemandEndpoint:
             assert data["training_data"]["hp_kwh_total"]["first"] == 1000.0
             assert data["training_data"]["hp_kwh_total"]["last"] == 1500.0
             assert data["training_data"]["hp_kwh_total"]["delta"] == 500.0
-            # Check units are included
+            # Check units are included (now extracted from source data)
             assert data["training_data"]["hp_kwh_total"]["unit"] == "kWh"
             assert data["training_data"]["dhw_temp"]["unit"] == "°C"
 

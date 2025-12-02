@@ -577,39 +577,48 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
                     
                     # Step 5.5: Calculate and insert virtual sensor values
                     for virtual_sensor in enabled_virtual_sensors:
-                        # Get source sensor values from slot_values
-                        source1_data = slot_values.get(virtual_sensor.source_sensor1)
-                        source2_data = slot_values.get(virtual_sensor.source_sensor2)
-                        
-                        if source1_data is None or source2_data is None:
-                            _Logger.debug(
-                                "Skipping virtual sensor '%s' for slot %s: source sensor(s) not available",
+                        try:
+                            # Get source sensor values from slot_values
+                            source1_data = slot_values.get(virtual_sensor.source_sensor1)
+                            source2_data = slot_values.get(virtual_sensor.source_sensor2)
+                            
+                            if source1_data is None or source2_data is None:
+                                _Logger.debug(
+                                    "Skipping virtual sensor '%s' for slot %s: source sensor(s) not available",
+                                    virtual_sensor.name,
+                                    slot_start,
+                                )
+                                continue
+                            
+                            value1, _ = source1_data
+                            value2, _ = source2_data
+                            
+                            # Calculate virtual sensor value
+                            virtual_value = virtual_sensor.calculate(value1, value2)
+                            
+                            if virtual_value is not None:
+                                resampled = ResampledSample(
+                                    slot_start=slot_start,
+                                    category=virtual_sensor.name,
+                                    value=virtual_value,
+                                    unit=virtual_sensor.unit,
+                                )
+                                session.add(resampled)
+                                _Logger.debug(
+                                    "Virtual sensor '%s' calculated: %.2f %s (from %.2f and %.2f)",
+                                    virtual_sensor.name,
+                                    virtual_value,
+                                    virtual_sensor.unit,
+                                    value1,
+                                    value2,
+                                )
+                        except Exception as e:
+                            # Log error but don't fail the entire resampling transaction
+                            _Logger.error(
+                                "Error calculating virtual sensor '%s' for slot %s: %s",
                                 virtual_sensor.name,
                                 slot_start,
-                            )
-                            continue
-                        
-                        value1, _ = source1_data
-                        value2, _ = source2_data
-                        
-                        # Calculate virtual sensor value
-                        virtual_value = virtual_sensor.calculate(value1, value2)
-                        
-                        if virtual_value is not None:
-                            resampled = ResampledSample(
-                                slot_start=slot_start,
-                                category=virtual_sensor.name,
-                                value=virtual_value,
-                                unit=virtual_sensor.unit,
-                            )
-                            session.add(resampled)
-                            _Logger.debug(
-                                "Virtual sensor '%s' calculated: %.2f %s (from %.2f and %.2f)",
-                                virtual_sensor.name,
-                                virtual_value,
-                                virtual_sensor.unit,
-                                value1,
-                                value2,
+                                e,
                             )
                     
                     slots_saved += 1

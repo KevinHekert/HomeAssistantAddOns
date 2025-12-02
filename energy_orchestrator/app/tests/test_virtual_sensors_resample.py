@@ -18,6 +18,7 @@ from db.virtual_sensors import (
     VirtualSensorDefinition,
     VirtualSensorOperation,
     VirtualSensorsConfiguration,
+    reset_virtual_sensors_config,
 )
 import db.core as core_module
 import db.resample as resample_module
@@ -60,8 +61,8 @@ def patch_engine_and_config(test_engine, temp_config_dir, monkeypatch):
         temp_config_dir / "virtual_sensors_config.json",
     )
     
-    # Reset global config
-    virtual_sensors_module._config = None
+    # Reset global config using the public reset function
+    reset_virtual_sensors_config()
 
     return test_engine
 

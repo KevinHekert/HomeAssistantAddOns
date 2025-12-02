@@ -288,3 +288,14 @@ def reload_virtual_sensors_config() -> VirtualSensorsConfiguration:
     global _config
     _config = VirtualSensorsConfiguration.load()
     return _config
+
+
+def reset_virtual_sensors_config() -> None:
+    """
+    Reset the global virtual sensors configuration to None.
+    
+    This function is primarily for testing purposes, allowing tests to
+    reset the singleton state between test runs.
+    """
+    global _config
+    _config = None

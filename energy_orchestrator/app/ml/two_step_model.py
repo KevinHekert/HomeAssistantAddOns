@@ -75,6 +75,12 @@ class TwoStepTrainingMetrics:
     # Overall metrics
     features: list[str]
     model_path: str
+    
+    # Step-specific feature usage (both steps use same features, but for different purposes)
+    # Step 1 (Classifier): Uses all features to predict active/inactive
+    # Step 2 (Regressor): Uses all features to predict kWh for active hours only
+    classifier_description: str = "Predicts whether heating will be active (on) or inactive (off) for the hour"
+    regressor_description: str = "Predicts kWh consumption for active hours only (inactive hours = 0 kWh)"
 
 
 class TwoStepModelNotAvailableError(Exception):

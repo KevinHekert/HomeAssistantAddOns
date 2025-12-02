@@ -649,3 +649,160 @@ def validate_feature_set(feature_names: list[str]) -> tuple[bool, list[str]]:
     missing = core_names - provided
     
     return len(missing) == 0, list(missing)
+
+
+# Raw sensor features (directly from sensors, no computation)
+# These map directly to sensor values without any aggregation or derivation
+RAW_SENSOR_FEATURES = {
+    "outdoor_temp",
+    "wind",
+    "humidity",
+    "pressure",
+    "indoor_temp",
+    "target_temp",
+}
+
+# Calculated/derived features (computed from raw data)
+# These are computed through aggregation, derivation, or time-based logic
+CALCULATED_FEATURES = {
+    # Aggregated averages
+    "outdoor_temp_avg_1h",
+    "outdoor_temp_avg_6h",
+    "outdoor_temp_avg_24h",
+    "outdoor_temp_avg_7d",
+    "indoor_temp_avg_6h",
+    "indoor_temp_avg_24h",
+    "target_temp_avg_6h",
+    "target_temp_avg_24h",
+    # Historical usage (computed from kWh sensor deltas)
+    "heating_kwh_last_1h",
+    "heating_kwh_last_6h",
+    "heating_kwh_last_24h",
+    "heating_kwh_last_7d",
+    # Heating degree hours (computed from temperature differences)
+    "heating_degree_hours_24h",
+    "heating_degree_hours_7d",
+    # Derived from multiple inputs
+    "delta_target_indoor",
+    # Time-based features
+    "hour_of_day",
+    "day_of_week",
+    "is_weekend",
+    "is_night",
+}
+
+
+def categorize_features(feature_names: list[str]) -> dict[str, list[str]]:
+    """
+    Categorize features into raw sensor features and calculated features.
+    
+    Args:
+        feature_names: List of feature names to categorize
+        
+    Returns:
+        Dictionary with 'raw_sensor_features' and 'calculated_features' lists
+    """
+    raw = []
+    calculated = []
+    unknown = []
+    
+    for name in feature_names:
+        if name in RAW_SENSOR_FEATURES:
+            raw.append(name)
+        elif name in CALCULATED_FEATURES:
+            calculated.append(name)
+        else:
+            # Unknown features logged and categorized as calculated
+            _Logger.debug("Unknown feature '%s' categorized as calculated", name)
+            unknown.append(name)
+            calculated.append(name)
+    
+    result = {
+        "raw_sensor_features": raw,
+        "calculated_features": calculated,
+    }
+    
+    # Include unknown features in response if any were found
+    if unknown:
+        result["unknown_features"] = unknown
+    
+    return result
+
+
+def get_feature_details(feature_names: list[str]) -> list[dict]:
+    """
+    Get detailed information about features including metadata.
+    
+    Args:
+        feature_names: List of feature names
+        
+    Returns:
+        List of feature detail dictionaries
+    """
+    all_features = CORE_FEATURES + EXPERIMENTAL_FEATURES
+    feature_lookup = {f.name: f for f in all_features}
+    
+    details = []
+    for name in feature_names:
+        if name in feature_lookup:
+            f = feature_lookup[name]
+            details.append({
+                "name": name,
+                "category": f.category.value,
+                "description": f.description,
+                "unit": f.unit,
+                "time_window": f.time_window.value,
+                "is_core": f.is_core,
+                "is_calculated": name in CALCULATED_FEATURES,
+            })
+        else:
+            # Unknown feature
+            details.append({
+                "name": name,
+                "category": "unknown",
+                "description": f"Feature '{name}'",
+                "unit": "",
+                "time_window": "none",
+                "is_core": False,
+                "is_calculated": name in CALCULATED_FEATURES,
+            })
+    
+    return details
+
+
+def verify_model_features(
+    model_feature_names: list[str],
+    dataset_feature_names: list[str],
+) -> dict:
+    """
+    Verify that model features match the dataset features.
+    
+    This function confirms that the features the model was trained with
+    are actually present in the training dataset.
+    
+    Args:
+        model_feature_names: Features the model expects
+        dataset_feature_names: Features available in the dataset
+        
+    Returns:
+        Dictionary with verification results
+    """
+    model_set = set(model_feature_names)
+    dataset_set = set(dataset_feature_names)
+    
+    # Features in model that are in dataset (verified)
+    verified = model_set & dataset_set
+    
+    # Features in model but not in dataset (missing from data)
+    missing_in_dataset = model_set - dataset_set
+    
+    # Features in dataset but not used by model
+    unused_in_model = dataset_set - model_set
+    
+    return {
+        "verified": len(missing_in_dataset) == 0,
+        "feature_count": len(model_feature_names),
+        "verified_features": sorted(list(verified)),
+        "missing_in_dataset": sorted(list(missing_in_dataset)),
+        "unused_in_model": sorted(list(unused_in_model)),
+    }

@@ -4,6 +4,24 @@ All notable changes to this add-on will be documented in this file.
 
 ## [0.0.0.71] - 2025-12-02
 
+- **Feature Verification for Training Models**: Added verification that features displayed are actually used during training
+  - Training response now includes `feature_verification` object with:
+    - `verified`: Boolean indicating if all features were found in the training dataset
+    - `verified_features`: List of features confirmed to be used
+    - `missing_in_dataset`: List of features expected but not found in data
+  - Training response now includes `feature_categories` showing:
+    - `raw_sensor_features`: Features directly from sensors (outdoor_temp, wind, humidity, etc.)
+    - `calculated_features`: Derived/aggregated features (outdoor_temp_avg_24h, heating_kwh_last_6h, delta_target_indoor, etc.)
+  - Training response now includes `feature_details` with metadata for each feature (category, description, unit, is_calculated)
+- **Two-Step Model Step Explanations**: Added clear explanations of what each step does in the two-step model
+  - `step1_classifier`: Explains that Step 1 predicts whether heating will be active (on) or inactive (off) for each hour
+  - `step2_regressor`: Explains that Step 2 predicts kWh consumption for active hours only (inactive hours = 0 kWh)
+  - Each step includes: description, purpose, features_used, feature_count, training_samples, and metrics
+- **New Functions in feature_config.py**:
+  - `categorize_features()`: Categorizes features as raw sensor vs calculated
+  - `get_feature_details()`: Returns detailed metadata for each feature
+  - `verify_model_features()`: Verifies model features match dataset features
+- **Tests**: Added 7 new tests for feature verification functionality
 - **Fixed Weerlive API Parsing**: Fixed parsing of the actual Weerlive API v2 response format
   - The API provides hourly forecast data (`uur_verw`) at the root level of the JSON response, not inside `liveweer[0]`
   - Added support for the actual Weerlive API v2 field names:

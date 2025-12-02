@@ -2,7 +2,7 @@
 Feature configuration for the heat pump consumption prediction model.
 
 This module defines:
-- The 13 core baseline features (always active, cannot be disabled)
+- The 15 core baseline features (always active, cannot be disabled)
 - Experimental/optional features (disabled by default, toggleable via UI)
 - Feature metadata (category, description, unit, time_window, is_core)
 - Time zone configuration for time-based features

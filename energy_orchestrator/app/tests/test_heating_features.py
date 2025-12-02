@@ -23,6 +23,7 @@ from ml.heating_features import (
     _compute_target,
     _add_time_features,
     build_heating_feature_dataset,
+    TrainingDataRange,
 )
 import db.core as core_module
 import ml.heating_features as heating_features_module

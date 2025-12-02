@@ -8,6 +8,16 @@ from db.resample import resample_all_categories, get_sample_rate_minutes, set_sa
 from db.core import init_db_schema
 from db.sensor_config import sync_sensor_mappings
 from db.samples import get_sensor_info
+from db.sync_config import (
+    get_sync_config,
+    set_sync_config,
+    MIN_BACKFILL_DAYS,
+    MAX_BACKFILL_DAYS,
+    MIN_SYNC_WINDOW_DAYS,
+    MAX_SYNC_WINDOW_DAYS,
+    MIN_SYNC_INTERVAL,
+    MAX_SYNC_INTERVAL,
+)
 from ml.heating_features import (
     build_heating_feature_dataset,
     compute_scenario_historical_features,
@@ -231,6 +241,158 @@ def update_sample_rate():
             }), 500
     except Exception as e:
         _Logger.error("Error updating sample rate: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/sync_config")
+def get_sync_config_api():
+    """Get the current sync configuration.
+    
+    Response:
+    {
+        "status": "success",
+        "config": {
+            "backfill_days": 14,
+            "sync_window_days": 1,
+            "sensor_sync_interval": 1,
+            "sensor_loop_interval": 1
+        },
+        "limits": {
+            "backfill_days": {"min": 1, "max": 365},
+            "sync_window_days": {"min": 1, "max": 30},
+            "sensor_sync_interval": {"min": 1, "max": 3600},
+            "sensor_loop_interval": {"min": 1, "max": 3600}
+        }
+    }
+    """
+    try:
+        config = get_sync_config()
+        return jsonify({
+            "status": "success",
+            "config": {
+                "backfill_days": config.backfill_days,
+                "sync_window_days": config.sync_window_days,
+                "sensor_sync_interval": config.sensor_sync_interval,
+                "sensor_loop_interval": config.sensor_loop_interval,
+            },
+            "limits": {
+                "backfill_days": {"min": MIN_BACKFILL_DAYS, "max": MAX_BACKFILL_DAYS},
+                "sync_window_days": {"min": MIN_SYNC_WINDOW_DAYS, "max": MAX_SYNC_WINDOW_DAYS},
+                "sensor_sync_interval": {"min": MIN_SYNC_INTERVAL, "max": MAX_SYNC_INTERVAL},
+                "sensor_loop_interval": {"min": MIN_SYNC_INTERVAL, "max": MAX_SYNC_INTERVAL},
+            },
+        })
+    except Exception as e:
+        _Logger.error("Error getting sync config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/sync_config")
+def update_sync_config():
+    """Update the sync configuration.
+    
+    Request body (all fields optional, only provided fields are updated):
+    {
+        "backfill_days": 14,          // Days to backfill when no samples exist (1-365)
+        "sync_window_days": 1,        // Size of each sync window in days (1-30)
+        "sensor_sync_interval": 1,    // Wait time in seconds between sensors (1-3600)
+        "sensor_loop_interval": 1     // Wait time in seconds between sync loops (1-3600)
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Sync configuration updated",
+        "config": {...}
+    }
+    """
+    try:
+        if not request.is_json:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "At least one configuration field is required",
+            }), 400
+        
+        # Parse values
+        backfill_days = None
+        sync_window_days = None
+        sensor_sync_interval = None
+        sensor_loop_interval = None
+        
+        if "backfill_days" in data:
+            try:
+                backfill_days = int(data["backfill_days"])
+            except (TypeError, ValueError):
+                return jsonify({
+                    "status": "error",
+                    "message": "backfill_days must be an integer",
+                }), 400
+        
+        if "sync_window_days" in data:
+            try:
+                sync_window_days = int(data["sync_window_days"])
+            except (TypeError, ValueError):
+                return jsonify({
+                    "status": "error",
+                    "message": "sync_window_days must be an integer",
+                }), 400
+        
+        if "sensor_sync_interval" in data:
+            try:
+                sensor_sync_interval = int(data["sensor_sync_interval"])
+            except (TypeError, ValueError):
+                return jsonify({
+                    "status": "error",
+                    "message": "sensor_sync_interval must be an integer",
+                }), 400
+        
+        if "sensor_loop_interval" in data:
+            try:
+                sensor_loop_interval = int(data["sensor_loop_interval"])
+            except (TypeError, ValueError):
+                return jsonify({
+                    "status": "error",
+                    "message": "sensor_loop_interval must be an integer",
+                }), 400
+        
+        # Update configuration
+        success, error = set_sync_config(
+            backfill_days=backfill_days,
+            sync_window_days=sync_window_days,
+            sensor_sync_interval=sensor_sync_interval,
+            sensor_loop_interval=sensor_loop_interval,
+        )
+        
+        if not success:
+            return jsonify({
+                "status": "error",
+                "message": error or "Failed to save configuration",
+            }), 400
+        
+        # Return updated config
+        config = get_sync_config()
+        _Logger.info("Sync config updated via API: %s", config)
+        
+        return jsonify({
+            "status": "success",
+            "message": "Sync configuration updated",
+            "config": {
+                "backfill_days": config.backfill_days,
+                "sync_window_days": config.sync_window_days,
+                "sensor_sync_interval": config.sensor_sync_interval,
+                "sensor_loop_interval": config.sensor_loop_interval,
+            },
+        })
+        
+    except Exception as e:
+        _Logger.error("Error updating sync config: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

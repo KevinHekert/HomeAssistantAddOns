@@ -2177,6 +2177,18 @@ def get_sensor_feature_cards():
                     "is_core": f.is_core,
                     "enabled": f.enabled,
                 })
+            else:
+                # Base sensor doesn't exist in feature config yet, create it as an experimental feature
+                # This happens for virtual sensors or sensors that haven't been added to feature config
+                sensor_features[sensor_name].append({
+                    "name": sensor_name,
+                    "display_name": _get_feature_display_name(sensor_name, sensor_name),
+                    "description": f"Current value for {sensor_name}",
+                    "unit": sensor_info["unit"],
+                    "time_window": "none",
+                    "is_core": False,
+                    "enabled": False,  # Not enabled in feature config yet
+                })
             
             # Get enabled time-based statistics from feature stats configuration
             enabled_stats = feature_stats_conf.get_enabled_stats_for_sensor(sensor_name)

@@ -11,6 +11,10 @@ from ha.ha_api import sync_history_for_entity
 
 _Logger = logging.getLogger(__name__)
 
+# Configurable sleep intervals (can be set via environment variables)
+SENSOR_SYNC_INTERVAL = int(os.environ.get("SENSOR_SYNC_INTERVAL", "1"))
+SENSOR_LOOP_INTERVAL = int(os.environ.get("SENSOR_LOOP_INTERVAL", "1"))
+
 # Let op: entity_id’s mogen geen spaties hebben – pas deze defaults aan naar jouw echte IDs
 SENSOR_ENTITIES = [
     os.environ.get("WIND_ENTITY_ID", "sensor.knmi_windsnelheid"),
@@ -130,7 +134,7 @@ def _sync_entity(entity_id: str) -> None:
                 continue
 
         # Normal case: wait before next entity
-        time.sleep(1)
+        time.sleep(SENSOR_SYNC_INTERVAL)
         break
     else:
         # Max iterations reached - log warning and continue normally
@@ -139,7 +143,7 @@ def _sync_entity(entity_id: str) -> None:
             max_iterations,
             entity_id,
         )
-        time.sleep(1)
+        time.sleep(SENSOR_SYNC_INTERVAL)
 
 
 def sensor_logging_worker():

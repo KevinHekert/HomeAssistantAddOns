@@ -8,6 +8,7 @@ This module provides functionality to manage configurable sync settings:
 - sensor_loop_interval: Wait time in seconds between sync loop iterations (default: 1)
 
 Configuration is stored in a JSON file at /data/sync_config.json (persistent storage).
+Configuration is cached in memory and reloaded when the file is modified.
 """
 
 import json
@@ -15,6 +16,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 _Logger = logging.getLogger(__name__)
 
@@ -36,6 +38,10 @@ MAX_SYNC_WINDOW_DAYS = 30
 MIN_SYNC_INTERVAL = 1
 MAX_SYNC_INTERVAL = 3600
 
+# Cache for sync configuration to avoid repeated file reads
+_cached_config: Optional["SyncConfig"] = None
+_cached_mtime: Optional[float] = None
+
 
 @dataclass
 class SyncConfig:
@@ -47,12 +53,39 @@ class SyncConfig:
     sensor_loop_interval: int = DEFAULT_SENSOR_LOOP_INTERVAL
 
 
+def _invalidate_cache() -> None:
+    """Invalidate the cached configuration."""
+    global _cached_config, _cached_mtime
+    _cached_config = None
+    _cached_mtime = None
+
+
+def _get_file_mtime() -> Optional[float]:
+    """Get the modification time of the config file, or None if it doesn't exist."""
+    try:
+        if SYNC_CONFIG_FILE_PATH.exists():
+            return SYNC_CONFIG_FILE_PATH.stat().st_mtime
+    except OSError:
+        pass
+    return None
+
+
 def _load_sync_config() -> SyncConfig:
-    """Load sync configuration from persistent file.
+    """Load sync configuration from persistent file with caching.
+
+    The configuration is cached in memory and only reloaded when the
+    file modification time changes, to avoid repeated file reads.
 
     Returns:
         SyncConfig with values from file or defaults if not configured.
     """
+    global _cached_config, _cached_mtime
+
+    # Check if we can use cached config
+    current_mtime = _get_file_mtime()
+    if _cached_config is not None and current_mtime == _cached_mtime:
+        return _cached_config
+
     config = SyncConfig()
 
     try:
@@ -83,6 +116,10 @@ def _load_sync_config() -> SyncConfig:
     except (json.JSONDecodeError, OSError) as e:
         _Logger.warning("Error loading sync config: %s. Using defaults.", e)
 
+    # Update cache
+    _cached_config = config
+    _cached_mtime = current_mtime
+
     return config
 
 
@@ -108,6 +145,9 @@ def _save_sync_config(config: SyncConfig) -> bool:
 
         with open(SYNC_CONFIG_FILE_PATH, "w") as f:
             json.dump(data, f, indent=2)
+
+        # Invalidate cache so next read picks up new values
+        _invalidate_cache()
 
         _Logger.info("Sync config saved: %s", data)
         return True

@@ -29,7 +29,19 @@ _Logger = logging.getLogger(__name__)
 
 # Configuration file path for persistent sensor config storage
 # In Home Assistant add-ons, /data is the persistent data directory
-DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+# Validate that DATA_DIR is a safe path (no path traversal)
+_data_dir_env = os.environ.get("DATA_DIR", "/data")
+# Resolve to absolute path and ensure it's within expected locations
+_resolved_data_dir = Path(_data_dir_env).resolve()
+# Only allow paths under /data, /tmp, or current working directory (for tests)
+_allowed_prefixes = ("/data", "/tmp", str(Path.cwd()))
+if not any(_resolved_data_dir.as_posix().startswith(prefix) for prefix in _allowed_prefixes):
+    _Logger.warning(
+        "DATA_DIR '%s' is not in an allowed location, using default /data",
+        _data_dir_env,
+    )
+    _resolved_data_dir = Path("/data")
+DATA_DIR = _resolved_data_dir
 SENSOR_CONFIG_FILE_PATH = DATA_DIR / "sensor_category_config.json"
 
 

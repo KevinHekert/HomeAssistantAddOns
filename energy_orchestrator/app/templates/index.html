@@ -1825,12 +1825,19 @@
                             const checked = s.enabled ? 'checked' : '';
                             const toggleDisabled = s.is_core ? 'disabled' : '';
                             
-                            // Safely escape values
+                            // Safely escape values - category names from server are alphanumeric only
+                            // All other values are escaped for HTML special characters
                             const safeCategoryName = s.category_name.replace(/[^a-zA-Z0-9_]/g, '');
-                            const safeDisplayName = s.display_name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                            const safeDesc = s.description.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                            const safeUnit = s.unit.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                            const safeEntityId = (s.entity_id || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            const escapeHtml = (str) => (str || '')
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;')
+                                .replace(/"/g, '&quot;')
+                                .replace(/'/g, '&#39;');
+                            const safeDisplayName = escapeHtml(s.display_name);
+                            const safeDesc = escapeHtml(s.description);
+                            const safeUnit = escapeHtml(s.unit);
+                            const safeEntityId = escapeHtml(s.entity_id);
                             
                             html += `<div class="feature-item ${itemClass}">`;
                             html += `<div class="feature-toggle"><input type="checkbox" ${checked} ${toggleDisabled} data-sensor="${safeCategoryName}" onchange="toggleSensor('${safeCategoryName}', this.checked)"></div>`;

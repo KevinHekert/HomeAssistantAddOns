@@ -362,23 +362,23 @@ def _parse_hourly_forecasts(api_response: dict, live_data: dict | None = None) -
     """
     forecasts = []
 
-    # For backwards compatibility, if live_data is passed as first argument and
-    # api_response is a dict with 'uur_verw', treat it as live_data
+    # Handle different calling patterns:
+    # 1. New format: _parse_hourly_forecasts(api_response, live_data) - uur_verw at root level
+    # 2. Old format: _parse_hourly_forecasts(live_data) - uur_verw inside live_data (backwards compat)
     if live_data is None and "uur_verw" in api_response:
-        # First argument is the API response with uur_verw at root level
+        # New format with only api_response: uur_verw is at root level
         uur_verw = api_response.get("uur_verw", [])
-        # Get current values from liveweer[0] if available
+        # Get humidity/pressure defaults from liveweer[0] if available
         if "liveweer" in api_response and len(api_response["liveweer"]) > 0:
             live_data = api_response["liveweer"][0]
         else:
             live_data = api_response
     elif live_data is None:
-        # For backwards compatibility: first argument is live_data (old format)
+        # Old format: first argument is live_data with uur_verw nested inside
         live_data = api_response
         uur_verw = live_data.get("uur_verw", [])
     else:
-        # New format: api_response contains uur_verw at root level
-        # First check for uur_verw at root level, then fall back to live_data
+        # New format with both arguments: check root level first, then fall back
         uur_verw = api_response.get("uur_verw", [])
         if not uur_verw:
             uur_verw = live_data.get("uur_verw", [])

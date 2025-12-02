@@ -2,6 +2,15 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.87] - 2025-12-02
+
+- **UI Improvement: Raw Sensor Cards Display**
+  - Raw sensor cards with features are no longer automatically displayed on the Configuration page
+  - Added "📊 Show Raw Sensor Cards" button to load and display raw sensor cards on demand
+  - Button toggles between showing and hiding the sensor cards
+  - Improves page load performance by loading sensor cards only when needed
+  - Sensor cards are loaded once and cached for subsequent toggles
+
 ## [0.0.0.86] - 2025-12-02
 
 - **Fixed Sensor Visibility Issue**: Sensors are now correctly displayed on the configuration page

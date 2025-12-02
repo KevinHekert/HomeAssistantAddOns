@@ -93,6 +93,13 @@ SLOTS_PER_HOUR = 12  # 5-minute slots
 
 
 @dataclass
+class TrainingDataRange:
+    """First and last values for a training data column."""
+    first: Optional[float] = None
+    last: Optional[float] = None
+
+
+@dataclass
 class FeatureDatasetStats:
     """Statistics about the generated feature dataset."""
     total_slots: int
@@ -105,6 +112,8 @@ class FeatureDatasetStats:
     data_start_time: Optional[datetime] = None
     data_end_time: Optional[datetime] = None
     available_history_hours: Optional[float] = None
+    dhw_temp_range: Optional[TrainingDataRange] = None
+    hp_kwh_total_range: Optional[TrainingDataRange] = None
 
 
 def _load_resampled_data(session: Session) -> pd.DataFrame:

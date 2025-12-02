@@ -2,6 +2,17 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.64] - 2025-12-02
+
+- **Preserve Actual Sensor Timestamps**: Sample timestamps now reflect the actual timestamps from Home Assistant
+  - Removed 5-second alignment that rounded all timestamps to nearest 5-second boundary
+  - Timestamps like `2025-11-21 06:52:27` are now stored as-is instead of being rounded to `06:52:25`
+  - Only microseconds are stripped (for storage efficiency), seconds are preserved
+  - This provides accurate time information for debugging and data analysis
+- **Breaking Change**: New samples will have actual timestamps, but existing samples remain with rounded timestamps
+  - To get consistent timestamps, users may want to re-sync historical data after updating
+- Updated tests to reflect new timestamp preservation behavior
+
 ## [0.0.0.63] - 2025-12-02
 
 - **Two-Step Heat Pump Prediction (Experimental)**: Added new two-step prediction approach for better accuracy

@@ -333,7 +333,13 @@
 
     <div class="card">
         <h3>🔄 Data Resampling</h3>
-        <p>Resample raw sensor data into 5-minute time slots and save to resampled_samples table.</p>
+        <p>Resample raw sensor data into <span id="sampleRateText">configured</span>-minute time slots and save to resampled_samples table.</p>
+        <div style="margin-bottom: 0.5rem;">
+            <label for="flushCheckbox" style="cursor: pointer;">
+                <input type="checkbox" id="flushCheckbox" style="margin-right: 0.5rem;">
+                Flush existing data (required when sample rate changes)
+            </label>
+        </div>
         <button class="action-btn" id="resampleBtn" onclick="triggerResample()">Resample Data</button>
         <div id="resampleStatus" class="status-message"></div>
     </div>
@@ -404,10 +410,24 @@
         // Store historical data when loaded for comparison in table
         let currentHistoricalData = null;
         
-        // Load available days on page load
+        // Load available days and sample rate on page load
         document.addEventListener('DOMContentLoaded', function() {
             loadAvailableDays();
+            loadSampleRate();
         });
+        
+        async function loadSampleRate() {
+            try {
+                const response = await fetch('api/sample_rate');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('sampleRateText').textContent = data.sample_rate_minutes;
+                }
+            } catch (error) {
+                console.error('Error loading sample rate:', error);
+            }
+        }
         
         async function loadAvailableDays() {
             const select = document.getElementById('historicalDaySelect');
@@ -480,14 +500,22 @@
         async function triggerResample() {
             const btn = document.getElementById('resampleBtn');
             const statusDiv = document.getElementById('resampleStatus');
+            const flushCheckbox = document.getElementById('flushCheckbox');
             
             btn.disabled = true;
             statusDiv.className = 'status-message loading';
             statusDiv.textContent = 'Resampling in progress...';
             
             try {
+                const requestBody = {};
+                if (flushCheckbox.checked) {
+                    requestBody.flush = true;
+                }
+                
                 const response = await fetch('resample', {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
                 });
                 
                 const data = await response.json();
@@ -495,6 +523,10 @@
                 if (response.ok) {
                     const stats = data.stats || {};
                     let message = '✓ ' + data.message + '\n\n';
+                    if (stats.table_flushed) {
+                        message += '⚠️ Existing resampled data was flushed\n';
+                    }
+                    message += 'Sample rate: ' + (stats.sample_rate_minutes || 5) + ' minutes\n';
                     message += 'Slots processed: ' + (stats.slots_processed || 0) + '\n';
                     message += 'Slots saved: ' + (stats.slots_saved || 0) + '\n';
                     message += 'Slots skipped: ' + (stats.slots_skipped || 0) + '\n';
@@ -506,6 +538,9 @@
                     }
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = message;
+                    
+                    // Uncheck the flush checkbox after successful resample
+                    flushCheckbox.checked = false;
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ Error: ' + data.message;

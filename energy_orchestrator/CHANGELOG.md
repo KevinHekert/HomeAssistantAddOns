@@ -2,6 +2,19 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.59] - 2025-12-02
+
+- **Flush Resample Table on Sample Rate Change**: Added ability to flush existing resampled data before resampling
+  - New `flush_resampled_samples()` function to clear the resampled_samples table
+  - `/resample` endpoint now accepts optional `flush` parameter in request body
+  - When sample rate changes, existing data (computed with different interval) should be flushed
+  - `ResampleStats` now includes `table_flushed` field to indicate if flush was performed
+  - UI now shows a "Flush existing data" checkbox in the Data Resampling section
+- **Dynamic Sample Rate Display in UI**: UI now shows configured sample rate instead of hardcoded "5-minute"
+  - Sample rate is loaded from `/api/sample_rate` endpoint on page load
+  - Resampling status message includes the sample rate used
+- Added tests for flush functionality
+
 ## [0.0.0.58] - 2025-12-02
 
 - **Configurable Sample Rate**: Added ability to configure the sample rate for data resampling

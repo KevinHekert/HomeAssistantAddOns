@@ -116,7 +116,7 @@ class FeatureDatasetStats:
     sensor_ranges: dict[str, TrainingDataRange] = field(default_factory=dict)
     # hp_kwh_delta shows the energy consumed during the training period (not raw cumulative values)
     hp_kwh_delta: Optional[float] = None
-    # Legacy fields for backward compatibility (deprecated, use sensor_ranges instead)
+    # Legacy fields maintained for backward compatibility (use sensor_ranges for new code)
     dhw_temp_range: Optional[TrainingDataRange] = None
     hp_kwh_total_range: Optional[TrainingDataRange] = None
 

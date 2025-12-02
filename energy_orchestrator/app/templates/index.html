@@ -789,6 +789,9 @@
                     
                     // Display training data table with all sensor categories
                     if (trainingData && Object.keys(trainingData).length > 0) {
+                        // Helper function to check if a value is a valid number
+                        const isValidNumber = (val) => val !== null && val !== undefined && !isNaN(val);
+                        
                         let tableHtml = '<h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">📊 Training Data Range</h4>';
                         tableHtml += '<table class="training-data-table">';
                         tableHtml += '<thead><tr><th>Sensor</th><th>First Value</th><th>Last Value</th><th>Delta</th></tr></thead>';
@@ -803,13 +806,13 @@
                             
                             tableHtml += '<tr>';
                             tableHtml += '<td><strong>' + sensor + '</strong></td>';
-                            tableHtml += '<td>' + (sensorData.first !== null && sensorData.first !== undefined ? sensorData.first.toFixed(2) + ' ' + unit : 'N/A') + '</td>';
-                            tableHtml += '<td>' + (sensorData.last !== null && sensorData.last !== undefined ? sensorData.last.toFixed(2) + ' ' + unit : 'N/A') + '</td>';
+                            tableHtml += '<td>' + (isValidNumber(sensorData.first) ? sensorData.first.toFixed(2) + ' ' + unit : 'N/A') + '</td>';
+                            tableHtml += '<td>' + (isValidNumber(sensorData.last) ? sensorData.last.toFixed(2) + ' ' + unit : 'N/A') + '</td>';
                             
                             // Show delta for hp_kwh_total (the actual energy consumed during training)
-                            if (sensor === 'hp_kwh_total' && sensorData.delta !== null && sensorData.delta !== undefined) {
+                            if (sensor === 'hp_kwh_total' && isValidNumber(sensorData.delta)) {
                                 tableHtml += '<td style="color: var(--accent-green); font-weight: bold;">' + sensorData.delta.toFixed(2) + ' ' + unit + '</td>';
-                            } else if (sensorData.first !== null && sensorData.last !== null && sensorData.first !== undefined && sensorData.last !== undefined) {
+                            } else if (isValidNumber(sensorData.first) && isValidNumber(sensorData.last)) {
                                 const delta = sensorData.last - sensorData.first;
                                 tableHtml += '<td>' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ' ' + unit + '</td>';
                             } else {

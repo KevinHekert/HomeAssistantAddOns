@@ -5,6 +5,7 @@ This module provides functionality to:
 1. Map logical categories to Home Assistant entities
 2. Compute time-weighted averages for sensor data
 3. Resample raw samples into uniform time slots (configurable, default 5 minutes)
+4. Calculate virtual (derived) sensor values from raw sensor data
 """
 
 import json
@@ -421,8 +422,13 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
     3. Fetches category-to-entity mappings.
     4. Computes the global time range where all categories have data.
     5. Iterates over time slots and computes time-weighted averages.
-    6. Only writes complete slots (all categories have values).
-    7. Ensures idempotence by deleting existing rows before inserting.
+    6. Calculates virtual (derived) sensor values from raw sensor data.
+    7. Only writes complete slots (all categories have values).
+    8. Ensures idempotence by deleting existing rows before inserting.
+    
+    Virtual sensors are calculated after raw sensors for each time slot.
+    They are only calculated if both source sensors have values in that slot.
+    Enabled virtual sensors are loaded from the configuration file.
     
     Args:
         sample_rate_minutes: Optional sample rate in minutes. If None, uses

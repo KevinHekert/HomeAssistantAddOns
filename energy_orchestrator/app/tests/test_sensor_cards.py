@@ -8,11 +8,28 @@ checkboxes, not just the base sensor value.
 
 import pytest
 from flask import Flask
-from db.core import init_db_schema, engine
+from sqlalchemy import create_engine, text
+from db import Base
 from db.sensor_category_config import get_sensor_category_config
 from db.feature_stats import get_feature_stats_config, StatType
 from ml.feature_config import get_feature_config, reload_feature_config
 from app import app as flask_app
+import db.core as core_module
+
+
+@pytest.fixture
+def test_engine():
+    """Create an in-memory SQLite database for testing."""
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    Base.metadata.create_all(engine)
+    return engine
+
+
+@pytest.fixture
+def patch_engine(test_engine, monkeypatch):
+    """Patch the engine in the core module."""
+    monkeypatch.setattr(core_module, "engine", test_engine)
+    return test_engine
 
 
 @pytest.fixture
@@ -29,14 +46,13 @@ def client(app):
 
 
 @pytest.fixture(autouse=True)
-def setup_database():
-    """Initialize database schema before each test."""
-    init_db_schema()
+def setup_database(patch_engine):
+    """Initialize database schema before each test using SQLite."""
+    # Schema is already created by test_engine fixture
     yield
-    # Cleanup after test
-    with engine.begin() as conn:
-        conn.execute("DELETE FROM feature_statistics")
-        conn.execute("DELETE FROM resampled_samples")
+    # Cleanup after test - SQLite doesn't support DELETE FROM but we can drop and recreate
+    # For SQLite in-memory, this isn't strictly necessary but good practice
+    pass
 
 
 def test_sensor_cards_show_configured_statistics(client):

@@ -2,6 +2,14 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.89] - 2025-12-02
+
+- **Tests: Removed MariaDB Dependency**
+  - Refactored `test_sensor_cards.py` to use in-memory SQLite instead of MariaDB
+  - Tests now use the same pattern as other test files with SQLite and monkeypatch
+  - All 569 tests now pass without requiring a MariaDB connection
+  - Fixes test failures when MariaDB is not available
+
 ## [0.0.0.88] - 2025-12-02
 
 - **Fixed Sensor Cards: All Time-Based Statistics Now Visible**

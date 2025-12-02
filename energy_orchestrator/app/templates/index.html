@@ -1430,6 +1430,9 @@
                 if (response.ok) {
                     statusDiv.className = 'status-message success';
                     let statusText = '✓ Prediction completed successfully - ' + data.slots_count + ' timeslots processed';
+                    if (data.model_info && data.model_info.two_step_prediction) {
+                        statusText += ' (using two-step prediction)';
+                    }
                     if (currentHistoricalData) {
                         statusText += ' (comparing with actual historical data)';
                     }
@@ -1546,12 +1549,37 @@
                         }
                         chartHtml += `</div>`;
                     } else {
-                        chartHtml += '<table class="results-table"><thead><tr><th>Timestamp</th><th>Predicted kWh</th></tr></thead><tbody>';
-                        predictions.forEach(pred => {
-                            chartHtml += `<tr><td>${pred.timestamp}</td><td>${pred.predicted_kwh.toFixed(4)}</td></tr>`;
-                        });
-                        chartHtml += '</tbody></table>';
-                        chartHtml += `<div class="total-kwh">Total Consumption: ${data.total_kwh.toFixed(4)} kWh</div>`;
+                        // Check if using two-step prediction (has is_active field)
+                        const isTwoStep = data.model_info && data.model_info.two_step_prediction;
+                        
+                        if (isTwoStep) {
+                            chartHtml += '<table class="results-table"><thead><tr><th>Timestamp</th><th>Predicted kWh</th><th>Active</th><th>Activity Prob.</th></tr></thead><tbody>';
+                            predictions.forEach(pred => {
+                                const activeIcon = pred.is_active ? '🔥' : '❄️';
+                                const activeText = pred.is_active ? 'Active' : 'Inactive';
+                                const probPct = (pred.activity_probability * 100).toFixed(1);
+                                chartHtml += `<tr><td>${pred.timestamp}</td><td>${pred.predicted_kwh.toFixed(4)}</td><td>${activeIcon} ${activeText}</td><td>${probPct}%</td></tr>`;
+                            });
+                            chartHtml += '</tbody></table>';
+                            
+                            // Show two-step summary
+                            if (data.summary) {
+                                chartHtml += `<div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg-tertiary); border-radius: 8px;">`;
+                                chartHtml += `<div style="font-size: 0.9rem; color: var(--text-secondary);">`;
+                                chartHtml += `🔥 Active hours: ${data.summary.active_hours} | ❄️ Inactive hours: ${data.summary.inactive_hours}`;
+                                chartHtml += `</div>`;
+                                chartHtml += `</div>`;
+                            }
+                            
+                            chartHtml += `<div class="total-kwh">Total Consumption: ${data.total_kwh.toFixed(4)} kWh</div>`;
+                        } else {
+                            chartHtml += '<table class="results-table"><thead><tr><th>Timestamp</th><th>Predicted kWh</th></tr></thead><tbody>';
+                            predictions.forEach(pred => {
+                                chartHtml += `<tr><td>${pred.timestamp}</td><td>${pred.predicted_kwh.toFixed(4)}</td></tr>`;
+                            });
+                            chartHtml += '</tbody></table>';
+                            chartHtml += `<div class="total-kwh">Total Consumption: ${data.total_kwh.toFixed(4)} kWh</div>`;
+                        }
                     }
                     
                     resultDiv.innerHTML = chartHtml;

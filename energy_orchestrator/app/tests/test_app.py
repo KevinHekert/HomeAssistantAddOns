@@ -1425,3 +1425,221 @@ class TestSampleRateEndpoints:
                 assert response.status_code == 200, f"Failed for rate {rate}"
                 data = response.get_json()
                 assert data["sample_rate_minutes"] == rate
+
+
+class TestScenarioPredictionWithTwoStep:
+    """Test the /api/predictions/scenario POST endpoint with two-step prediction."""
+
+    @pytest.fixture
+    def mock_two_step_model(self):
+        """Create a mock two-step heating demand model."""
+        model = MagicMock()
+        model.is_available = True
+        model.feature_names = ["outdoor_temp", "wind", "humidity"]
+        model.training_timestamp = datetime(2024, 1, 1, 12, 0, 0)
+        model.activity_threshold_kwh = 0.05
+        return model
+
+    @pytest.fixture
+    def mock_feature_config_two_step_enabled(self):
+        """Create a mock feature config with two-step prediction enabled."""
+        config = MagicMock()
+        config.is_two_step_prediction_enabled.return_value = True
+        return config
+
+    @pytest.fixture
+    def mock_feature_config_two_step_disabled(self):
+        """Create a mock feature config with two-step prediction disabled."""
+        config = MagicMock()
+        config.is_two_step_prediction_enabled.return_value = False
+        return config
+
+    def test_scenario_uses_two_step_when_enabled(
+        self, client, mock_two_step_model, mock_feature_config_two_step_enabled
+    ):
+        """Scenario prediction uses two-step model when enabled and available."""
+        from datetime import timedelta
+        from ml.two_step_model import TwoStepPrediction
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        scenario_timeslots = [
+            {
+                "timestamp": next_hour.isoformat(),
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+            {
+                "timestamp": (next_hour + timedelta(hours=1)).isoformat(),
+                "outdoor_temperature": 4.5,
+                "wind_speed": 3.5,
+                "humidity": 76.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+        ]
+
+        mock_predictions = [
+            TwoStepPrediction(is_active=True, predicted_kwh=1.5, classifier_probability=0.85),
+            TwoStepPrediction(is_active=False, predicted_kwh=0.0, classifier_probability=0.2),
+        ]
+
+        with patch("app.get_feature_config") as mock_get_config, \
+             patch("app._get_two_step_model") as mock_get_two_step, \
+             patch("app.predict_two_step_scenario") as mock_predict, \
+             patch("app.convert_simplified_to_model_features") as mock_convert:
+            mock_get_config.return_value = mock_feature_config_two_step_enabled
+            mock_get_two_step.return_value = mock_two_step_model
+            mock_predict.return_value = mock_predictions
+            mock_convert.return_value = (
+                [{"outdoor_temp": 5.0}, {"outdoor_temp": 4.5}],
+                [next_hour, next_hour + timedelta(hours=1)],
+            )
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": scenario_timeslots},
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert len(data["predictions"]) == 2
+            assert data["total_kwh"] == 1.5
+            assert data["slots_count"] == 2
+            
+            # Check two-step specific fields
+            assert data["model_info"]["two_step_prediction"] is True
+            assert data["model_info"]["activity_threshold_kwh"] == 0.05
+            assert "summary" in data
+            assert data["summary"]["active_hours"] == 1
+            assert data["summary"]["inactive_hours"] == 1
+            
+            # Check prediction details
+            assert data["predictions"][0]["is_active"] is True
+            assert data["predictions"][0]["activity_probability"] == 0.85
+            assert data["predictions"][1]["is_active"] is False
+            assert data["predictions"][1]["predicted_kwh"] == 0.0
+
+    def test_scenario_uses_single_step_when_disabled(
+        self, client, mock_model, mock_feature_config_two_step_disabled
+    ):
+        """Scenario prediction uses single-step model when two-step is disabled."""
+        from datetime import timedelta
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        scenario_timeslots = [
+            {
+                "timestamp": next_hour.isoformat(),
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+        ]
+
+        with patch("app.get_feature_config") as mock_get_config, \
+             patch("app._get_model") as mock_get_model, \
+             patch("app.predict_scenario") as mock_predict, \
+             patch("app.convert_simplified_to_model_features") as mock_convert:
+            mock_get_config.return_value = mock_feature_config_two_step_disabled
+            mock_get_model.return_value = mock_model
+            mock_predict.return_value = [1.5]
+            mock_convert.return_value = (
+                [{"outdoor_temp": 5.0}],
+                [next_hour],
+            )
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": scenario_timeslots},
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["model_info"]["two_step_prediction"] is False
+            
+            # Check that two-step specific fields are NOT present
+            assert "is_active" not in data["predictions"][0]
+            assert "summary" not in data
+
+    def test_scenario_falls_back_when_two_step_model_not_available(
+        self, client, mock_model, mock_feature_config_two_step_enabled
+    ):
+        """Falls back to single-step when two-step is enabled but model not available."""
+        from datetime import timedelta
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        scenario_timeslots = [
+            {
+                "timestamp": next_hour.isoformat(),
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+        ]
+
+        with patch("app.get_feature_config") as mock_get_config, \
+             patch("app._get_two_step_model") as mock_get_two_step, \
+             patch("app._get_model") as mock_get_model, \
+             patch("app.predict_scenario") as mock_predict, \
+             patch("app.convert_simplified_to_model_features") as mock_convert:
+            mock_get_config.return_value = mock_feature_config_two_step_enabled
+            mock_get_two_step.return_value = None  # Two-step model not available
+            mock_get_model.return_value = mock_model
+            mock_predict.return_value = [1.5]
+            mock_convert.return_value = (
+                [{"outdoor_temp": 5.0}],
+                [next_hour],
+            )
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": scenario_timeslots},
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["model_info"]["two_step_prediction"] is False
+
+    def test_scenario_returns_503_when_no_models_available(
+        self, client, mock_feature_config_two_step_enabled
+    ):
+        """Returns 503 when two-step is enabled but no models are available."""
+        from datetime import timedelta
+        
+        next_hour = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        scenario_timeslots = [
+            {
+                "timestamp": next_hour.isoformat(),
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+            },
+        ]
+
+        with patch("app.get_feature_config") as mock_get_config, \
+             patch("app._get_two_step_model") as mock_get_two_step, \
+             patch("app._get_model") as mock_get_model:
+            mock_get_config.return_value = mock_feature_config_two_step_enabled
+            mock_get_two_step.return_value = None
+            mock_get_model.return_value = None
+
+            response = client.post(
+                "/api/predictions/scenario",
+                json={"timeslots": scenario_timeslots},
+            )
+
+            assert response.status_code == 503
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "Model not trained" in data["message"]

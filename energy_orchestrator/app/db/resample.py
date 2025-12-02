@@ -5,6 +5,7 @@ This module provides functionality to:
 1. Map logical categories to Home Assistant entities
 2. Compute time-weighted averages for sensor data
 3. Resample raw samples into uniform time slots (configurable, default 5 minutes)
+4. Calculate virtual (derived) sensor values from raw sensor data
 """
 
 import json
@@ -20,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from db import ResampledSample, Sample, SensorMapping
 from db.core import engine, init_db_schema
+from db.virtual_sensors import get_virtual_sensors_config
 
 _Logger = logging.getLogger(__name__)
 
@@ -420,8 +422,13 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
     3. Fetches category-to-entity mappings.
     4. Computes the global time range where all categories have data.
     5. Iterates over time slots and computes time-weighted averages.
-    6. Only writes complete slots (all categories have values).
-    7. Ensures idempotence by deleting existing rows before inserting.
+    6. Calculates virtual (derived) sensor values from raw sensor data.
+    7. Only writes complete slots (all categories have values).
+    8. Ensures idempotence by deleting existing rows before inserting.
+    
+    Virtual sensors are calculated after raw sensors for each time slot.
+    They are only calculated if both source sensors have values in that slot.
+    Enabled virtual sensors are loaded from the configuration file.
     
     Args:
         sample_rate_minutes: Optional sample rate in minutes. If None, uses
@@ -519,6 +526,15 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
     slots_saved = 0
     slots_skipped = 0
 
+    # Step 4.8: Load enabled virtual sensors
+    virtual_sensors_config = get_virtual_sensors_config()
+    enabled_virtual_sensors = virtual_sensors_config.get_enabled_sensors()
+    
+    _Logger.info(
+        "Found %d enabled virtual sensors for resampling",
+        len(enabled_virtual_sensors),
+    )
+
     # Step 5: Iterate over slots
     try:
         with Session(engine) as session:
@@ -564,6 +580,53 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
                             unit=unit,
                         )
                         session.add(resampled)
+                    
+                    # Step 5.5: Calculate and insert virtual sensor values
+                    for virtual_sensor in enabled_virtual_sensors:
+                        try:
+                            # Get source sensor values from slot_values
+                            source1_data = slot_values.get(virtual_sensor.source_sensor1)
+                            source2_data = slot_values.get(virtual_sensor.source_sensor2)
+                            
+                            if source1_data is None or source2_data is None:
+                                _Logger.debug(
+                                    "Skipping virtual sensor '%s' for slot %s: source sensor(s) not available",
+                                    virtual_sensor.name,
+                                    slot_start,
+                                )
+                                continue
+                            
+                            value1, _ = source1_data
+                            value2, _ = source2_data
+                            
+                            # Calculate virtual sensor value
+                            virtual_value = virtual_sensor.calculate(value1, value2)
+                            
+                            if virtual_value is not None:
+                                resampled = ResampledSample(
+                                    slot_start=slot_start,
+                                    category=virtual_sensor.name,
+                                    value=virtual_value,
+                                    unit=virtual_sensor.unit,
+                                )
+                                session.add(resampled)
+                                _Logger.debug(
+                                    "Virtual sensor '%s' calculated: %.2f %s (from %.2f and %.2f)",
+                                    virtual_sensor.name,
+                                    virtual_value,
+                                    virtual_sensor.unit,
+                                    value1,
+                                    value2,
+                                )
+                        except Exception as e:
+                            # Log error but don't fail the entire resampling transaction
+                            _Logger.error(
+                                "Error calculating virtual sensor '%s' for slot %s: %s",
+                                virtual_sensor.name,
+                                slot_start,
+                                e,
+                            )
+                    
                     slots_saved += 1
                 else:
                     slots_skipped += 1

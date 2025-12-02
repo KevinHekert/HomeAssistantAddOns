@@ -2,6 +2,24 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.82] - 2025-12-02
+
+- **Virtual Sensor Resampling**: Fixed issue where virtual sensors were not calculated during resampling
+  - **Problem**: Virtual sensors could be configured via the UI, but their calculated values were not being filled during the resampling process
+  - **Solution**: Modified `resample_all_categories()` in `db/resample.py` to:
+    - Load enabled virtual sensors from configuration
+    - Calculate virtual sensor values for each resampled time slot
+    - Store virtual sensor values in `resampled_samples` table with their category names
+  - **Functionality**:
+    - Virtual sensors are calculated after raw sensors are resampled for each slot
+    - Only calculated when both source sensors have values in the slot
+    - Supports all operations: subtract, add, multiply, divide, average
+    - Disabled virtual sensors are not calculated
+    - Division by zero is handled gracefully (no value stored)
+  - **Example**: A virtual sensor `temp_delta = target_temp - indoor_temp` will now have its calculated values available in the resampled data
+  - **Tests**: Added comprehensive test suite (`test_virtual_sensors_resample.py`) with 9 test cases covering all operations and edge cases
+  - All 64 existing resample tests continue to pass
+
 ## [0.0.0.81] - 2025-12-02
 
 - **Feature Statistics Configuration**: Implemented Step 5 of sensor configuration feature - Time-based Feature Stats

@@ -45,7 +45,7 @@ class TestResampleEndpoint:
             start_time=datetime(2024, 1, 1, 12, 0, 0),
             end_time=datetime(2024, 1, 1, 20, 0, 0),
         )
-        with patch("app.resample_all_categories_to_5min") as mock_resample:
+        with patch("app.resample_all_categories") as mock_resample:
             mock_resample.return_value = mock_stats
 
             response = client.post("/resample")
@@ -62,7 +62,7 @@ class TestResampleEndpoint:
 
     def test_resample_error(self, client):
         """Error during resample returns 500 with error message."""
-        with patch("app.resample_all_categories_to_5min") as mock_resample:
+        with patch("app.resample_all_categories") as mock_resample:
             mock_resample.side_effect = Exception("Database error")
 
             response = client.post("/resample")
@@ -1108,7 +1108,7 @@ class TestResampleWithSampleRate:
             data = response.get_json()
             assert data["status"] == "success"
             assert data["stats"]["sample_rate_minutes"] == 10
-            mock_resample.assert_called_once_with(10)
+            mock_resample.assert_called_once_with(10, flush=False)
 
     def test_resample_invalid_rate_not_divisor(self, client):
         """Resample with sample rate that doesn't divide 60 returns error."""
@@ -1147,7 +1147,7 @@ class TestResampleWithSampleRate:
             end_time=datetime(2024, 1, 1, 20, 0, 0),
             sample_rate_minutes=5,
         )
-        with patch("app.resample_all_categories_to_5min") as mock_resample:
+        with patch("app.resample_all_categories") as mock_resample:
             mock_resample.return_value = mock_stats
 
             response = client.post("/resample")
@@ -1156,3 +1156,84 @@ class TestResampleWithSampleRate:
             data = response.get_json()
             assert data["stats"]["sample_rate_minutes"] == 5
             mock_resample.assert_called_once()
+
+    def test_resample_with_flush(self, client):
+        """Resample with flush=true clears existing data."""
+        mock_stats = ResampleStats(
+            slots_processed=100,
+            slots_saved=90,
+            slots_skipped=10,
+            categories=["outdoor_temp", "wind"],
+            start_time=datetime(2024, 1, 1, 12, 0, 0),
+            end_time=datetime(2024, 1, 1, 20, 0, 0),
+            sample_rate_minutes=10,
+            table_flushed=True,
+        )
+        with patch("app.resample_all_categories") as mock_resample:
+            mock_resample.return_value = mock_stats
+
+            response = client.post(
+                "/resample",
+                json={"sample_rate_minutes": 10, "flush": True},
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["stats"]["sample_rate_minutes"] == 10
+            assert data["stats"]["table_flushed"] is True
+            mock_resample.assert_called_once_with(10, flush=True)
+
+    def test_resample_table_flushed_in_response(self, client):
+        """Resample response includes table_flushed field."""
+        mock_stats = ResampleStats(
+            slots_processed=50,
+            slots_saved=40,
+            slots_skipped=10,
+            categories=["outdoor_temp"],
+            start_time=datetime(2024, 1, 1, 12, 0, 0),
+            end_time=datetime(2024, 1, 1, 18, 0, 0),
+            sample_rate_minutes=5,
+            table_flushed=False,
+        )
+        with patch("app.resample_all_categories") as mock_resample:
+            mock_resample.return_value = mock_stats
+
+            response = client.post(
+                "/resample",
+                json={"sample_rate_minutes": 5},
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert "table_flushed" in data["stats"]
+            assert data["stats"]["table_flushed"] is False
+
+    def test_resample_with_flush_default_rate(self, client):
+        """Resample with flush=true and default sample rate clears existing data."""
+        mock_stats = ResampleStats(
+            slots_processed=100,
+            slots_saved=90,
+            slots_skipped=10,
+            categories=["outdoor_temp", "wind"],
+            start_time=datetime(2024, 1, 1, 12, 0, 0),
+            end_time=datetime(2024, 1, 1, 20, 0, 0),
+            sample_rate_minutes=5,
+            table_flushed=True,
+        )
+        with patch("app.resample_all_categories") as mock_resample:
+            mock_resample.return_value = mock_stats
+
+            response = client.post(
+                "/resample",
+                json={"flush": True},
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["stats"]["table_flushed"] is True
+            mock_resample.assert_called_once_with(None, flush=True)

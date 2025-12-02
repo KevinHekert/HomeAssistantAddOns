@@ -62,6 +62,29 @@ class ResampleStats:
     start_time: datetime | None
     end_time: datetime | None
     sample_rate_minutes: int = 5
+    table_flushed: bool = False
+
+
+def flush_resampled_samples() -> int:
+    """
+    Delete all records from the resampled_samples table.
+    
+    This should be called before resampling when the sample rate changes,
+    because existing resampled data computed with a different interval
+    becomes invalid.
+    
+    Returns:
+        Number of rows deleted.
+    """
+    try:
+        with Session(engine) as session:
+            count = session.query(ResampledSample).delete()
+            session.commit()
+            _Logger.info("Flushed resampled_samples table: %d rows deleted", count)
+            return count
+    except SQLAlchemyError as e:
+        _Logger.error("Error flushing resampled_samples table: %s", e)
+        raise
 
 
 def get_primary_entities_by_category() -> dict[str, str]:
@@ -291,21 +314,24 @@ def _align_to_boundary(dt: datetime, sample_rate_minutes: int) -> datetime:
     return dt.replace(minute=aligned_minutes, second=0, microsecond=0)
 
 
-def resample_all_categories(sample_rate_minutes: int | None = None) -> ResampleStats:
+def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool = False) -> ResampleStats:
     """
     Resample raw sensor samples into time slots for all configured categories.
 
     This function:
     1. Ensures DB schema exists (creates tables if missing).
-    2. Fetches category-to-entity mappings.
-    3. Computes the global time range where all categories have data.
-    4. Iterates over time slots and computes time-weighted averages.
-    5. Only writes complete slots (all categories have values).
-    6. Ensures idempotence by deleting existing rows before inserting.
+    2. Optionally flushes the resampled_samples table (for sample rate changes).
+    3. Fetches category-to-entity mappings.
+    4. Computes the global time range where all categories have data.
+    5. Iterates over time slots and computes time-weighted averages.
+    6. Only writes complete slots (all categories have values).
+    7. Ensures idempotence by deleting existing rows before inserting.
     
     Args:
         sample_rate_minutes: Optional sample rate in minutes. If None, uses
             the configured SAMPLE_RATE_MINUTES environment variable (default 5).
+        flush: If True, flush (delete all) existing resampled data before
+            resampling. This should be used when the sample rate changes.
 
     Returns:
         ResampleStats with statistics about the resampling operation.
@@ -318,6 +344,12 @@ def resample_all_categories(sample_rate_minutes: int | None = None) -> ResampleS
     
     # Step 1: Ensure DB schema exists
     init_db_schema()
+    
+    # Step 1.5: Flush existing resampled data if requested
+    table_flushed = False
+    if flush:
+        flush_resampled_samples()
+        table_flushed = True
 
     # Step 2: Fetch mappings
     category_to_entity = get_primary_entities_by_category()
@@ -334,6 +366,7 @@ def resample_all_categories(sample_rate_minutes: int | None = None) -> ResampleS
             start_time=None,
             end_time=None,
             sample_rate_minutes=sample_rate_minutes,
+            table_flushed=table_flushed,
         )
 
     # Step 3: Get global time range
@@ -351,6 +384,7 @@ def resample_all_categories(sample_rate_minutes: int | None = None) -> ResampleS
             start_time=None,
             end_time=None,
             sample_rate_minutes=sample_rate_minutes,
+            table_flushed=table_flushed,
         )
 
     # Step 4: Align global_start to boundary based on sample rate
@@ -439,29 +473,9 @@ def resample_all_categories(sample_rate_minutes: int | None = None) -> ResampleS
                 start_time=aligned_start,
                 end_time=global_end,
                 sample_rate_minutes=sample_rate_minutes,
+                table_flushed=table_flushed,
             )
 
     except SQLAlchemyError as e:
         _Logger.error("Error during resampling: %s", e)
         raise
-
-
-def resample_all_categories_to_5min() -> ResampleStats:
-    """
-    Resample raw sensor samples into time slots for all configured categories.
-    
-    This is a convenience wrapper that uses the configured sample rate
-    (defaults to 5 minutes if not configured).
-
-    This function:
-    1. Ensures DB schema exists (creates tables if missing).
-    2. Fetches category-to-entity mappings.
-    3. Computes the global time range where all categories have data.
-    4. Iterates over time slots and computes time-weighted averages.
-    5. Only writes complete slots (all categories have values).
-    6. Ensures idempotence by deleting existing rows before inserting.
-
-    Returns:
-        ResampleStats with statistics about the resampling operation.
-    """
-    return resample_all_categories()

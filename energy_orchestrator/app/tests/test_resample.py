@@ -26,7 +26,7 @@ from db.resample import (
     compute_time_weighted_avg,
     get_global_range_for_all_categories,
     get_primary_entities_by_category,
-    resample_all_categories_to_5min,
+    resample_all_categories,
 )
 import db.core as core_module
 import db.resample as resample_module
@@ -481,12 +481,12 @@ class TestComputeTimeWeightedAvg:
 
 
 class TestResampleAllCategoriesTo5Min:
-    """Test the main resample_all_categories_to_5min function."""
+    """Test the main resample_all_categories function."""
 
     def test_no_mappings_no_error(self, patch_engine):
         """No mappings should log warning and return without error."""
         # Should not raise
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         # No resampled data should exist
         with Session(patch_engine) as session:
@@ -507,7 +507,7 @@ class TestResampleAllCategoriesTo5Min:
             session.commit()
 
         # Should not raise
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         # No resampled data should exist
         with Session(patch_engine) as session:
@@ -543,7 +543,7 @@ class TestResampleAllCategoriesTo5Min:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -593,7 +593,7 @@ class TestResampleAllCategoriesTo5Min:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -665,7 +665,7 @@ class TestResampleAllCategoriesTo5Min:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -716,8 +716,8 @@ class TestResampleAllCategoriesTo5Min:
             session.commit()
 
         # Run resample twice
-        resample_all_categories_to_5min()
-        resample_all_categories_to_5min()
+        resample_all_categories()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = session.query(ResampledSample).all()
@@ -765,7 +765,7 @@ class TestResampleAllCategoriesTo5Min:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -852,7 +852,7 @@ class TestMultipleCategoriesResampling:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -879,11 +879,11 @@ class TestMultipleCategoriesResampling:
 
 
 class TestResampleStats:
-    """Test that resample_all_categories_to_5min returns correct ResampleStats."""
+    """Test that resample_all_categories returns correct ResampleStats."""
 
     def test_returns_stats_no_mappings(self, patch_engine):
         """No mappings returns stats with zero values."""
-        stats = resample_all_categories_to_5min()
+        stats = resample_all_categories()
 
         assert isinstance(stats, ResampleStats)
         assert stats.slots_processed == 0
@@ -906,7 +906,7 @@ class TestResampleStats:
             )
             session.commit()
 
-        stats = resample_all_categories_to_5min()
+        stats = resample_all_categories()
 
         assert isinstance(stats, ResampleStats)
         assert stats.slots_processed == 0
@@ -945,7 +945,7 @@ class TestResampleStats:
             )
             session.commit()
 
-        stats = resample_all_categories_to_5min()
+        stats = resample_all_categories()
 
         assert isinstance(stats, ResampleStats)
         assert stats.slots_processed == 2
@@ -1014,7 +1014,7 @@ class TestResampleStats:
             )
             session.commit()
 
-        stats = resample_all_categories_to_5min()
+        stats = resample_all_categories()
 
         assert isinstance(stats, ResampleStats)
         # Global range is [12:10, 12:20] → 2 slots: [12:10, 12:15) and [12:15, 12:20)
@@ -1296,3 +1296,181 @@ class TestResampleAllCategoriesWithConfigurableRate:
             # Average should be 15 (time-weighted)
             assert resampled is not None
             assert resampled.value == 15.0
+
+
+class TestFlushResampledSamples:
+    """Test the flush_resampled_samples function."""
+
+    def test_flush_empty_table(self, patch_engine):
+        """Flushing an empty table returns 0."""
+        from db.resample import flush_resampled_samples
+        count = flush_resampled_samples()
+        assert count == 0
+
+    def test_flush_with_data(self, patch_engine):
+        """Flushing a table with data returns the row count and clears the table."""
+        from db.resample import flush_resampled_samples
+        
+        # Add some resampled data
+        with Session(patch_engine) as session:
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 0, 0),
+                    category="WIND",
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 5, 0),
+                    category="WIND",
+                    value=15.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 0, 0),
+                    category="TEMP",
+                    value=20.0,
+                    unit="°C",
+                )
+            )
+            session.commit()
+
+        count = flush_resampled_samples()
+        assert count == 3
+
+        # Verify table is empty
+        with Session(patch_engine) as session:
+            remaining = session.query(ResampledSample).count()
+            assert remaining == 0
+
+    def test_flush_before_resample(self, patch_engine):
+        """Resample with flush=True clears existing data first."""
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            # Add stale resampled data (from old sample rate)
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 11, 0, 0),
+                    category="WIND",
+                    value=5.0,
+                    unit="m/s",
+                )
+            )
+            # Add raw samples
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 10, 0),
+                    value=15.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        # Resample with flush
+        stats = resample_all_categories(sample_rate_minutes=5, flush=True)
+        
+        assert stats.table_flushed is True
+        
+        # Verify old data is gone and only new data exists
+        with Session(patch_engine) as session:
+            resampled = session.query(ResampledSample).all()
+            # Should have 2 new slots, not 3 (2 new + 1 old)
+            assert len(resampled) == 2
+            # Old slot at 11:00 should not exist
+            old_slot = session.query(ResampledSample).filter(
+                ResampledSample.slot_start == datetime(2024, 1, 1, 11, 0, 0)
+            ).first()
+            assert old_slot is None
+
+    def test_resample_without_flush(self, patch_engine):
+        """Resample with flush=False (default) does not clear existing data."""
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            # Add existing resampled data that won't be overwritten
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 11, 0, 0),
+                    category="WIND",
+                    value=5.0,
+                    unit="m/s",
+                )
+            )
+            # Add raw samples
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 10, 0),
+                    value=15.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        # Resample without flush (default)
+        stats = resample_all_categories(sample_rate_minutes=5)
+        
+        assert stats.table_flushed is False
+        
+        # Verify old data still exists plus new data
+        with Session(patch_engine) as session:
+            resampled = session.query(ResampledSample).all()
+            # Should have 3 rows: 1 old + 2 new
+            assert len(resampled) == 3
+            # Old slot at 11:00 should still exist
+            old_slot = session.query(ResampledSample).filter(
+                ResampledSample.slot_start == datetime(2024, 1, 1, 11, 0, 0)
+            ).first()
+            assert old_slot is not None
+            assert old_slot.value == 5.0
+
+    def test_stats_includes_table_flushed_field(self, patch_engine):
+        """ResampleStats includes table_flushed field."""
+        from db.resample import resample_all_categories, ResampleStats
+        
+        stats = resample_all_categories(sample_rate_minutes=5, flush=True)
+        
+        assert isinstance(stats, ResampleStats)
+        assert hasattr(stats, 'table_flushed')
+        assert stats.table_flushed is True
+        
+        stats = resample_all_categories(sample_rate_minutes=5, flush=False)
+        assert stats.table_flushed is False

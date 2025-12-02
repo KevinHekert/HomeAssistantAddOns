@@ -556,31 +556,77 @@
             <h3>⚙️ Feature Configuration</h3>
             <p class="example-description">Configure which features are used for model training and prediction. Core features (13) are always active. Experimental features can be enabled/disabled.</p>
             
-            <div class="timezone-config" style="margin-bottom: 1rem;">
-                <label for="twoStepPredictionToggle" style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
-                    <input type="checkbox" id="twoStepPredictionToggle" onchange="toggleTwoStepPrediction(this.checked)" style="width: 18px; height: 18px;">
-                    <span>🔀 Two-Step Prediction</span>
-                </label>
-                <span style="color: var(--text-secondary); font-size: 0.8rem; margin-left: 1rem;">
-                    First classifies active/inactive hours, then predicts kWh for active hours only
-                </span>
-            </div>
-            
             <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Configuration</button>
             <div id="featureConfigStatus" class="status-message"></div>
             <div id="featureConfigContent"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔀 Two-Step Prediction</h3>
+            <span class="feature-badge experimental" style="margin-left: 0.5rem; vertical-align: middle;">EXPERIMENTAL</span>
+            <p class="example-description" style="margin-top: 0.5rem;">
+                An advanced prediction approach that improves accuracy by first classifying hours as active (heating on) or inactive (heating off), 
+                then predicting kWh consumption only for active hours. Inactive hours are predicted as 0 kWh.
+            </p>
+            
+            <div class="feature-item experimental" style="margin: 1rem 0; border-left: 3px solid var(--accent-orange);">
+                <div class="feature-toggle">
+                    <input type="checkbox" id="twoStepPredictionToggle" onchange="toggleTwoStepPrediction(this.checked)" style="width: 18px; height: 18px; cursor: pointer;">
+                </div>
+                <div class="feature-info">
+                    <div class="feature-name">Enable Two-Step Prediction</div>
+                    <div class="feature-description">When enabled, model training will create both a classifier and a regressor. The classifier predicts active/inactive hours, and the regressor predicts kWh for active hours only.</div>
+                </div>
+            </div>
+            
+            <div id="twoStepModelInfo" style="margin-top: 1rem;"></div>
+            <button class="action-btn secondary" id="loadTwoStepStatusBtn" onclick="loadTwoStepModelStatus()">Check Two-Step Model Status</button>
+            <div id="twoStepConfigStatus" class="status-message"></div>
         </div>
     </div>
 
     <!-- Model Training Tab -->
     <div id="tab-training" class="tab-content">
         <div class="card">
-            <h3>🤖 Model Training</h3>
-            <p>Train the heating demand prediction model using resampled data.</p>
+            <h3>🤖 Single-Step Model Training</h3>
+            <p>Train the standard heating demand prediction model using resampled data. This model directly predicts kWh for each hour.</p>
             <button class="action-btn success" id="trainBtn" onclick="trainModel()">Train Model</button>
             <button class="action-btn secondary" id="statusBtn" onclick="getModelStatus()">Check Status</button>
             <div id="modelStatus" class="status-message"></div>
             <div id="trainingDataTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔀 Two-Step Model Training</h3>
+            <span class="feature-badge experimental" style="margin-left: 0.5rem; vertical-align: middle;">EXPERIMENTAL</span>
+            <p class="example-description" style="margin-top: 0.5rem;">
+                Train the two-step heating demand model: a classifier + regressor approach. 
+                The classifier predicts active/inactive hours, the regressor predicts kWh for active hours only.
+            </p>
+            
+            <div class="stats-grid" id="twoStepTrainingStats" style="display: none;">
+                <div class="stat-item">
+                    <div class="stat-label">Activity Threshold</div>
+                    <div class="stat-value" id="twoStepThreshold">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Active Samples</div>
+                    <div class="stat-value" id="twoStepActiveSamples">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Inactive Samples</div>
+                    <div class="stat-value" id="twoStepInactiveSamples">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Classifier Accuracy</div>
+                    <div class="stat-value" id="twoStepClassifierAccuracy">-</div>
+                </div>
+            </div>
+            
+            <button class="action-btn warning" id="trainTwoStepBtn" onclick="trainTwoStepModel()">Train Two-Step Model</button>
+            <button class="action-btn secondary" id="twoStepStatusBtn" onclick="getTwoStepModelStatus()">Check Status</button>
+            <div id="twoStepModelStatus" class="status-message"></div>
+            <div id="twoStepTrainingDataTable"></div>
         </div>
 
         <div class="card">
@@ -820,6 +866,29 @@
                 
                 if (response.ok) {
                     document.getElementById('twoStepPredictionToggle').checked = data.two_step_prediction_enabled;
+                    
+                    // Also update the model info section
+                    const infoDiv = document.getElementById('twoStepModelInfo');
+                    if (data.two_step_model_available) {
+                        infoDiv.innerHTML = `
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <div class="stat-label">Activity Threshold</div>
+                                    <div class="stat-value">${data.activity_threshold_kwh !== null ? data.activity_threshold_kwh.toFixed(4) + ' kWh' : '-'}</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-label">Model Status</div>
+                                    <div class="stat-value" style="color: var(--accent-green);">Available</div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        infoDiv.innerHTML = `
+                            <div class="stat-item" style="background: var(--bg-tertiary); padding: 0.75rem; border-radius: 8px;">
+                                <div style="color: var(--text-secondary);">Two-step model not trained yet. Go to Model Training tab to train it.</div>
+                            </div>
+                        `;
+                    }
                 }
             } catch (error) {
                 console.error('Error loading two-step prediction status:', error);
@@ -827,7 +896,7 @@
         }
         
         async function toggleTwoStepPrediction(enabled) {
-            const statusDiv = document.getElementById('featureConfigStatus');
+            const statusDiv = document.getElementById('twoStepConfigStatus');
             
             try {
                 const response = await fetch('api/features/two_step_prediction', {
@@ -851,6 +920,185 @@
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
                 loadTwoStepPredictionStatus();
+            }
+        }
+        
+        async function loadTwoStepModelStatus() {
+            const statusDiv = document.getElementById('twoStepConfigStatus');
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading two-step model status...';
+            
+            try {
+                const response = await fetch('api/model/two_step_status');
+                const data = await response.json();
+                
+                if (data.status === 'available') {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Two-step model is available\n` +
+                        `Activity threshold: ${data.activity_threshold_kwh.toFixed(4)} kWh\n` +
+                        `Training timestamp: ${data.training_timestamp || 'Unknown'}`;
+                } else {
+                    statusDiv.className = 'status-message info';
+                    statusDiv.textContent = 'ℹ️ ' + data.message;
+                }
+                
+                // Also refresh the main status
+                loadTwoStepPredictionStatus();
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+        
+        async function trainTwoStepModel() {
+            const btn = document.getElementById('trainTwoStepBtn');
+            const statusDiv = document.getElementById('twoStepModelStatus');
+            const tableDiv = document.getElementById('twoStepTrainingDataTable');
+            const statsDiv = document.getElementById('twoStepTrainingStats');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Training two-step model... This may take a while.';
+            tableDiv.innerHTML = '';
+            statsDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch('api/train/two_step_heating_demand', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const threshold = data.threshold || {};
+                    const classifierMetrics = data.classifier_metrics || {};
+                    const regressorMetrics = data.regressor_metrics || {};
+                    const trainingData = data.training_data || {};
+                    
+                    // Update stats display
+                    const thresholdValue = threshold.computed_threshold_kwh;
+                    document.getElementById('twoStepThreshold').textContent = thresholdValue != null ? thresholdValue.toFixed(4) + ' kWh' : 'N/A';
+                    document.getElementById('twoStepActiveSamples').textContent = threshold.active_samples != null ? threshold.active_samples : '-';
+                    document.getElementById('twoStepInactiveSamples').textContent = threshold.inactive_samples != null ? threshold.inactive_samples : '-';
+                    document.getElementById('twoStepClassifierAccuracy').textContent = classifierMetrics.accuracy != null ? (classifierMetrics.accuracy * 100).toFixed(1) + '%' : '-';
+                    statsDiv.style.display = 'grid';
+                    
+                    let message = '✓ ' + data.message + '\n\n';
+                    message += '--- Classifier (Active/Inactive Hours) ---\n';
+                    message += 'Activity threshold: ' + (thresholdValue != null ? thresholdValue.toFixed(4) : 'N/A') + ' kWh\n';
+                    message += 'Active samples: ' + (threshold.active_samples != null ? threshold.active_samples : '-') + '\n';
+                    message += 'Inactive samples: ' + (threshold.inactive_samples != null ? threshold.inactive_samples : '-') + '\n';
+                    message += 'Accuracy: ' + (classifierMetrics.accuracy != null ? (classifierMetrics.accuracy * 100).toFixed(1) + '%' : 'N/A') + '\n';
+                    message += 'Precision: ' + (classifierMetrics.precision != null ? (classifierMetrics.precision * 100).toFixed(1) + '%' : 'N/A') + '\n';
+                    message += 'Recall: ' + (classifierMetrics.recall != null ? (classifierMetrics.recall * 100).toFixed(1) + '%' : 'N/A') + '\n';
+                    message += 'F1 Score: ' + (classifierMetrics.f1 != null ? (classifierMetrics.f1 * 100).toFixed(1) + '%' : 'N/A') + '\n\n';
+                    message += '--- Regressor (kWh for Active Hours) ---\n';
+                    message += 'Training samples: ' + (regressorMetrics.train_samples != null ? regressorMetrics.train_samples : '-') + '\n';
+                    message += 'Validation samples: ' + (regressorMetrics.val_samples != null ? regressorMetrics.val_samples : '-') + '\n';
+                    message += 'Train MAE (kWh): ' + (regressorMetrics.train_mae_kwh != null ? regressorMetrics.train_mae_kwh : 'N/A') + '\n';
+                    message += 'Val MAE (kWh): ' + (regressorMetrics.val_mae_kwh != null ? regressorMetrics.val_mae_kwh : 'N/A') + '\n';
+                    message += 'Val MAPE (%): ' + (regressorMetrics.val_mape_pct != null ? regressorMetrics.val_mape_pct : 'N/A') + '\n';
+                    message += 'Val R²: ' + (regressorMetrics.val_r2 || 'N/A');
+                    
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = message;
+                    
+                    // Display training data table with all sensor categories
+                    if (trainingData && Object.keys(trainingData).length > 0) {
+                        const isValidNumber = (val) => val !== null && val !== undefined && !isNaN(val);
+                        
+                        let tableHtml = '<h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">📊 Training Data Range</h4>';
+                        tableHtml += '<table class="training-data-table">';
+                        tableHtml += '<thead><tr><th>Sensor</th><th>First Value</th><th>Last Value</th><th>Delta</th></tr></thead>';
+                        tableHtml += '<tbody>';
+                        
+                        const sortedSensors = Object.keys(trainingData).sort();
+                        
+                        for (const sensor of sortedSensors) {
+                            const sensorData = trainingData[sensor];
+                            const unit = sensorData.unit || '';
+                            
+                            tableHtml += '<tr>';
+                            tableHtml += '<td><strong>' + sensor + '</strong></td>';
+                            tableHtml += '<td>' + (isValidNumber(sensorData.first) ? sensorData.first.toFixed(2) + ' ' + unit : 'N/A') + '</td>';
+                            tableHtml += '<td>' + (isValidNumber(sensorData.last) ? sensorData.last.toFixed(2) + ' ' + unit : 'N/A') + '</td>';
+                            
+                            if (sensor === 'hp_kwh_total' && isValidNumber(sensorData.delta)) {
+                                tableHtml += '<td style="color: var(--accent-green); font-weight: bold;">' + sensorData.delta.toFixed(2) + ' ' + unit + '</td>';
+                            } else if (isValidNumber(sensorData.first) && isValidNumber(sensorData.last)) {
+                                const delta = sensorData.last - sensorData.first;
+                                tableHtml += '<td>' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ' ' + unit + '</td>';
+                            } else {
+                                tableHtml += '<td>N/A</td>';
+                            }
+                            tableHtml += '</tr>';
+                        }
+                        
+                        tableHtml += '</tbody></table>';
+                        tableDiv.innerHTML = tableHtml;
+                    }
+                    
+                    // Update the config page status
+                    loadTwoStepPredictionStatus();
+                } else {
+                    let message = '✗ ' + (data.message || 'Training failed');
+                    if (data.stats) {
+                        message += '\n\nDataset stats:';
+                        message += '\nTotal slots: ' + (data.stats.total_slots || 0);
+                        message += '\nValid slots: ' + (data.stats.valid_slots || 0);
+                    }
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        
+        async function getTwoStepModelStatus() {
+            const btn = document.getElementById('twoStepStatusBtn');
+            const statusDiv = document.getElementById('twoStepModelStatus');
+            const statsDiv = document.getElementById('twoStepTrainingStats');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Checking two-step model status...';
+            
+            try {
+                const response = await fetch('api/model/two_step_status');
+                const data = await response.json();
+                
+                if (data.status === 'available') {
+                    // Update stats display
+                    const thresholdKwh = data.activity_threshold_kwh;
+                    document.getElementById('twoStepThreshold').textContent = thresholdKwh != null ? thresholdKwh.toFixed(4) + ' kWh' : 'N/A';
+                    document.getElementById('twoStepActiveSamples').textContent = '-';
+                    document.getElementById('twoStepInactiveSamples').textContent = '-';
+                    document.getElementById('twoStepClassifierAccuracy').textContent = '-';
+                    statsDiv.style.display = 'grid';
+                    
+                    let message = '✓ Two-step model is available\n\n';
+                    message += 'Activity threshold: ' + (thresholdKwh != null ? thresholdKwh.toFixed(4) : 'N/A') + ' kWh\n';
+                    message += 'Training timestamp: ' + (data.training_timestamp || 'Unknown') + '\n';
+                    if (data.features && data.features.length > 0) {
+                        message += 'Features: ' + data.features.join(', ');
+                    }
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = message;
+                } else {
+                    statsDiv.style.display = 'none';
+                    statusDiv.className = 'status-message info';
+                    statusDiv.textContent = 'ℹ️ ' + (data.message || 'No two-step model available');
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
             }
         }
         

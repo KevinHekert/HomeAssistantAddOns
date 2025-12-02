@@ -2,6 +2,26 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.68] - 2025-12-02
+
+- **Two-Step Prediction UI Improvements**: Redesigned the two-step prediction feature for better visibility and clarity
+  - Moved two-step prediction toggle to its own dedicated card in the Configuration tab
+  - Card styled as an experimental feature similar to other experimental options
+  - Added detailed description explaining the two-step approach (classifier + regressor)
+  - Shows current model status (available/not trained) and activity threshold
+- **Two-Step Model Training Section**: Added dedicated training section in Model Training tab
+  - New "Two-Step Model Training" card with experimental badge
+  - Displays training statistics: activity threshold, active samples, inactive samples, classifier accuracy
+  - Shows detailed classifier metrics (accuracy, precision, recall, F1 score)
+  - Shows detailed regressor metrics (MAE, MAPE, R²) for active hours only
+  - Clear feedback showing how many hours were classified as active vs inactive
+  - Training data range table showing sensor values used
+- **Improved Training Feedback**: When training the two-step model, users now clearly see:
+  - The computed activity threshold (minimum kWh to consider heating "active")
+  - Number of active vs inactive samples in the training data
+  - Classifier performance metrics
+  - Regressor performance on active hours only
+
 ## [0.0.0.67] - 2025-12-02
 
 - **Historical Day Prediction Timestamps**: When loading historical data for scenario predictions, timestamps are now adjusted to be 2 days after today (day after tomorrow)

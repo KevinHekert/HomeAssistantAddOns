@@ -1550,3 +1550,381 @@ class TestFlushResampledSamples:
         
         stats = resample_all_categories(sample_rate_minutes=5, flush=False)
         assert stats.table_flushed is False
+
+
+class TestGetLatestResampledSlotStart:
+    """Test the get_latest_resampled_slot_start function."""
+
+    def test_empty_table_returns_none(self, patch_engine):
+        """Empty resampled_samples table returns None."""
+        from db.resample import get_latest_resampled_slot_start
+        
+        result = get_latest_resampled_slot_start()
+        assert result is None
+
+    def test_single_row_returns_correct_slot(self, patch_engine):
+        """Single row returns that slot_start."""
+        from db.resample import get_latest_resampled_slot_start
+        
+        with Session(patch_engine) as session:
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 0, 0),
+                    category="WIND",
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+        
+        result = get_latest_resampled_slot_start()
+        assert result == datetime(2024, 1, 1, 12, 0, 0)
+
+    def test_multiple_rows_returns_max_slot(self, patch_engine):
+        """Multiple rows returns the maximum slot_start."""
+        from db.resample import get_latest_resampled_slot_start
+        
+        with Session(patch_engine) as session:
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 0, 0),
+                    category="WIND",
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 55, 0),
+                    category="WIND",
+                    value=15.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 30, 0),
+                    category="WIND",
+                    value=12.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+        
+        result = get_latest_resampled_slot_start()
+        assert result == datetime(2024, 1, 1, 12, 55, 0)
+
+
+class TestIncrementalResampling:
+    """Test incremental resampling behavior."""
+
+    def test_incremental_resample_starts_from_correct_position(self, patch_engine):
+        """
+        When resampling without flush and existing resampled data exists,
+        should start from (latest_slot - 2*sample_rate) instead of global start.
+        
+        Example from issue:
+        - Sample rate: 5 minutes
+        - Latest resampled slot: 12:55
+        - Incremental start should be: 12:55 - (2*5) = 12:45
+        """
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            # Raw samples from 12:00 to 13:00
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 13, 0, 0),
+                    value=20.0,
+                    unit="m/s",
+                )
+            )
+            # Existing resampled data up to 12:55
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 55, 0),
+                    category="WIND",
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        # Run resample without flush (incremental mode)
+        stats = resample_all_categories(sample_rate_minutes=5, flush=False)
+
+        # Should start from 12:55 - 10 minutes = 12:45
+        assert stats.start_time == datetime(2024, 1, 1, 12, 45, 0)
+        # Should process 3 slots: [12:45, 12:50), [12:50, 12:55), [12:55, 13:00)
+        assert stats.slots_processed == 3
+        assert stats.table_flushed is False
+
+    def test_flush_ignores_incremental_start(self, patch_engine):
+        """When flush=True, should use global start even if resampled data exists."""
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            # Raw samples from 12:00 to 12:30
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 30, 0),
+                    value=20.0,
+                    unit="m/s",
+                )
+            )
+            # Existing resampled data at 12:25
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 25, 0),
+                    category="WIND",
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        # Run resample with flush
+        stats = resample_all_categories(sample_rate_minutes=5, flush=True)
+
+        # Should start from global start (12:00), not incremental start
+        assert stats.start_time == datetime(2024, 1, 1, 12, 0, 0)
+        assert stats.table_flushed is True
+
+    def test_incremental_uses_global_start_when_no_resampled_data(self, patch_engine):
+        """When no resampled data exists, incremental mode uses global start."""
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 20, 0),
+                    value=20.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        # Run resample without flush but no existing resampled data
+        stats = resample_all_categories(sample_rate_minutes=5, flush=False)
+
+        # Should start from global start (12:00)
+        assert stats.start_time == datetime(2024, 1, 1, 12, 0, 0)
+        # Should process 4 slots: [12:00, 12:05), [12:05, 12:10), [12:10, 12:15), [12:15, 12:20)
+        assert stats.slots_processed == 4
+
+    def test_incremental_updates_existing_slots(self, patch_engine):
+        """Incremental resampling updates existing slots with new values."""
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            # Raw samples
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 20, 0),
+                    value=20.0,
+                    unit="m/s",
+                )
+            )
+            # Pre-existing resampled data with old value at 12:15
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 15, 0),
+                    category="WIND",
+                    value=99.0,  # Wrong value that should be replaced
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        # Run incremental resample
+        stats = resample_all_categories(sample_rate_minutes=5, flush=False)
+        
+        # Incremental start should be: 12:15 - (2*5) = 12:05
+        assert stats.start_time == datetime(2024, 1, 1, 12, 5, 0)
+
+        # Verify the slot at 12:15 was updated
+        with Session(patch_engine) as session:
+            slot_12_15 = session.query(ResampledSample).filter(
+                ResampledSample.slot_start == datetime(2024, 1, 1, 12, 15, 0),
+                ResampledSample.category == "WIND",
+            ).first()
+            
+            # Value should now be 10.0 (last known value), not 99.0
+            assert slot_12_15 is not None
+            assert slot_12_15.value == 10.0
+
+    def test_incremental_with_10min_sample_rate(self, patch_engine):
+        """
+        Test incremental resampling with 10-minute sample rate.
+        
+        Latest resampled: 12:50
+        Sample rate: 10 minutes
+        Incremental start: 12:50 - (2*10) = 12:30
+        """
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            # Raw samples from 12:00 to 13:00
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 13, 0, 0),
+                    value=20.0,
+                    unit="m/s",
+                )
+            )
+            # Existing resampled data at 12:50
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 50, 0),
+                    category="WIND",
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        # Run resample with 10-min rate without flush
+        stats = resample_all_categories(sample_rate_minutes=10, flush=False)
+
+        # Should start from 12:50 - 20 minutes = 12:30
+        assert stats.start_time == datetime(2024, 1, 1, 12, 30, 0)
+        # Should process 3 slots: [12:30, 12:40), [12:40, 12:50), [12:50, 13:00)
+        assert stats.slots_processed == 3
+
+    def test_incremental_start_not_before_global_start(self, patch_engine):
+        """
+        Incremental start should not be before global start.
+        
+        If incremental_start < aligned_start, use aligned_start.
+        """
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            # Raw samples from 12:30 to 13:00
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 30, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 13, 0, 0),
+                    value=20.0,
+                    unit="m/s",
+                )
+            )
+            # Existing resampled data at 12:35 (very close to global start)
+            # Incremental start would be 12:35 - 10 = 12:25, but global start is 12:30
+            session.add(
+                ResampledSample(
+                    slot_start=datetime(2024, 1, 1, 12, 35, 0),
+                    category="WIND",
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        # Run resample without flush
+        stats = resample_all_categories(sample_rate_minutes=5, flush=False)
+
+        # Incremental start would be 12:25, but global start is 12:30
+        # Should use global start (12:30) since it's later
+        assert stats.start_time == datetime(2024, 1, 1, 12, 30, 0)

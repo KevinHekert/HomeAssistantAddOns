@@ -22,6 +22,22 @@ All notable changes to this add-on will be documented in this file.
   - `get_feature_details()`: Returns detailed metadata for each feature
   - `verify_model_features()`: Verifies model features match dataset features
 - **Tests**: Added 7 new tests for feature verification functionality
+- **Incremental Resampling**: When resampling without flush, the system now starts from the latest resampled slot minus 2x the sample rate, instead of reprocessing all historical data
+  - Example: With 5-minute sample rate and latest resampled slot at 12:55, resampling starts from 12:45 (12:55 - 2*5)
+  - This significantly improves performance for regular resample operations
+  - Existing values that differ will be replaced (idempotent behavior)
+  - Use `flush=True` to force full reprocessing from the beginning
+- **New Function**: Added `get_latest_resampled_slot_start()` to retrieve the most recent resampled slot timestamp
+- **Tests**: Added 9 new tests for incremental resampling behavior
+- **Training Data Range Units from Source**: Unit information is now extracted from the actual samples table instead of using hardcoded values
+  - `TrainingDataRange` dataclass now includes a `unit` field
+  - Units are extracted from the first sample of each category in the resampled data
+  - Removed hardcoded `SENSOR_UNITS` dictionary from `app.py`
+  - Training data response now displays the actual unit stored with each sensor's data
+  - This ensures unit accuracy even for sensors with non-standard units
+- Updated `_load_resampled_data()` to include the `unit` column from the database
+- Added test for unit extraction from source data
+- Updated existing tests to use realistic units in test data
 
 ## [0.0.0.70] - 2025-12-02
 

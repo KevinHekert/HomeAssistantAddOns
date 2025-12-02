@@ -1747,3 +1747,282 @@ class TestTrainTwoStepHeatingDemandEndpoint:
             data = response.get_json()
             assert data["status"] == "error"
             assert "Insufficient data" in data["message"]
+
+
+# =============================================================================
+# SENSOR CONFIGURATION ENDPOINTS TESTS
+# =============================================================================
+
+
+class TestSensorCategoryConfigEndpoint:
+    """Test the /api/sensors/category_config GET endpoint."""
+
+    def test_get_config_success(self, client, tmp_path):
+        """Should return sensor configuration."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.get("/api/sensors/category_config")
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert "config" in data
+                assert "sensors_by_type" in data
+                assert "enabled_entity_ids" in data
+                assert data["config"]["core_sensor_count"] > 0
+                assert data["config"]["experimental_sensor_count"] > 0
+
+    def test_config_has_sensor_types(self, client, tmp_path):
+        """Should have sensors grouped by type."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.get("/api/sensors/category_config")
+
+                assert response.status_code == 200
+                data = response.get_json()
+                sensors_by_type = data["sensors_by_type"]
+                
+                # Should have at least weather and usage types
+                assert "weather" in sensors_by_type
+                assert "usage" in sensors_by_type
+
+
+class TestSensorToggleEndpoint:
+    """Test the /api/sensors/toggle POST endpoint."""
+
+    def test_toggle_experimental_sensor_enable(self, client, tmp_path):
+        """Should enable an experimental sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "pressure", "enabled": True},
+                )
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert "enabled" in data["message"]
+                assert "pressure" in data["enabled_sensors"]
+
+    def test_toggle_experimental_sensor_disable(self, client, tmp_path):
+        """Should disable an experimental sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                # First enable
+                client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "pressure", "enabled": True},
+                )
+                
+                # Then disable
+                response = client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "pressure", "enabled": False},
+                )
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert "disabled" in data["message"]
+                assert "pressure" not in data["enabled_sensors"]
+
+    def test_cannot_toggle_core_sensor(self, client, tmp_path):
+        """Should not be able to toggle a core sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "outdoor_temp", "enabled": False},
+                )
+
+                assert response.status_code == 400
+                data = response.get_json()
+                assert data["status"] == "error"
+                assert "core sensor" in data["message"].lower()
+
+    def test_toggle_unknown_sensor(self, client, tmp_path):
+        """Should return error for unknown sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "nonexistent", "enabled": True},
+                )
+
+                assert response.status_code == 400
+                data = response.get_json()
+                assert data["status"] == "error"
+                assert "Unknown" in data["message"]
+
+    def test_toggle_missing_category_name(self, client):
+        """Should return error when category_name is missing."""
+        response = client.post(
+            "/api/sensors/toggle",
+            json={"enabled": True},
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "category_name" in data["message"]
+
+    def test_toggle_missing_enabled(self, client):
+        """Should return error when enabled is missing."""
+        response = client.post(
+            "/api/sensors/toggle",
+            json={"category_name": "pressure"},
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "enabled" in data["message"]
+
+
+class TestSensorSetEntityEndpoint:
+    """Test the /api/sensors/set_entity POST endpoint."""
+
+    def test_set_entity_success(self, client, tmp_path):
+        """Should set entity ID for a sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/set_entity",
+                    json={
+                        "category_name": "outdoor_temp",
+                        "entity_id": "sensor.custom_temperature",
+                    },
+                )
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert "sensor.custom_temperature" in data["message"]
+                assert data["sensor"]["entity_id"] == "sensor.custom_temperature"
+
+    def test_set_entity_for_experimental_sensor(self, client, tmp_path):
+        """Should set entity ID for experimental sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/set_entity",
+                    json={
+                        "category_name": "pressure",
+                        "entity_id": "sensor.my_pressure",
+                    },
+                )
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert data["sensor"]["is_core"] is False
+
+    def test_set_entity_unknown_sensor(self, client, tmp_path):
+        """Should return error for unknown sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/set_entity",
+                    json={
+                        "category_name": "nonexistent",
+                        "entity_id": "sensor.test",
+                    },
+                )
+
+                assert response.status_code == 400
+                data = response.get_json()
+                assert data["status"] == "error"
+                assert "Unknown" in data["message"]
+
+    def test_set_entity_empty_entity_id(self, client):
+        """Should return error for empty entity_id."""
+        response = client.post(
+            "/api/sensors/set_entity",
+            json={
+                "category_name": "outdoor_temp",
+                "entity_id": "",
+            },
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "entity_id" in data["message"]
+
+    def test_set_entity_missing_category_name(self, client):
+        """Should return error when category_name is missing."""
+        response = client.post(
+            "/api/sensors/set_entity",
+            json={"entity_id": "sensor.test"},
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "category_name" in data["message"]
+
+
+class TestSensorDefinitionsEndpoint:
+    """Test the /api/sensors/definitions GET endpoint."""
+
+    def test_get_definitions_success(self, client):
+        """Should return sensor definitions."""
+        response = client.get("/api/sensors/definitions")
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert "core_sensors" in data
+        assert "experimental_sensors" in data
+        assert "total_count" in data
+        assert len(data["core_sensors"]) > 0
+        assert len(data["experimental_sensors"]) > 0
+
+    def test_definitions_have_required_fields(self, client):
+        """Sensor definitions should have required fields."""
+        response = client.get("/api/sensors/definitions")
+
+        assert response.status_code == 200
+        data = response.get_json()
+        
+        # Check a core sensor
+        core_sensor = data["core_sensors"][0]
+        assert "category_name" in core_sensor
+        assert "display_name" in core_sensor
+        assert "description" in core_sensor
+        assert "unit" in core_sensor
+        assert "is_core" in core_sensor
+        assert core_sensor["is_core"] is True
+
+        # Check an experimental sensor
+        exp_sensor = data["experimental_sensors"][0]
+        assert exp_sensor["is_core"] is False
+
+    def test_hp_kwh_total_in_core(self, client):
+        """hp_kwh_total should be in core sensors."""
+        response = client.get("/api/sensors/definitions")
+
+        assert response.status_code == 200
+        data = response.get_json()
+        
+        core_names = [s["category_name"] for s in data["core_sensors"]]
+        assert "hp_kwh_total" in core_names

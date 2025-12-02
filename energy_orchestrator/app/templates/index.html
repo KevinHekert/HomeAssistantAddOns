@@ -553,6 +553,33 @@
         </div>
 
         <div class="card">
+            <h3>📡 Sensor Configuration</h3>
+            <p class="example-description">Configure which sensors are used for data collection. Core sensors are always required, experimental sensors can be enabled/disabled.</p>
+            
+            <button class="action-btn secondary" id="loadSensorsBtn" onclick="loadSensorConfig()">Load Configuration</button>
+            <div id="sensorConfigStatus" class="status-message"></div>
+            
+            <div id="sensorConfigSummary" style="margin-top: 1rem; display: none;">
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">Core Sensors</div>
+                        <div class="stat-value" id="coreSensorCount">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Experimental Sensors</div>
+                        <div class="stat-value" id="expSensorCount">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Enabled Total</div>
+                        <div class="stat-value" id="enabledSensorCount">-</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="sensorConfigContent" style="margin-top: 1rem;"></div>
+        </div>
+
+        <div class="card">
             <h3>⚙️ Feature Configuration</h3>
             <p class="example-description">Configure which features are used for model training and prediction. Core features (15) are always active. Experimental features can be enabled/disabled.</p>
             
@@ -1735,6 +1762,179 @@
                 statusDiv.textContent = '✗ Error: ' + error.message;
             } finally {
                 btn.disabled = false;
+            }
+        }
+
+        // =============================================================================
+        // SENSOR CONFIGURATION FUNCTIONS
+        // =============================================================================
+
+        async function loadSensorConfig() {
+            const btn = document.getElementById('loadSensorsBtn');
+            const statusDiv = document.getElementById('sensorConfigStatus');
+            const summaryDiv = document.getElementById('sensorConfigSummary');
+            const contentDiv = document.getElementById('sensorConfigContent');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading sensor configuration...';
+            
+            try {
+                const response = await fetch('api/sensors/category_config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Configuration loaded: ${data.config.enabled_sensor_count} sensors enabled`;
+                    
+                    // Update summary
+                    summaryDiv.style.display = 'block';
+                    document.getElementById('coreSensorCount').textContent = data.config.core_sensor_count;
+                    document.getElementById('expSensorCount').textContent = data.config.experimental_sensor_count;
+                    document.getElementById('enabledSensorCount').textContent = data.config.enabled_sensor_count;
+                    
+                    // Build UI grouped by sensor type
+                    let html = '';
+                    const typeOrder = ['usage', 'weather', 'indoor', 'heating'];
+                    const typeIcons = {
+                        'usage': '⚡',
+                        'weather': '🌤️',
+                        'indoor': '🏠',
+                        'heating': '🔥'
+                    };
+                    const typeDescriptions = {
+                        'usage': 'Energy consumption sensors (required for training)',
+                        'weather': 'Weather and outdoor condition sensors',
+                        'indoor': 'Indoor climate and setpoint sensors',
+                        'heating': 'Heating system monitoring sensors'
+                    };
+                    
+                    typeOrder.forEach(sensorType => {
+                        const sensors = data.sensors_by_type[sensorType] || [];
+                        if (sensors.length === 0) return;
+                        
+                        html += '<div class="feature-category">';
+                        html += `<div class="feature-category-title">${typeIcons[sensorType] || '📌'} ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}</div>`;
+                        html += `<div class="feature-description" style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.85rem;">${typeDescriptions[sensorType] || ''}</div>`;
+                        html += '<div class="feature-list">';
+                        
+                        sensors.forEach(s => {
+                            const itemClass = s.is_core ? 'core' : (s.enabled ? 'experimental' : 'experimental disabled');
+                            const badgeClass = s.is_core ? 'core' : 'experimental';
+                            const badgeText = s.is_core ? 'CORE' : 'EXPERIMENTAL';
+                            const checked = s.enabled ? 'checked' : '';
+                            const toggleDisabled = s.is_core ? 'disabled' : '';
+                            
+                            // Safely escape values - category names from server are alphanumeric only
+                            // All other values are escaped for HTML special characters
+                            const safeCategoryName = s.category_name.replace(/[^a-zA-Z0-9_]/g, '');
+                            const escapeHtml = (str) => (str || '')
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;')
+                                .replace(/"/g, '&quot;')
+                                .replace(/'/g, '&#39;');
+                            const safeDisplayName = escapeHtml(s.display_name);
+                            const safeDesc = escapeHtml(s.description);
+                            const safeUnit = escapeHtml(s.unit);
+                            const safeEntityId = escapeHtml(s.entity_id);
+                            
+                            html += `<div class="feature-item ${itemClass}">`;
+                            html += `<div class="feature-toggle"><input type="checkbox" ${checked} ${toggleDisabled} data-sensor="${safeCategoryName}" onchange="toggleSensor('${safeCategoryName}', this.checked)"></div>`;
+                            html += `<div class="feature-info" style="flex: 1;">`;
+                            html += `<div class="feature-name">${safeDisplayName}<span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                            html += `<div class="feature-description">${safeDesc}</div>`;
+                            html += `<div class="feature-meta">Unit: ${safeUnit}</div>`;
+                            html += `<div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">`;
+                            html += `<label style="color: var(--text-secondary); font-size: 0.85rem;">Entity ID:</label>`;
+                            html += `<input type="text" id="entity_${safeCategoryName}" value="${safeEntityId}" placeholder="sensor.entity_id" style="flex: 1; max-width: 300px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.35rem 0.5rem; font-size: 0.85rem;">`;
+                            html += `<button class="action-btn secondary" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;" onclick="saveSensorEntity('${safeCategoryName}')">Save</button>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div>'; // feature-list
+                        html += '</div>'; // feature-category
+                    });
+                    
+                    contentDiv.innerHTML = html;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + (data.message || 'Unknown error');
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function toggleSensor(categoryName, enabled) {
+            const statusDiv = document.getElementById('sensorConfigStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `${enabled ? 'Enabling' : 'Disabling'} sensor...`;
+            
+            try {
+                const response = await fetch('api/sensors/toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ category_name: categoryName, enabled: enabled })
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload to update counts
+                    loadSensorConfig();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + (data.message || 'Failed to toggle sensor');
+                    // Revert checkbox
+                    const checkbox = document.querySelector(`input[data-sensor="${categoryName}"]`);
+                    if (checkbox) checkbox.checked = !enabled;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        async function saveSensorEntity(categoryName) {
+            const statusDiv = document.getElementById('sensorConfigStatus');
+            const inputId = `entity_${categoryName}`;
+            const input = document.getElementById(inputId);
+            const entityId = input ? input.value.trim() : '';
+            
+            if (!entityId) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Entity ID cannot be empty';
+                return;
+            }
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Saving entity ID...';
+            
+            try {
+                const response = await fetch('api/sensors/set_entity', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ category_name: categoryName, entity_id: entityId })
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + (data.message || 'Failed to save entity ID');
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
             }
         }
 

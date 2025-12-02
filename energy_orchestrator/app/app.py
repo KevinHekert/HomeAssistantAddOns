@@ -26,6 +26,13 @@ from db.sync_config import (
     MIN_SYNC_INTERVAL,
     MAX_SYNC_INTERVAL,
 )
+from db.sensor_category_config import (
+    get_sensor_category_config,
+    get_all_sensor_definitions,
+    get_sensor_definition,
+    CORE_SENSORS,
+    EXPERIMENTAL_SENSORS,
+)
 from db.prediction_storage import (
     store_prediction,
     get_stored_predictions,
@@ -2746,6 +2753,256 @@ def apply_optimizer_result():
             "status": "error",
             "message": str(e),
         }), 500
+
+
+# =============================================================================
+# SENSOR CONFIGURATION ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/sensors/category_config")
+def get_sensor_category_config_api():
+    """
+    Get the current sensor category configuration.
+    
+    Returns all sensors grouped by type with their configuration and status.
+    Core sensors are always enabled and cannot be disabled.
+    Experimental sensors can be enabled/disabled.
+    
+    Response:
+    {
+        "status": "success",
+        "config": {
+            "core_sensor_count": 6,
+            "experimental_sensor_count": 5,
+            "enabled_sensor_count": 6,
+            "migrated_from_config_yaml": true
+        },
+        "sensors_by_type": {
+            "weather": [...],
+            "indoor": [...],
+            "heating": [...],
+            "usage": [...]
+        },
+        "enabled_entity_ids": ["sensor.outdoor_temp", ...]
+    }
+    """
+    try:
+        config = get_sensor_category_config()
+        
+        return jsonify({
+            "status": "success",
+            "config": {
+                "core_sensor_count": len(CORE_SENSORS),
+                "experimental_sensor_count": len(EXPERIMENTAL_SENSORS),
+                "enabled_sensor_count": len(config.get_enabled_sensors()),
+                "migrated_from_config_yaml": config.migrated_from_config_yaml,
+            },
+            "sensors_by_type": config.get_sensors_by_type(),
+            "enabled_entity_ids": config.get_enabled_sensor_entity_ids(),
+        })
+    except Exception as e:
+        _Logger.error("Error getting sensor category config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/sensors/toggle")
+def toggle_sensor():
+    """
+    Enable or disable an experimental sensor.
+    
+    Core sensors cannot be toggled (they are always enabled).
+    
+    Request body:
+    {
+        "category_name": "pressure",
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Sensor 'pressure' is now enabled",
+        "enabled_sensors": [...]
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        category_name = data.get("category_name")
+        enabled = data.get("enabled")
+        
+        if not category_name:
+            return jsonify({
+                "status": "error",
+                "message": "category_name is required",
+            }), 400
+        
+        if enabled is None:
+            return jsonify({
+                "status": "error",
+                "message": "enabled is required (true or false)",
+            }), 400
+        
+        # Verify sensor exists
+        sensor_def = get_sensor_definition(category_name)
+        if sensor_def is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Unknown sensor category: {category_name}",
+            }), 400
+        
+        # Check if it's a core sensor
+        if sensor_def.is_core:
+            return jsonify({
+                "status": "error",
+                "message": f"Cannot toggle core sensor '{category_name}'. Core sensors are always enabled.",
+            }), 400
+        
+        config = get_sensor_category_config()
+        
+        if enabled:
+            result = config.enable_sensor(category_name)
+        else:
+            result = config.disable_sensor(category_name)
+        
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to toggle sensor '{category_name}'",
+            }), 500
+        
+        # Save configuration
+        config.save()
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Sensor '{category_name}' is now {status}",
+            "enabled_sensors": [s.category_name for s in config.get_enabled_sensors()],
+        })
+    except Exception as e:
+        _Logger.error("Error toggling sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/sensors/set_entity")
+def set_sensor_entity():
+    """
+    Set the entity ID for a sensor category.
+    
+    Works for both core and experimental sensors.
+    
+    Request body:
+    {
+        "category_name": "outdoor_temp",
+        "entity_id": "sensor.my_outdoor_temperature"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Entity ID for 'outdoor_temp' set to 'sensor.my_outdoor_temperature'",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        category_name = data.get("category_name")
+        entity_id = data.get("entity_id", "").strip()
+        
+        if not category_name:
+            return jsonify({
+                "status": "error",
+                "message": "category_name is required",
+            }), 400
+        
+        if not entity_id:
+            return jsonify({
+                "status": "error",
+                "message": "entity_id is required and cannot be empty",
+            }), 400
+        
+        # Verify sensor exists
+        sensor_def = get_sensor_definition(category_name)
+        if sensor_def is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Unknown sensor category: {category_name}",
+            }), 400
+        
+        config = get_sensor_category_config()
+        result = config.set_entity_id(category_name, entity_id)
+        
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to set entity ID for '{category_name}'",
+            }), 500
+        
+        # Save configuration
+        config.save()
+        
+        sensor_config = config.get_sensor_config(category_name)
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Entity ID for '{category_name}' set to '{entity_id}'",
+            "sensor": {
+                "category_name": category_name,
+                "display_name": sensor_def.display_name,
+                "entity_id": sensor_config.entity_id,
+                "enabled": sensor_config.enabled,
+                "is_core": sensor_def.is_core,
+            },
+        })
+    except Exception as e:
+        _Logger.error("Error setting sensor entity ID: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/sensors/definitions")
+def get_sensor_definitions_api():
+    """
+    Get all sensor definitions (metadata).
+    
+    Returns the complete list of available sensors with their metadata,
+    including core/experimental status, description, and units.
+    
+    Response:
+    {
+        "status": "success",
+        "core_sensors": [...],
+        "experimental_sensors": [...],
+        "total_count": 11
+    }
+    """
+    try:
+        core_list = [s.to_dict() for s in CORE_SENSORS]
+        experimental_list = [s.to_dict() for s in EXPERIMENTAL_SENSORS]
+        
+        return jsonify({
+            "status": "success",
+            "core_sensors": core_list,
+            "experimental_sensors": experimental_list,
+            "total_count": len(core_list) + len(experimental_list),
+        })
+    except Exception as e:
+        _Logger.error("Error getting sensor definitions: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 if __name__ == "__main__":

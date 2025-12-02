@@ -194,6 +194,16 @@ def train_heating_demand():
                 "data_end_time": stats.data_end_time.isoformat() if stats.data_end_time else None,
                 "available_history_hours": round(stats.available_history_hours, 1) if stats.available_history_hours else None,
             },
+            "training_data": {
+                "dhw_temp": {
+                    "first": stats.dhw_temp_range.first if stats.dhw_temp_range else None,
+                    "last": stats.dhw_temp_range.last if stats.dhw_temp_range else None,
+                } if stats.dhw_temp_range else None,
+                "hp_kwh_total": {
+                    "first": stats.hp_kwh_total_range.first if stats.hp_kwh_total_range else None,
+                    "last": stats.hp_kwh_total_range.last if stats.hp_kwh_total_range else None,
+                } if stats.hp_kwh_total_range else None,
+            },
         })
         
     except Exception as e:

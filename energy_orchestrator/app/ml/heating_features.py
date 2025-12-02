@@ -150,7 +150,8 @@ def _pivot_data(df: pd.DataFrame) -> pd.DataFrame:
     Pivot data from long to wide format.
     
     Args:
-        df: DataFrame with columns slot_start, category, value
+        df: DataFrame with columns slot_start, category, value, unit.
+            The unit column is not used in pivoting but is present in input.
         
     Returns:
         DataFrame with slot_start as index and categories as columns
@@ -722,15 +723,13 @@ def build_heating_feature_dataset(
                 data_end,
             )
             
-            # Extract units per category from raw data (use first non-null unit for each category)
-            category_units: dict[str, str | None] = {}
-            for category in raw_df["category"].unique():
-                cat_data = raw_df[raw_df["category"] == category]
-                units = cat_data["unit"].dropna()
-                if not units.empty:
-                    category_units[category] = str(units.iloc[0])
-                else:
-                    category_units[category] = None
+            # Extract units per category from raw data using groupby for better performance
+            category_units: dict[str, str | None] = (
+                raw_df.dropna(subset=["unit"])
+                .groupby("category")["unit"]
+                .first()
+                .to_dict()
+            )
             
             # Capture training data range for all sensor categories
             for category in pivot_df.columns:

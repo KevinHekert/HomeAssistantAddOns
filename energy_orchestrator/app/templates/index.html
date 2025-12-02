@@ -2798,7 +2798,8 @@
             statusDiv.textContent = `Saving ${categoryName}...`;
             
             try {
-                const response = await fetch('api/sensors/set_entity', {
+                // Save entity ID
+                const entityResponse = await fetch('api/sensors/set_entity', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -2807,16 +2808,33 @@
                     })
                 });
                 
-                const data = await response.json();
+                const entityData = await entityResponse.json();
                 
-                if (response.ok) {
+                if (!entityResponse.ok) {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + entityData.message;
+                    return;
+                }
+                
+                // Save unit
+                const unitResponse = await fetch('api/sensors/set_unit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category_name: categoryName,
+                        unit: unit
+                    })
+                });
+                
+                const unitData = await unitResponse.json();
+                
+                if (unitResponse.ok) {
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = '✓ ' + data.message;
-                    // Note: Unit saving will be implemented in Step 3
+                    statusDiv.textContent = `✓ Saved ${categoryName}: Entity ID and unit updated`;
                     setTimeout(() => { statusDiv.textContent = ''; }, 3000);
                 } else {
-                    statusDiv.className = 'status-message error';
-                    statusDiv.textContent = '✗ ' + data.message;
+                    statusDiv.className = 'status-message warning';
+                    statusDiv.textContent = `⚠ Entity ID saved but unit failed: ${unitData.message}`;
                 }
             } catch (error) {
                 statusDiv.className = 'status-message error';

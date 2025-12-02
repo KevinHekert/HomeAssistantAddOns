@@ -2,6 +2,31 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.79] - 2025-12-02
+
+- **Unit Field Storage and Configuration**: Implemented Step 3 of sensor configuration feature
+  - Added `unit` field to `SensorConfig` dataclass
+  - Units can now be stored per sensor in the configuration file
+  - Unit can override the default unit from `SensorDefinition`
+  - **New API Endpoint**: `POST /api/sensors/set_unit`
+    - Accepts `category_name` and `unit` parameters
+    - Saves unit to sensor configuration
+    - Returns updated sensor configuration
+  - **Database Model Updates**:
+    - `SensorConfig.unit` field added with default empty string
+    - `to_dict()` and `from_dict()` methods updated to handle unit
+    - `set_unit()` method added to `SensorCategoryConfiguration` class
+  - **UI Updates**:
+    - Unit input fields are now functional
+    - `saveRawSensor()` function now saves both entity ID and unit
+    - Displays success message when both are saved successfully
+    - Shows warning if entity ID saved but unit failed
+  - **Configuration Persistence**:
+    - Units are stored in `/data/sensor_category_config.json`
+    - Configuration is saved automatically when unit is updated
+    - `get_sensors_by_type()` now returns configured unit (or default if not set)
+- **Backwards Compatibility**: Existing configurations without unit field will default to empty string
+
 ## [0.0.0.78] - 2025-12-02
 
 - **New Sensor Configuration Tab**: Added new "📡 Sensor Configuration" tab in the UI

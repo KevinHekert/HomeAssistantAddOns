@@ -2974,6 +2974,85 @@ def set_sensor_entity():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.post("/api/sensors/set_unit")
+def set_sensor_unit():
+    """
+    Set the unit for a sensor category.
+    
+    Works for both core and experimental sensors.
+    
+    Request body:
+    {
+        "category_name": "outdoor_temp",
+        "unit": "°C"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Unit for 'outdoor_temp' set to '°C'",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        category_name = data.get("category_name")
+        unit = data.get("unit", "").strip()
+        
+        if not category_name:
+            return jsonify({
+                "status": "error",
+                "message": "category_name is required",
+            }), 400
+        
+        # Unit can be empty to clear/reset it
+        
+        # Verify sensor exists
+        sensor_def = get_sensor_definition(category_name)
+        if sensor_def is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Unknown sensor category: {category_name}",
+            }), 400
+        
+        config = get_sensor_category_config()
+        result = config.set_unit(category_name, unit)
+        
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to set unit for '{category_name}'",
+            }), 500
+        
+        # Save configuration
+        config.save()
+        
+        sensor_config = config.get_sensor_config(category_name)
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Unit for '{category_name}' set to '{unit}'" if unit else f"Unit for '{category_name}' cleared",
+            "sensor": {
+                "category_name": category_name,
+                "display_name": sensor_def.display_name,
+                "entity_id": sensor_config.entity_id,
+                "unit": sensor_config.unit,
+                "enabled": sensor_config.enabled,
+                "is_core": sensor_def.is_core,
+            },
+        })
+    except Exception as e:
+        _Logger.error("Error setting sensor unit: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.get("/api/sensors/definitions")
 def get_sensor_definitions_api():
     """

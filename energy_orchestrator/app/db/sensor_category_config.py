@@ -100,10 +100,12 @@ class SensorConfig:
         category_name: Internal category name
         entity_id: The Home Assistant entity ID
         enabled: Whether the sensor is enabled (always True for core sensors)
+        unit: Optional unit of measurement for display/override purposes
     """
     category_name: str
     entity_id: str
     enabled: bool = True
+    unit: str = ""
     
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -111,6 +113,7 @@ class SensorConfig:
             "category_name": self.category_name,
             "entity_id": self.entity_id,
             "enabled": self.enabled,
+            "unit": self.unit,
         }
     
     @classmethod
@@ -120,6 +123,7 @@ class SensorConfig:
             category_name=data["category_name"],
             entity_id=data.get("entity_id", ""),
             enabled=data.get("enabled", True),
+            unit=data.get("unit", ""),
         )
 
 
@@ -307,6 +311,24 @@ class SensorCategoryConfiguration:
             return True
         return False
     
+    def set_unit(self, category_name: str, unit: str) -> bool:
+        """
+        Set the unit for a sensor category.
+        
+        Args:
+            category_name: The sensor category name
+            unit: The unit of measurement (e.g., "°C", "kWh", "%")
+            
+        Returns:
+            True if the sensor exists and was updated
+        """
+        if category_name in self.sensors:
+            self.sensors[category_name].unit = unit
+            return True
+        return False
+            return True
+        return False
+    
     def enable_sensor(self, category_name: str) -> bool:
         """
         Enable an experimental sensor.
@@ -378,7 +400,7 @@ class SensorCategoryConfiguration:
                 "category_name": category_name,
                 "display_name": sensor_def.display_name,
                 "description": sensor_def.description,
-                "unit": sensor_def.unit,
+                "unit": config.unit if config.unit else sensor_def.unit,  # Use config unit if set, otherwise default
                 "is_core": sensor_def.is_core,
                 "entity_id": config.entity_id,
                 "enabled": config.enabled,

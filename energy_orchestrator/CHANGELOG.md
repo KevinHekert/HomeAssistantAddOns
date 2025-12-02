@@ -8,6 +8,10 @@ All notable changes to this add-on will be documented in this file.
   - **UI Changes**:
     - Removed duplicate "📡 Sensor Configuration" section from Configuration tab
     - Kept only "⚙️ Feature Configuration" on Configuration tab with enhanced guidance text
+    - Added "Show Sensors & Statistics" button to display comprehensive sensor information
+    - Feature Configuration now displays all sensors (raw + virtual) with their time-based statistics
+    - Clear visual indicators: RAW SENSOR vs VIRTUAL SENSOR badges
+    - Shows enabled statistics per sensor and generated feature names (e.g., outdoor_temp_avg_1h)
     - Configuration tab now focuses on system-wide settings (resampling, sync, features, weather)
     - Sensor Configuration tab retains all sensor management: Raw Sensors, Virtual Sensors, Feature Stats
   - **Database Schema Enhancements**:
@@ -24,18 +28,24 @@ All notable changes to this add-on will be documented in this file.
     - Step 2: Calculate virtual sensors from step 1 → `resampled_samples` (is_derived=True)
     - Step 3: Calculate time-span averages → `feature_statistics` (separate invocation)
     - Example: 1 hour with 5-min intervals = 12 raw samples + 12 virtual samples + 12 averages
-  - **New Module**: `db/calculate_feature_stats.py` for time-span average calculation
-    - `calculate_feature_statistics()`: Main calculation function
-    - `calculate_rolling_average()`: Rolling window averages
-    - `get_all_sensor_names()`: Discovers all sensors (raw + virtual + from resampled data)
-    - `flush_feature_statistics()`: Clears all statistics for recalculation
-    - Configuration-driven: Only calculates enabled statistics per sensor
+  - **New Modules**:
+    - `db/calculate_feature_stats.py` for time-span average calculation
+      - `calculate_feature_statistics()`: Main calculation function
+      - `calculate_rolling_average()`: Rolling window averages
+      - `get_all_sensor_names()`: Discovers all sensors (raw + virtual + from resampled data)
+      - `flush_feature_statistics()`: Clears all statistics for recalculation
+      - Configuration-driven: Only calculates enabled statistics per sensor
+  - **New API Endpoints**:
+    - `GET /api/features/sensors_with_stats`: Get all sensors with their enabled statistics
+    - `GET /api/resampled_data`: Query resampled samples with `is_derived` field filtering
+    - `GET /api/feature_statistics`: Query time-span averages with flexible filters
+    - All endpoints support time range filtering, pagination, and proper error handling
   - **Testing**:
     - 6 new schema migration tests: column addition, defaults, querying, backward compatibility
     - 6 new resampling tests: is_derived flags, 1 hour = 12 records scenario, all timeframes
     - 8 new feature statistics tests: rolling averages, configuration respect, table isolation
     - 5 new UI structure tests: tab organization, duplicate removal, content validation
-    - All 98+ tests pass (64 resample + 6 schema + 15 virtual + 8 feature stats + 5 UI)
+    - All 558 tests pass (includes all existing + new tests)
   - **Documentation**: Added comprehensive inline documentation for data lineage and calculation order
   - Fixes KevinHekert/HomeAssistantAddOns#174
 

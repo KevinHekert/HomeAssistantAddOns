@@ -163,6 +163,90 @@ class TestTrainHeatingDemandEndpoint:
             data = response.get_json()
             assert data["status"] == "error"
 
+    def test_train_returns_training_data_range(self, client):
+        """Successful training returns training_data with dhw_temp and hp_kwh_total ranges."""
+        mock_df = pd.DataFrame({
+            "outdoor_temp": [10.0, 11.0],
+            "target_heating_kwh_1h": [1.0, 1.5],
+        })
+        mock_stats = FeatureDatasetStats(
+            total_slots=100,
+            valid_slots=80,
+            dropped_missing_features=10,
+            dropped_missing_target=5,
+            dropped_insufficient_history=5,
+            features_used=["outdoor_temp", "wind"],
+            has_7d_features=False,
+            dhw_temp_range=TrainingDataRange(first=45.0, last=50.0),
+            hp_kwh_total_range=TrainingDataRange(first=1000.0, last=1500.0),
+        )
+        mock_model = MagicMock()
+        mock_metrics = MagicMock()
+        mock_metrics.train_samples = 60
+        mock_metrics.val_samples = 20
+        mock_metrics.train_mae = 0.1
+        mock_metrics.val_mae = 0.15
+        mock_metrics.val_mape = 0.05
+        mock_metrics.val_r2 = 0.85
+        mock_metrics.features = ["outdoor_temp", "wind"]
+
+        with patch("app.build_heating_feature_dataset") as mock_build, \
+             patch("app.train_heating_demand_model") as mock_train:
+            mock_build.return_value = (mock_df, mock_stats)
+            mock_train.return_value = (mock_model, mock_metrics)
+
+            response = client.post("/api/train/heating_demand")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert "training_data" in data
+            assert data["training_data"]["dhw_temp"]["first"] == 45.0
+            assert data["training_data"]["dhw_temp"]["last"] == 50.0
+            assert data["training_data"]["hp_kwh_total"]["first"] == 1000.0
+            assert data["training_data"]["hp_kwh_total"]["last"] == 1500.0
+
+    def test_train_returns_null_training_data_when_not_available(self, client):
+        """Training returns null for training_data when sensor data not available."""
+        mock_df = pd.DataFrame({
+            "outdoor_temp": [10.0, 11.0],
+            "target_heating_kwh_1h": [1.0, 1.5],
+        })
+        mock_stats = FeatureDatasetStats(
+            total_slots=100,
+            valid_slots=80,
+            dropped_missing_features=10,
+            dropped_missing_target=5,
+            dropped_insufficient_history=5,
+            features_used=["outdoor_temp", "wind"],
+            has_7d_features=False,
+            dhw_temp_range=None,
+            hp_kwh_total_range=None,
+        )
+        mock_model = MagicMock()
+        mock_metrics = MagicMock()
+        mock_metrics.train_samples = 60
+        mock_metrics.val_samples = 20
+        mock_metrics.train_mae = 0.1
+        mock_metrics.val_mae = 0.15
+        mock_metrics.val_mape = 0.05
+        mock_metrics.val_r2 = 0.85
+        mock_metrics.features = ["outdoor_temp", "wind"]
+
+        with patch("app.build_heating_feature_dataset") as mock_build, \
+             patch("app.train_heating_demand_model") as mock_train:
+            mock_build.return_value = (mock_df, mock_stats)
+            mock_train.return_value = (mock_model, mock_metrics)
+
+            response = client.post("/api/train/heating_demand")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert "training_data" in data
+            assert data["training_data"]["dhw_temp"] is None
+            assert data["training_data"]["hp_kwh_total"] is None
+
 
 class TestPredictHeatingDemandProfileEndpoint:
     """Test the /api/predictions/heating_demand_profile POST endpoint."""

@@ -1225,11 +1225,26 @@ def get_historical_day_example(date_str: str):
             }), 404
         
         # Build scenario format (convert to future timestamps for prediction)
-        # Note: timestamps remain historical for comparison purposes
+        # Timestamps are adjusted to be 2 days after today (day after tomorrow)
+        # while keeping the same hour of day
+        today = datetime.now().date()
+        prediction_date = today + timedelta(days=2)
+        
         scenario_timeslots = []
         for hour in data:
+            # Parse the original timestamp to extract the hour
+            original_ts = datetime.fromisoformat(hour["timestamp"])
+            # Create new timestamp with prediction date but same hour
+            prediction_ts = datetime(
+                year=prediction_date.year,
+                month=prediction_date.month,
+                day=prediction_date.day,
+                hour=original_ts.hour,
+                minute=original_ts.minute,
+                second=original_ts.second
+            )
             slot = {
-                "timestamp": hour["timestamp"],
+                "timestamp": prediction_ts.isoformat(),
             }
             # Add required fields
             if "outdoor_temperature" in hour:

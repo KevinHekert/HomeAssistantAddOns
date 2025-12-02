@@ -112,6 +112,11 @@ class FeatureDatasetStats:
     data_start_time: Optional[datetime] = None
     data_end_time: Optional[datetime] = None
     available_history_hours: Optional[float] = None
+    # All sensor category ranges (key: category name, value: TrainingDataRange)
+    sensor_ranges: dict[str, TrainingDataRange] = field(default_factory=dict)
+    # hp_kwh_delta shows the energy consumed during the training period (not raw cumulative values)
+    hp_kwh_delta: Optional[float] = None
+    # Legacy fields for backward compatibility (deprecated, use sensor_ranges instead)
     dhw_temp_range: Optional[TrainingDataRange] = None
     hp_kwh_total_range: Optional[TrainingDataRange] = None
 
@@ -715,21 +720,33 @@ def build_heating_feature_dataset(
                 data_end,
             )
             
-            # Capture training data range for key sensors
+            # Capture training data range for all sensor categories
+            for category in pivot_df.columns:
+                category_values = pivot_df[category].dropna()
+                if not category_values.empty:
+                    stats.sensor_ranges[category] = TrainingDataRange(
+                        first=float(category_values.iloc[0]),
+                        last=float(category_values.iloc[-1]),
+                    )
+            
+            # For hp_kwh_total, compute the delta (energy consumed during training period)
+            if "hp_kwh_total" in pivot_df.columns:
+                hp_values = pivot_df["hp_kwh_total"].dropna()
+                if not hp_values.empty:
+                    stats.hp_kwh_delta = float(hp_values.iloc[-1]) - float(hp_values.iloc[0])
+                    # Also set legacy fields for backward compatibility
+                    stats.hp_kwh_total_range = TrainingDataRange(
+                        first=float(hp_values.iloc[0]),
+                        last=float(hp_values.iloc[-1]),
+                    )
+            
+            # Set legacy dhw_temp_range for backward compatibility
             if "dhw_temp" in pivot_df.columns:
                 dhw_values = pivot_df["dhw_temp"].dropna()
                 if not dhw_values.empty:
                     stats.dhw_temp_range = TrainingDataRange(
                         first=float(dhw_values.iloc[0]),
                         last=float(dhw_values.iloc[-1]),
-                    )
-            
-            if "hp_kwh_total" in pivot_df.columns:
-                hp_values = pivot_df["hp_kwh_total"].dropna()
-                if not hp_values.empty:
-                    stats.hp_kwh_total_range = TrainingDataRange(
-                        first=float(hp_values.iloc[0]),
-                        last=float(hp_values.iloc[-1]),
                     )
             
             # Step 3: Compute historical aggregations

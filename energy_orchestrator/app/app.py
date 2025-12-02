@@ -19,6 +19,7 @@ from ml.heating_features import (
     get_historical_day_hourly_data,
     SIMPLIFIED_REQUIRED_FIELDS,
     SIMPLIFIED_OPTIONAL_FIELDS,
+    FeatureDatasetStats,
 )
 from ml.heating_demand_model import (
     HeatingDemandModel,
@@ -147,6 +148,49 @@ def get_sample_rate():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# Sensor units mapping for display in UI
+SENSOR_UNITS = {
+    "outdoor_temp": "°C",
+    "indoor_temp": "°C",
+    "target_temp": "°C",
+    "dhw_temp": "°C",
+    "flow_temp": "°C",
+    "return_temp": "°C",
+    "wind": "m/s",
+    "humidity": "%",
+    "pressure": "hPa",
+    "hp_kwh_total": "kWh",
+    "dhw_active": "",
+}
+
+
+def _build_training_data_response(stats: FeatureDatasetStats) -> dict:
+    """
+    Build the training_data response with all sensor categories.
+    
+    For hp_kwh_total, shows the delta (energy consumed) instead of raw cumulative values.
+    """
+    training_data = {}
+    
+    for category, range_data in stats.sensor_ranges.items():
+        if category == "hp_kwh_total":
+            # Show delta instead of first/last cumulative values
+            training_data[category] = {
+                "delta": stats.hp_kwh_delta,
+                "first": range_data.first,
+                "last": range_data.last,
+                "unit": SENSOR_UNITS.get(category, ""),
+            }
+        else:
+            training_data[category] = {
+                "first": range_data.first,
+                "last": range_data.last,
+                "unit": SENSOR_UNITS.get(category, ""),
+            }
+    
+    return training_data
+
+
 @app.post("/api/train/heating_demand")
 def train_heating_demand():
     """Train the heating demand prediction model."""
@@ -194,16 +238,7 @@ def train_heating_demand():
                 "data_end_time": stats.data_end_time.isoformat() if stats.data_end_time else None,
                 "available_history_hours": round(stats.available_history_hours, 1) if stats.available_history_hours else None,
             },
-            "training_data": {
-                "dhw_temp": {
-                    "first": stats.dhw_temp_range.first if stats.dhw_temp_range else None,
-                    "last": stats.dhw_temp_range.last if stats.dhw_temp_range else None,
-                } if stats.dhw_temp_range else None,
-                "hp_kwh_total": {
-                    "first": stats.hp_kwh_total_range.first if stats.hp_kwh_total_range else None,
-                    "last": stats.hp_kwh_total_range.last if stats.hp_kwh_total_range else None,
-                } if stats.hp_kwh_total_range else None,
-            },
+            "training_data": _build_training_data_response(stats),
         })
         
     except Exception as e:

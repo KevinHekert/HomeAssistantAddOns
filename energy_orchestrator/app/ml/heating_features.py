@@ -715,6 +715,23 @@ def build_heating_feature_dataset(
                 data_end,
             )
             
+            # Capture training data range for key sensors
+            if "dhw_temp" in pivot_df.columns:
+                dhw_values = pivot_df["dhw_temp"].dropna()
+                if not dhw_values.empty:
+                    stats.dhw_temp_range = TrainingDataRange(
+                        first=float(dhw_values.iloc[0]),
+                        last=float(dhw_values.iloc[-1]),
+                    )
+            
+            if "hp_kwh_total" in pivot_df.columns:
+                hp_values = pivot_df["hp_kwh_total"].dropna()
+                if not hp_values.empty:
+                    stats.hp_kwh_total_range = TrainingDataRange(
+                        first=float(hp_values.iloc[0]),
+                        last=float(hp_values.iloc[-1]),
+                    )
+            
             # Step 3: Compute historical aggregations
             df = _compute_historical_aggregations(pivot_df, available_hours)
             

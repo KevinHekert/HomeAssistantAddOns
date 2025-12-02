@@ -245,3 +245,98 @@ def test_sensor_cards_display_names(client):
             assert "7D" in display_name.upper()
         
         print(f"  {name} -> {display_name}")
+
+
+def test_virtual_sensor_with_stats_shows_base_feature(client):
+    """
+    Test that virtual sensors with enabled stats show the base feature plus stat features.
+    
+    This validates the fix for the bug where selecting 1 sensor with 4 features
+    resulted in 4 cards instead of 1 card with 5 options.
+    
+    When a virtual sensor has time-based statistics enabled, it should show:
+    1. The base sensor feature (current value)
+    2. All enabled time-based statistics (avg_1h, avg_6h, etc.)
+    
+    Total: 1 card with (1 base + N stats) features
+    """
+    from db.virtual_sensors import get_virtual_sensors_config, VirtualSensorDefinition, VirtualSensorOperation
+    
+    # Create a virtual sensor
+    virtual_sensors_conf = get_virtual_sensors_config()
+    test_sensor = VirtualSensorDefinition(
+        name="setpoint_delta",
+        display_name="Setpoint Delta",
+        description="Difference between target and indoor temperature",
+        source_sensor1="target_temp",
+        source_sensor2="indoor_temp",
+        operation=VirtualSensorOperation.SUBTRACT,
+        unit="°C",
+        enabled=True,
+    )
+    virtual_sensors_conf.add_sensor(test_sensor)
+    virtual_sensors_conf.save()
+    
+    # Enable some statistics for the virtual sensor
+    feature_stats_conf = get_feature_stats_config()
+    feature_stats_conf.set_stat_enabled("setpoint_delta", StatType.AVG_1H, True)
+    feature_stats_conf.set_stat_enabled("setpoint_delta", StatType.AVG_6H, True)
+    feature_stats_conf.set_stat_enabled("setpoint_delta", StatType.AVG_24H, True)
+    feature_stats_conf.set_stat_enabled("setpoint_delta", StatType.AVG_7D, True)
+    feature_stats_conf.save()
+    
+    # Get sensor cards
+    response = client.get("/api/features/sensor_cards")
+    assert response.status_code == 200
+    
+    data = response.get_json()
+    assert data["status"] == "success"
+    assert "sensor_cards" in data
+    
+    # Find the setpoint_delta card
+    setpoint_card = None
+    for card in data["sensor_cards"]:
+        if card["sensor_name"] == "setpoint_delta":
+            setpoint_card = card
+            break
+    
+    assert setpoint_card is not None, "Setpoint Delta sensor card not found"
+    
+    # Check that we have exactly 1 card for this sensor
+    setpoint_cards = [c for c in data["sensor_cards"] if c["sensor_name"] == "setpoint_delta"]
+    assert len(setpoint_cards) == 1, f"Should have exactly 1 card for setpoint_delta, found {len(setpoint_cards)}"
+    
+    # Check that the card has features
+    features = setpoint_card["features"]
+    assert len(features) == 5, f"Setpoint_delta card should have 5 features (1 base + 4 stats), found {len(features)}"
+    
+    # Check that we have the base setpoint_delta feature
+    feature_names = [f["name"] for f in features]
+    assert "setpoint_delta" in feature_names, "Base setpoint_delta feature should be present"
+    
+    # Check that we have the configured time-based statistics
+    assert "setpoint_delta_avg_1h" in feature_names, "setpoint_delta_avg_1h should be present"
+    assert "setpoint_delta_avg_6h" in feature_names, "setpoint_delta_avg_6h should be present"
+    assert "setpoint_delta_avg_24h" in feature_names, "setpoint_delta_avg_24h should be present"
+    assert "setpoint_delta_avg_7d" in feature_names, "setpoint_delta_avg_7d should be present"
+    
+    # Verify that each feature has the required fields
+    for feature in features:
+        assert "name" in feature
+        assert "display_name" in feature
+        assert "description" in feature
+        assert "unit" in feature
+        assert "time_window" in feature
+        assert "is_core" in feature
+        assert "enabled" in feature
+    
+    # Check that the base feature has "Current Value" as display name
+    base_feature = next((f for f in features if f["name"] == "setpoint_delta"), None)
+    assert base_feature is not None, "Base feature should exist"
+    assert base_feature["display_name"] == "Current Value", "Base feature should have 'Current Value' as display name"
+    
+    print(f"✓ Setpoint Delta card has {len(features)} features: {feature_names}")
+    
+    # Cleanup
+    virtual_sensors_conf.remove_sensor("setpoint_delta")
+    virtual_sensors_conf.save()

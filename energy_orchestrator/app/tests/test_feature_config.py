@@ -455,3 +455,101 @@ class TestFeatureCategories:
         control = {f.name for f in grouped["control"]}
         
         assert "delta_target_indoor" in control
+
+
+class TestFeatureVerification:
+    """Test feature verification functions."""
+    
+    def test_categorize_features_raw(self):
+        """Raw sensor features are correctly categorized."""
+        from ml.feature_config import categorize_features, RAW_SENSOR_FEATURES
+        
+        raw_features = list(RAW_SENSOR_FEATURES)
+        result = categorize_features(raw_features)
+        
+        assert len(result["raw_sensor_features"]) == len(raw_features)
+        assert len(result["calculated_features"]) == 0
+    
+    def test_categorize_features_calculated(self):
+        """Calculated features are correctly categorized."""
+        from ml.feature_config import categorize_features
+        
+        calculated = ["outdoor_temp_avg_24h", "heating_kwh_last_6h", "delta_target_indoor"]
+        result = categorize_features(calculated)
+        
+        assert len(result["raw_sensor_features"]) == 0
+        assert len(result["calculated_features"]) == 3
+    
+    def test_categorize_features_mixed(self):
+        """Mixed features are correctly categorized."""
+        from ml.feature_config import categorize_features
+        
+        mixed = ["outdoor_temp", "indoor_temp", "outdoor_temp_avg_24h", "hour_of_day"]
+        result = categorize_features(mixed)
+        
+        assert "outdoor_temp" in result["raw_sensor_features"]
+        assert "indoor_temp" in result["raw_sensor_features"]
+        assert "outdoor_temp_avg_24h" in result["calculated_features"]
+        assert "hour_of_day" in result["calculated_features"]
+    
+    def test_get_feature_details(self):
+        """Feature details include metadata."""
+        from ml.feature_config import get_feature_details
+        
+        features = ["outdoor_temp", "heating_kwh_last_6h"]
+        details = get_feature_details(features)
+        
+        assert len(details) == 2
+        
+        # Check outdoor_temp details
+        outdoor = details[0]
+        assert outdoor["name"] == "outdoor_temp"
+        assert outdoor["category"] == "weather"
+        assert outdoor["is_core"] is True
+        assert outdoor["is_calculated"] is False
+        
+        # Check heating_kwh_last_6h details
+        heating = details[1]
+        assert heating["name"] == "heating_kwh_last_6h"
+        assert heating["category"] == "usage"
+        assert heating["is_core"] is True
+        assert heating["is_calculated"] is True
+    
+    def test_verify_model_features_all_present(self):
+        """Feature verification passes when all features are present."""
+        from ml.feature_config import verify_model_features
+        
+        model_features = ["outdoor_temp", "wind", "humidity"]
+        dataset_features = ["outdoor_temp", "wind", "humidity", "extra_feature"]
+        
+        result = verify_model_features(model_features, dataset_features)
+        
+        assert result["verified"] is True
+        assert result["feature_count"] == 3
+        assert set(result["verified_features"]) == {"outdoor_temp", "wind", "humidity"}
+        assert len(result["missing_in_dataset"]) == 0
+    
+    def test_verify_model_features_missing(self):
+        """Feature verification fails when features are missing."""
+        from ml.feature_config import verify_model_features
+        
+        model_features = ["outdoor_temp", "wind", "humidity"]
+        dataset_features = ["outdoor_temp", "wind"]  # missing humidity
+        
+        result = verify_model_features(model_features, dataset_features)
+        
+        assert result["verified"] is False
+        assert "humidity" in result["missing_in_dataset"]
+    
+    def test_verify_model_features_unused(self):
+        """Unused features in dataset are reported."""
+        from ml.feature_config import verify_model_features
+        
+        model_features = ["outdoor_temp"]
+        dataset_features = ["outdoor_temp", "wind", "humidity"]
+        
+        result = verify_model_features(model_features, dataset_features)
+        
+        assert result["verified"] is True
+        assert "wind" in result["unused_in_model"]
+        assert "humidity" in result["unused_in_model"]

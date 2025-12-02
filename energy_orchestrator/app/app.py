@@ -66,6 +66,9 @@ from ml.feature_config import (
     get_feature_metadata_dict,
     get_core_feature_count,
     FeatureCategory,
+    categorize_features,
+    get_feature_details,
+    verify_model_features,
 )
 
 
@@ -480,6 +483,18 @@ def train_heating_demand():
         model, metrics = train_heating_demand_model(df)
         _heating_model = model
         
+        # Verify features are actually used
+        feature_verification = verify_model_features(
+            model_feature_names=metrics.features,
+            dataset_feature_names=stats.features_used,
+        )
+        
+        # Categorize features as raw vs calculated
+        feature_categories = categorize_features(metrics.features)
+        
+        # Get detailed feature info
+        feature_details = get_feature_details(metrics.features)
+        
         return jsonify({
             "status": "success",
             "message": "Model trained successfully",
@@ -492,6 +507,15 @@ def train_heating_demand():
                 "val_r2": round(metrics.val_r2, 4),
                 "features": metrics.features,
             },
+            "feature_verification": {
+                "verified": feature_verification["verified"],
+                "feature_count": feature_verification["feature_count"],
+                "verified_features": feature_verification["verified_features"],
+                "missing_in_dataset": feature_verification["missing_in_dataset"],
+                "message": "All features verified as used in training" if feature_verification["verified"] else "Some features are missing from dataset",
+            },
+            "feature_categories": feature_categories,
+            "feature_details": feature_details,
             "dataset_stats": {
                 "total_slots": stats.total_slots,
                 "valid_slots": stats.valid_slots,
@@ -1737,6 +1761,18 @@ def train_two_step_heating_demand():
         model, metrics = train_two_step_heating_demand_model(df)
         _two_step_model = model
         
+        # Verify features are actually used
+        feature_verification = verify_model_features(
+            model_feature_names=metrics.features,
+            dataset_feature_names=stats.features_used,
+        )
+        
+        # Categorize features as raw vs calculated
+        feature_categories = categorize_features(metrics.features)
+        
+        # Get detailed feature info
+        feature_details = get_feature_details(metrics.features)
+        
         return jsonify({
             "status": "success",
             "message": "Two-step model trained successfully",
@@ -1745,20 +1781,44 @@ def train_two_step_heating_demand():
                 "active_samples": metrics.active_samples,
                 "inactive_samples": metrics.inactive_samples,
             },
-            "classifier_metrics": {
-                "accuracy": round(metrics.classifier_accuracy, 4),
-                "precision": round(metrics.classifier_precision, 4),
-                "recall": round(metrics.classifier_recall, 4),
-                "f1": round(metrics.classifier_f1, 4),
+            "step1_classifier": {
+                "description": metrics.classifier_description,
+                "purpose": "Predicts whether heating will be active (on) or inactive (off) for each hour",
+                "features_used": metrics.features,
+                "feature_count": len(metrics.features),
+                "training_samples": metrics.active_samples + metrics.inactive_samples,
+                "metrics": {
+                    "accuracy": round(metrics.classifier_accuracy, 4),
+                    "precision": round(metrics.classifier_precision, 4),
+                    "recall": round(metrics.classifier_recall, 4),
+                    "f1": round(metrics.classifier_f1, 4),
+                },
             },
-            "regressor_metrics": {
-                "train_samples": metrics.regressor_train_samples,
-                "val_samples": metrics.regressor_val_samples,
-                "train_mae_kwh": round(metrics.regressor_train_mae, 4),
-                "val_mae_kwh": round(metrics.regressor_val_mae, 4),
-                "val_mape_pct": round(metrics.regressor_val_mape * 100, 2) if metrics.regressor_val_mape == metrics.regressor_val_mape else None,
-                "val_r2": round(metrics.regressor_val_r2, 4),
+            "step2_regressor": {
+                "description": metrics.regressor_description,
+                "purpose": "Predicts kWh consumption for active hours only (inactive hours automatically return 0 kWh)",
+                "features_used": metrics.features,
+                "feature_count": len(metrics.features),
+                "training_samples": metrics.regressor_train_samples,
+                "note": "Only trained on active samples (samples above activity threshold)",
+                "metrics": {
+                    "train_samples": metrics.regressor_train_samples,
+                    "val_samples": metrics.regressor_val_samples,
+                    "train_mae_kwh": round(metrics.regressor_train_mae, 4),
+                    "val_mae_kwh": round(metrics.regressor_val_mae, 4),
+                    "val_mape_pct": round(metrics.regressor_val_mape * 100, 2) if metrics.regressor_val_mape == metrics.regressor_val_mape else None,
+                    "val_r2": round(metrics.regressor_val_r2, 4),
+                },
             },
+            "feature_verification": {
+                "verified": feature_verification["verified"],
+                "feature_count": feature_verification["feature_count"],
+                "verified_features": feature_verification["verified_features"],
+                "missing_in_dataset": feature_verification["missing_in_dataset"],
+                "message": "All features verified as used in both steps" if feature_verification["verified"] else "Some features are missing from dataset",
+            },
+            "feature_categories": feature_categories,
+            "feature_details": feature_details,
             "dataset_stats": {
                 "total_slots": stats.total_slots,
                 "valid_slots": stats.valid_slots,

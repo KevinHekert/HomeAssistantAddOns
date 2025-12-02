@@ -1643,3 +1643,107 @@ class TestScenarioPredictionWithTwoStep:
             data = response.get_json()
             assert data["status"] == "error"
             assert "Model not trained" in data["message"]
+
+
+class TestTrainTwoStepHeatingDemandEndpoint:
+    """Test the /api/train/two_step_heating_demand POST endpoint."""
+
+    def test_train_two_step_success(self, client):
+        """Successful two-step training returns 200 with classifier and regressor metrics."""
+        mock_df = pd.DataFrame({
+            "outdoor_temp": [10.0, 11.0],
+            "target_heating_kwh_1h": [1.0, 1.5],
+        })
+        mock_stats = FeatureDatasetStats(
+            total_slots=100,
+            valid_slots=80,
+            dropped_missing_features=10,
+            dropped_missing_target=5,
+            dropped_insufficient_history=5,
+            features_used=["outdoor_temp", "wind"],
+            has_7d_features=False,
+        )
+        mock_model = MagicMock()
+        mock_model.is_available = True
+        mock_metrics = MagicMock()
+        mock_metrics.computed_threshold_kwh = 0.05
+        mock_metrics.active_samples = 250
+        mock_metrics.inactive_samples = 50
+        mock_metrics.classifier_accuracy = 0.92
+        mock_metrics.classifier_precision = 0.88
+        mock_metrics.classifier_recall = 0.95
+        mock_metrics.classifier_f1 = 0.91
+        mock_metrics.classifier_description = "Predicts active/inactive"
+        mock_metrics.regressor_train_samples = 200
+        mock_metrics.regressor_val_samples = 50
+        mock_metrics.regressor_train_mae = 0.15
+        mock_metrics.regressor_val_mae = 0.18
+        mock_metrics.regressor_val_mape = 0.125
+        mock_metrics.regressor_val_r2 = 0.85
+        mock_metrics.regressor_description = "Predicts kWh for active hours"
+        mock_metrics.features = ["outdoor_temp", "wind"]
+
+        with patch("app.build_heating_feature_dataset") as mock_build, \
+             patch("app.train_two_step_heating_demand_model") as mock_train:
+            mock_build.return_value = (mock_df, mock_stats)
+            mock_train.return_value = (mock_model, mock_metrics)
+
+            response = client.post("/api/train/two_step_heating_demand")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            
+            # Verify threshold info is present
+            assert "threshold" in data
+            assert data["threshold"]["computed_threshold_kwh"] == 0.05
+            assert data["threshold"]["active_samples"] == 250
+            assert data["threshold"]["inactive_samples"] == 50
+            
+            # Verify top-level classifier_metrics for UI compatibility
+            assert "classifier_metrics" in data
+            assert data["classifier_metrics"]["accuracy"] == 0.92
+            assert data["classifier_metrics"]["precision"] == 0.88
+            assert data["classifier_metrics"]["recall"] == 0.95
+            assert data["classifier_metrics"]["f1"] == 0.91
+            
+            # Verify top-level regressor_metrics for UI compatibility
+            assert "regressor_metrics" in data
+            assert data["regressor_metrics"]["train_samples"] == 200
+            assert data["regressor_metrics"]["val_samples"] == 50
+            assert data["regressor_metrics"]["train_mae_kwh"] == 0.15
+            assert data["regressor_metrics"]["val_mae_kwh"] == 0.18
+            assert data["regressor_metrics"]["val_mape_pct"] == 12.5
+            assert data["regressor_metrics"]["val_r2"] == 0.85
+            
+            # Verify detailed step1_classifier info
+            assert "step1_classifier" in data
+            assert data["step1_classifier"]["description"] == "Predicts active/inactive"
+            assert data["step1_classifier"]["metrics"]["accuracy"] == 0.92
+            
+            # Verify detailed step2_regressor info
+            assert "step2_regressor" in data
+            assert data["step2_regressor"]["description"] == "Predicts kWh for active hours"
+            assert data["step2_regressor"]["metrics"]["train_mae_kwh"] == 0.15
+
+    def test_train_two_step_insufficient_data(self, client):
+        """Two-step training with insufficient data returns 400."""
+        mock_stats = FeatureDatasetStats(
+            total_slots=30,
+            valid_slots=10,
+            dropped_missing_features=10,
+            dropped_missing_target=5,
+            dropped_insufficient_history=5,
+            features_used=[],
+            has_7d_features=False,
+        )
+
+        with patch("app.build_heating_feature_dataset") as mock_build:
+            mock_build.return_value = (None, mock_stats)
+
+            response = client.post("/api/train/two_step_heating_demand")
+
+            assert response.status_code == 400
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "Insufficient data" in data["message"]

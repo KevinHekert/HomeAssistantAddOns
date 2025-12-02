@@ -2,6 +2,15 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.72] - 2025-12-02
+
+- **Fixed Two-Step Model Training Feedback**: The two-step model training API response now includes top-level `classifier_metrics` and `regressor_metrics` fields for UI compatibility
+  - Previously, metrics were only available under `step1_classifier.metrics` and `step2_regressor.metrics`, causing the UI to display "N/A" for all metric values
+  - The UI now correctly displays: Accuracy, Precision, Recall, F1 Score for the classifier
+  - The UI now correctly displays: Training samples, Validation samples, Train MAE, Val MAE, Val MAPE, Val R² for the regressor
+  - The detailed `step1_classifier` and `step2_regressor` objects remain available for advanced API consumers
+- **Tests**: Added 2 new tests for the two-step training endpoint API response structure
+
 ## [0.0.0.71] - 2025-12-02
 
 - **Feature Verification for Training Models**: Added verification that features displayed are actually used during training

@@ -1766,6 +1766,21 @@ def train_two_step_heating_demand():
                 "active_samples": metrics.active_samples,
                 "inactive_samples": metrics.inactive_samples,
             },
+            # Top-level metrics for UI compatibility
+            "classifier_metrics": {
+                "accuracy": round(metrics.classifier_accuracy, 4),
+                "precision": round(metrics.classifier_precision, 4),
+                "recall": round(metrics.classifier_recall, 4),
+                "f1": round(metrics.classifier_f1, 4),
+            },
+            "regressor_metrics": {
+                "train_samples": metrics.regressor_train_samples,
+                "val_samples": metrics.regressor_val_samples,
+                "train_mae_kwh": round(metrics.regressor_train_mae, 4),
+                "val_mae_kwh": round(metrics.regressor_val_mae, 4),
+                "val_mape_pct": round(metrics.regressor_val_mape * 100, 2) if metrics.regressor_val_mape == metrics.regressor_val_mape else None,
+                "val_r2": round(metrics.regressor_val_r2, 4),
+            },
             "step1_classifier": {
                 "description": metrics.classifier_description,
                 "purpose": "Predicts whether heating will be active (on) or inactive (off) for each hour",

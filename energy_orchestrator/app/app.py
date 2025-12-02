@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from flask import Flask, render_template, jsonify, request
+from sqlalchemy.orm import Session
 import pandas as pd
 from ha.ha_api import get_entity_state
 from ha.weather_api import (
@@ -13,7 +14,8 @@ from ha.weather_api import (
 )
 from workers import start_sensor_logging_worker
 from db.resample import resample_all_categories, get_sample_rate_minutes, set_sample_rate_minutes, VALID_SAMPLE_RATES, flush_resampled_samples
-from db.core import init_db_schema
+from db.core import init_db_schema, engine
+from db import ResampledSample, FeatureStatistic
 from db.sensor_config import sync_sensor_mappings
 from db.samples import get_sensor_info
 from db.sync_config import (
@@ -281,6 +283,195 @@ def update_sample_rate():
             }), 500
     except Exception as e:
         _Logger.error("Error updating sample rate: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/resampled_data")
+def get_resampled_data():
+    """
+    Query resampled data with is_derived field information.
+    
+    Query parameters:
+    - category (optional): Filter by sensor category/name
+    - start_time (optional): ISO format datetime string
+    - end_time (optional): ISO format datetime string
+    - limit (optional): Maximum number of records (default: 100, max: 1000)
+    - is_derived (optional): Filter by is_derived flag (true/false)
+    
+    Response:
+    {
+        "status": "success",
+        "data": [
+            {
+                "slot_start": "2024-12-02T10:00:00",
+                "category": "outdoor_temp",
+                "value": 5.5,
+                "unit": "°C",
+                "is_derived": false
+            },
+            ...
+        ],
+        "count": 100,
+        "has_more": true
+    }
+    """
+    try:
+        # Parse query parameters
+        category = request.args.get('category')
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        limit = min(int(request.args.get('limit', 100)), 1000)
+        is_derived_str = request.args.get('is_derived')
+        
+        # Build query
+        with Session(engine) as session:
+            query = session.query(ResampledSample)
+            
+            if category:
+                query = query.filter(ResampledSample.category == category)
+            
+            if start_time:
+                start_dt = datetime.fromisoformat(start_time)
+                query = query.filter(ResampledSample.slot_start >= start_dt)
+            
+            if end_time:
+                end_dt = datetime.fromisoformat(end_time)
+                query = query.filter(ResampledSample.slot_start <= end_dt)
+            
+            if is_derived_str is not None:
+                is_derived = is_derived_str.lower() == 'true'
+                query = query.filter(ResampledSample.is_derived == is_derived)
+            
+            # Order by slot_start descending (most recent first)
+            query = query.order_by(ResampledSample.slot_start.desc())
+            
+            # Get one more than limit to check if there are more
+            results = query.limit(limit + 1).all()
+            
+            has_more = len(results) > limit
+            if has_more:
+                results = results[:limit]
+            
+            # Convert to dict
+            data = [
+                {
+                    "slot_start": r.slot_start.isoformat(),
+                    "category": r.category,
+                    "value": r.value,
+                    "unit": r.unit,
+                    "is_derived": r.is_derived,
+                }
+                for r in results
+            ]
+            
+            return jsonify({
+                "status": "success",
+                "data": data,
+                "count": len(data),
+                "has_more": has_more,
+            })
+    except ValueError as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Invalid parameter: {str(e)}",
+        }), 400
+    except Exception as e:
+        _Logger.error("Error querying resampled data: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/feature_statistics")
+def get_feature_statistics_data():
+    """
+    Query feature statistics (time-span averages) from the feature_statistics table.
+    
+    Query parameters:
+    - sensor_name (optional): Filter by sensor name
+    - stat_type (optional): Filter by statistic type (avg_1h, avg_6h, avg_24h, avg_7d)
+    - start_time (optional): ISO format datetime string
+    - end_time (optional): ISO format datetime string
+    - limit (optional): Maximum number of records (default: 100, max: 1000)
+    
+    Response:
+    {
+        "status": "success",
+        "data": [
+            {
+                "slot_start": "2024-12-02T10:00:00",
+                "sensor_name": "outdoor_temp",
+                "stat_type": "avg_1h",
+                "value": 5.5,
+                "unit": "°C",
+                "source_sample_count": 12
+            },
+            ...
+        ],
+        "count": 100,
+        "has_more": true
+    }
+    """
+    try:
+        # Parse query parameters
+        sensor_name = request.args.get('sensor_name')
+        stat_type = request.args.get('stat_type')
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        limit = min(int(request.args.get('limit', 100)), 1000)
+        
+        # Build query
+        with Session(engine) as session:
+            query = session.query(FeatureStatistic)
+            
+            if sensor_name:
+                query = query.filter(FeatureStatistic.sensor_name == sensor_name)
+            
+            if stat_type:
+                query = query.filter(FeatureStatistic.stat_type == stat_type)
+            
+            if start_time:
+                start_dt = datetime.fromisoformat(start_time)
+                query = query.filter(FeatureStatistic.slot_start >= start_dt)
+            
+            if end_time:
+                end_dt = datetime.fromisoformat(end_time)
+                query = query.filter(FeatureStatistic.slot_start <= end_dt)
+            
+            # Order by slot_start descending (most recent first)
+            query = query.order_by(FeatureStatistic.slot_start.desc())
+            
+            # Get one more than limit to check if there are more
+            results = query.limit(limit + 1).all()
+            
+            has_more = len(results) > limit
+            if has_more:
+                results = results[:limit]
+            
+            # Convert to dict
+            data = [
+                {
+                    "slot_start": r.slot_start.isoformat(),
+                    "sensor_name": r.sensor_name,
+                    "stat_type": r.stat_type,
+                    "value": r.value,
+                    "unit": r.unit,
+                    "source_sample_count": r.source_sample_count,
+                }
+                for r in results
+            ]
+            
+            return jsonify({
+                "status": "success",
+                "data": data,
+                "count": len(data),
+                "has_more": has_more,
+            })
+    except ValueError as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Invalid parameter: {str(e)}",
+        }), 400
+    except Exception as e:
+        _Logger.error("Error querying feature statistics: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

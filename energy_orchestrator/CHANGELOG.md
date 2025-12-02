@@ -2,6 +2,30 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.66] - 2025-12-02
+
+- **Sync Configuration UI**: Added UI controls to configure sensor sync settings
+  - New "Sync Configuration" card in the Configuration tab
+  - Backfill Days: How many days to look back when no samples exist (1-365, default: 14)
+  - Sync Window Size: Size of each sync window in days (1-30, default: 1)
+  - Sensor Sync Interval: Wait time in seconds between syncing sensors (1-3600, default: 1)
+  - Loop Interval: Wait time in seconds between sync loop iterations (1-3600, default: 1)
+  - Configuration is persisted to `/data/sync_config.json`
+- **Two-Step Prediction Toggle in UI**: Added checkbox in Feature Configuration to enable/disable two-step prediction
+  - Visual toggle with description of the two-step approach
+  - Status is loaded on page load
+- **New API Endpoints**:
+  - `GET /api/sync_config`: Get current sync configuration with limits
+  - `POST /api/sync_config`: Update sync configuration (partial updates supported)
+- **New Module**: `db/sync_config.py` for persistent sync configuration storage
+  - `SyncConfig` dataclass with all sync settings
+  - `get_sync_config()`, `set_sync_config()` for full configuration access
+  - Individual getters: `get_backfill_days()`, `get_sync_window_days()`, `get_sensor_sync_interval()`, `get_sensor_loop_interval()`
+- **Code Changes**:
+  - `ha_api.py`: Now uses `get_backfill_days()` and `get_sync_window_days()` from sync_config module
+  - `sensors.py`: Now uses `get_sensor_sync_interval()` and `get_sensor_loop_interval()` from sync_config module
+- **Tests**: Added 23 new tests for sync configuration module
+
 ## [0.0.0.65] - 2025-12-02
 
 - **Removed UI Sections**: Removed the following UI sections from the Model Training tab:

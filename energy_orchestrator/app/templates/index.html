@@ -787,26 +787,37 @@
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = message;
                     
-                    // Display training data table
-                    if (trainingData && (trainingData.dhw_temp || trainingData.hp_kwh_total)) {
+                    // Display training data table with all sensor categories
+                    if (trainingData && Object.keys(trainingData).length > 0) {
+                        // Helper function to check if a value is a valid number
+                        const isValidNumber = (val) => val !== null && val !== undefined && !isNaN(val);
+                        
                         let tableHtml = '<h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">📊 Training Data Range</h4>';
                         tableHtml += '<table class="training-data-table">';
-                        tableHtml += '<thead><tr><th>Sensor</th><th>First Value</th><th>Last Value</th></tr></thead>';
+                        tableHtml += '<thead><tr><th>Sensor</th><th>First Value</th><th>Last Value</th><th>Delta</th></tr></thead>';
                         tableHtml += '<tbody>';
                         
-                        if (trainingData.dhw_temp) {
-                            tableHtml += '<tr>';
-                            tableHtml += '<td><strong>dhw_temp</strong></td>';
-                            tableHtml += '<td>' + (trainingData.dhw_temp.first !== null ? trainingData.dhw_temp.first.toFixed(2) + ' °C' : 'N/A') + '</td>';
-                            tableHtml += '<td>' + (trainingData.dhw_temp.last !== null ? trainingData.dhw_temp.last.toFixed(2) + ' °C' : 'N/A') + '</td>';
-                            tableHtml += '</tr>';
-                        }
+                        // Sort sensors for consistent display
+                        const sortedSensors = Object.keys(trainingData).sort();
                         
-                        if (trainingData.hp_kwh_total) {
+                        for (const sensor of sortedSensors) {
+                            const sensorData = trainingData[sensor];
+                            const unit = sensorData.unit || '';
+                            
                             tableHtml += '<tr>';
-                            tableHtml += '<td><strong>hp_kwh_total</strong></td>';
-                            tableHtml += '<td>' + (trainingData.hp_kwh_total.first !== null ? trainingData.hp_kwh_total.first.toFixed(2) + ' kWh' : 'N/A') + '</td>';
-                            tableHtml += '<td>' + (trainingData.hp_kwh_total.last !== null ? trainingData.hp_kwh_total.last.toFixed(2) + ' kWh' : 'N/A') + '</td>';
+                            tableHtml += '<td><strong>' + sensor + '</strong></td>';
+                            tableHtml += '<td>' + (isValidNumber(sensorData.first) ? sensorData.first.toFixed(2) + ' ' + unit : 'N/A') + '</td>';
+                            tableHtml += '<td>' + (isValidNumber(sensorData.last) ? sensorData.last.toFixed(2) + ' ' + unit : 'N/A') + '</td>';
+                            
+                            // Show delta for hp_kwh_total (the actual energy consumed during training)
+                            if (sensor === 'hp_kwh_total' && isValidNumber(sensorData.delta)) {
+                                tableHtml += '<td style="color: var(--accent-green); font-weight: bold;">' + sensorData.delta.toFixed(2) + ' ' + unit + '</td>';
+                            } else if (isValidNumber(sensorData.first) && isValidNumber(sensorData.last)) {
+                                const delta = sensorData.last - sensorData.first;
+                                tableHtml += '<td>' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ' ' + unit + '</td>';
+                            } else {
+                                tableHtml += '<td>N/A</td>';
+                            }
                             tableHtml += '</tr>';
                         }
                         

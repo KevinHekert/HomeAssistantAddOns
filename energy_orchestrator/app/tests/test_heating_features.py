@@ -1222,3 +1222,79 @@ class TestTrainingDataRange:
         data_range = TrainingDataRange(first=100.0)
         assert data_range.first == 100.0
         assert data_range.last is None
+
+
+class TestFeatureDatasetStatsSensorRanges:
+    """Test that FeatureDatasetStats tracks all sensor categories."""
+
+    def test_stats_include_all_sensor_ranges(self, patch_engine):
+        """Stats include ranges for all sensor categories."""
+        start = datetime(2024, 1, 1, 12, 0, 0)
+        
+        with Session(patch_engine) as session:
+            _create_resampled_samples(session, start, num_slots=200)
+        
+        df, stats = build_heating_feature_dataset(min_samples=50)
+        
+        assert df is not None
+        assert stats.sensor_ranges is not None
+        assert len(stats.sensor_ranges) > 0
+        
+        # Check that all expected categories are present
+        expected_categories = ["outdoor_temp", "wind", "humidity", "pressure", 
+                               "indoor_temp", "target_temp", "hp_kwh_total", "dhw_active"]
+        for category in expected_categories:
+            assert category in stats.sensor_ranges, f"Missing category: {category}"
+            assert stats.sensor_ranges[category].first is not None
+            assert stats.sensor_ranges[category].last is not None
+
+    def test_stats_include_hp_kwh_delta(self, patch_engine):
+        """Stats include hp_kwh_delta (energy consumed during training period)."""
+        start = datetime(2024, 1, 1, 12, 0, 0)
+        
+        with Session(patch_engine) as session:
+            _create_resampled_samples(session, start, num_slots=200)
+        
+        df, stats = build_heating_feature_dataset(min_samples=50)
+        
+        assert df is not None
+        assert stats.hp_kwh_delta is not None
+        
+        # hp_kwh_delta should be last - first
+        hp_range = stats.sensor_ranges.get("hp_kwh_total")
+        assert hp_range is not None
+        expected_delta = hp_range.last - hp_range.first
+        assert abs(stats.hp_kwh_delta - expected_delta) < 0.001
+
+    def test_stats_legacy_fields_still_work(self, patch_engine):
+        """Legacy fields (dhw_temp_range, hp_kwh_total_range) still work for backward compatibility."""
+        start = datetime(2024, 1, 1, 12, 0, 0)
+        
+        with Session(patch_engine) as session:
+            _create_resampled_samples(session, start, num_slots=200)
+        
+        df, stats = build_heating_feature_dataset(min_samples=50)
+        
+        assert df is not None
+        # Legacy fields should still be populated
+        assert stats.hp_kwh_total_range is not None
+        assert stats.hp_kwh_total_range.first is not None
+        assert stats.hp_kwh_total_range.last is not None
+
+    def test_sensor_ranges_values_are_correct(self, patch_engine):
+        """Sensor range values are correctly extracted from data."""
+        start = datetime(2024, 1, 1, 12, 0, 0)
+        
+        with Session(patch_engine) as session:
+            _create_resampled_samples(session, start, num_slots=200)
+        
+        df, stats = build_heating_feature_dataset(min_samples=50)
+        
+        assert df is not None
+        
+        # Check outdoor_temp range matches expected values from _create_resampled_samples
+        # outdoor_temp starts at 5.0 with increment 0.1 per slot
+        outdoor_range = stats.sensor_ranges.get("outdoor_temp")
+        assert outdoor_range is not None
+        assert outdoor_range.first == 5.0  # First slot value
+        assert abs(outdoor_range.last - (5.0 + 0.1 * 199)) < 0.001  # Last slot value

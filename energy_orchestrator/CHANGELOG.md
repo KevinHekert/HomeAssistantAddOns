@@ -2,6 +2,23 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.61] - 2025-12-02
+
+- **Improved Training Data Table**: Enhanced training data display with all sensor categories
+  - Now shows all sensor categories (outdoor_temp, wind, humidity, pressure, indoor_temp, target_temp, dhw_temp, hp_kwh_total, dhw_active) instead of just dhw_temp and hp_kwh_total
+  - For hp_kwh_total, displays the delta (energy consumed during training) instead of raw cumulative values
+  - Added Delta column showing the difference between first and last values for all sensors
+  - hp_kwh_delta is highlighted in green to emphasize the actual energy consumption
+  - Units are now displayed for each sensor value
+- **API Changes**:
+  - `/api/train/heating_demand` now returns `training_data` with all sensor categories
+  - Each sensor category includes `first`, `last`, and `unit` fields
+  - hp_kwh_total additionally includes `delta` field showing energy consumed during training
+  - Added `sensor_ranges` dict to `FeatureDatasetStats` for tracking all sensor categories
+  - Added `hp_kwh_delta` field to `FeatureDatasetStats` for energy consumption delta
+  - Legacy fields `dhw_temp_range` and `hp_kwh_total_range` maintained for backward compatibility
+- Added 4 new tests for sensor ranges and hp_kwh_delta functionality
+
 ## [0.0.0.60] - 2025-12-02
 
 - **Dark/Light Mode Toggle**: Added theme toggle button in header

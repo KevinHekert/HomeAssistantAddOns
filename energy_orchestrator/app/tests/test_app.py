@@ -164,7 +164,7 @@ class TestTrainHeatingDemandEndpoint:
             assert data["status"] == "error"
 
     def test_train_returns_training_data_range(self, client):
-        """Successful training returns training_data with dhw_temp and hp_kwh_total ranges."""
+        """Successful training returns training_data with all sensor categories including hp_kwh_delta."""
         mock_df = pd.DataFrame({
             "outdoor_temp": [10.0, 11.0],
             "target_heating_kwh_1h": [1.0, 1.5],
@@ -177,6 +177,12 @@ class TestTrainHeatingDemandEndpoint:
             dropped_insufficient_history=5,
             features_used=["outdoor_temp", "wind"],
             has_7d_features=False,
+            sensor_ranges={
+                "dhw_temp": TrainingDataRange(first=45.0, last=50.0),
+                "hp_kwh_total": TrainingDataRange(first=1000.0, last=1500.0),
+                "outdoor_temp": TrainingDataRange(first=5.0, last=10.0),
+            },
+            hp_kwh_delta=500.0,
             dhw_temp_range=TrainingDataRange(first=45.0, last=50.0),
             hp_kwh_total_range=TrainingDataRange(first=1000.0, last=1500.0),
         )
@@ -201,13 +207,21 @@ class TestTrainHeatingDemandEndpoint:
             data = response.get_json()
             assert data["status"] == "success"
             assert "training_data" in data
+            # Check all sensor categories are present
             assert data["training_data"]["dhw_temp"]["first"] == 45.0
             assert data["training_data"]["dhw_temp"]["last"] == 50.0
+            assert data["training_data"]["outdoor_temp"]["first"] == 5.0
+            assert data["training_data"]["outdoor_temp"]["last"] == 10.0
+            # Check hp_kwh_total includes delta
             assert data["training_data"]["hp_kwh_total"]["first"] == 1000.0
             assert data["training_data"]["hp_kwh_total"]["last"] == 1500.0
+            assert data["training_data"]["hp_kwh_total"]["delta"] == 500.0
+            # Check units are included
+            assert data["training_data"]["hp_kwh_total"]["unit"] == "kWh"
+            assert data["training_data"]["dhw_temp"]["unit"] == "°C"
 
-    def test_train_returns_null_training_data_when_not_available(self, client):
-        """Training returns null for training_data when sensor data not available."""
+    def test_train_returns_empty_training_data_when_not_available(self, client):
+        """Training returns empty training_data when no sensor data available."""
         mock_df = pd.DataFrame({
             "outdoor_temp": [10.0, 11.0],
             "target_heating_kwh_1h": [1.0, 1.5],
@@ -220,6 +234,8 @@ class TestTrainHeatingDemandEndpoint:
             dropped_insufficient_history=5,
             features_used=["outdoor_temp", "wind"],
             has_7d_features=False,
+            sensor_ranges={},  # Empty sensor ranges
+            hp_kwh_delta=None,
             dhw_temp_range=None,
             hp_kwh_total_range=None,
         )
@@ -244,8 +260,8 @@ class TestTrainHeatingDemandEndpoint:
             data = response.get_json()
             assert data["status"] == "success"
             assert "training_data" in data
-            assert data["training_data"]["dhw_temp"] is None
-            assert data["training_data"]["hp_kwh_total"] is None
+            # training_data should be empty dict when no sensor ranges
+            assert data["training_data"] == {}
 
 
 class TestPredictHeatingDemandProfileEndpoint:

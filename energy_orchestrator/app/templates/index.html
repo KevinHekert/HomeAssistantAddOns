@@ -1032,22 +1032,33 @@
                     document.getElementById('twoStepClassifierAccuracy').textContent = classifierMetrics.accuracy != null ? (classifierMetrics.accuracy * 100).toFixed(1) + '%' : '-';
                     statsDiv.style.display = 'grid';
                     
+                    // Extract step-specific info from API response
+                    const step1 = data.step1_classifier || {};
+                    const step2 = data.step2_regressor || {};
+                    
                     let message = '✓ ' + data.message + '\n\n';
-                    message += '--- Classifier (Active/Inactive Hours) ---\n';
+                    message += '--- Step 1: Classifier (Active/Inactive Hours) ---\n';
                     message += 'Activity threshold: ' + (thresholdValue != null ? thresholdValue.toFixed(4) : 'N/A') + ' kWh\n';
                     message += 'Active samples: ' + (threshold.active_samples != null ? threshold.active_samples : '-') + '\n';
                     message += 'Inactive samples: ' + (threshold.inactive_samples != null ? threshold.inactive_samples : '-') + '\n';
                     message += 'Accuracy: ' + (classifierMetrics.accuracy != null ? (classifierMetrics.accuracy * 100).toFixed(1) + '%' : 'N/A') + '\n';
                     message += 'Precision: ' + (classifierMetrics.precision != null ? (classifierMetrics.precision * 100).toFixed(1) + '%' : 'N/A') + '\n';
                     message += 'Recall: ' + (classifierMetrics.recall != null ? (classifierMetrics.recall * 100).toFixed(1) + '%' : 'N/A') + '\n';
-                    message += 'F1 Score: ' + (classifierMetrics.f1 != null ? (classifierMetrics.f1 * 100).toFixed(1) + '%' : 'N/A') + '\n\n';
-                    message += '--- Regressor (kWh for Active Hours) ---\n';
+                    message += 'F1 Score: ' + (classifierMetrics.f1 != null ? (classifierMetrics.f1 * 100).toFixed(1) + '%' : 'N/A') + '\n';
+                    if (step1.features_used && step1.features_used.length > 0) {
+                        message += 'Features (' + step1.features_used.length + '): ' + step1.features_used.join(', ') + '\n';
+                    }
+                    message += '\n';
+                    message += '--- Step 2: Regressor (kWh for Active Hours) ---\n';
                     message += 'Training samples: ' + (regressorMetrics.train_samples != null ? regressorMetrics.train_samples : '-') + '\n';
                     message += 'Validation samples: ' + (regressorMetrics.val_samples != null ? regressorMetrics.val_samples : '-') + '\n';
                     message += 'Train MAE (kWh): ' + (regressorMetrics.train_mae_kwh != null ? regressorMetrics.train_mae_kwh : 'N/A') + '\n';
                     message += 'Val MAE (kWh): ' + (regressorMetrics.val_mae_kwh != null ? regressorMetrics.val_mae_kwh : 'N/A') + '\n';
                     message += 'Val MAPE (%): ' + (regressorMetrics.val_mape_pct != null ? regressorMetrics.val_mape_pct : 'N/A') + '\n';
-                    message += 'Val R²: ' + (regressorMetrics.val_r2 || 'N/A');
+                    message += 'Val R²: ' + (regressorMetrics.val_r2 || 'N/A') + '\n';
+                    if (step2.features_used && step2.features_used.length > 0) {
+                        message += 'Features (' + step2.features_used.length + '): ' + step2.features_used.join(', ');
+                    }
                     
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = message;
@@ -1133,6 +1144,9 @@
                     message += 'Activity threshold: ' + (thresholdKwh != null ? thresholdKwh.toFixed(4) : 'N/A') + ' kWh\n';
                     message += 'Training timestamp: ' + (data.training_timestamp || 'Unknown') + '\n';
                     if (data.features && data.features.length > 0) {
+                        message += '\n--- Features (used by both steps) ---\n';
+                        message += 'Step 1 (Classifier): ' + data.features.length + ' features\n';
+                        message += 'Step 2 (Regressor): ' + data.features.length + ' features\n';
                         message += 'Features: ' + data.features.join(', ');
                     }
                     statusDiv.className = 'status-message success';

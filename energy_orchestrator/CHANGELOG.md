@@ -2,6 +2,15 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.73] - 2025-12-02
+
+- **Two-Step Model Feature Display**: Added display of features used by each step in the two-step model
+  - Training output now shows features used by Step 1 (Classifier) and Step 2 (Regressor)
+  - Each step displays the number of features and the complete feature list
+  - Model status check now clarifies that both steps use the same feature set
+  - Improved section headers: "Step 1: Classifier" and "Step 2: Regressor" for clarity
+  - Fixes issue: "Still can't see what feature-data is used for training models"
+
 ## [0.0.0.72] - 2025-12-02
 
 - **Fixed Two-Step Model Training Feedback**: The two-step model training API response now includes top-level `classifier_metrics` and `regressor_metrics` fields for UI compatibility

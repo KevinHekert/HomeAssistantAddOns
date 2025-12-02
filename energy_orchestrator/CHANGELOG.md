@@ -2,6 +2,20 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.91] - 2025-12-02
+
+- **Fixed Feature Toggle for Derived Sensor Features**
+  - **Issue**: When trying to activate a derived feature (e.g., `wind_avg_1h`, `outdoor_temp_avg_6h`) on a Card via the configuration panel, the API returned a 404 error: `{"message":"Feature 'wind_avg_1h' not found","status":"error"}`
+  - **Root Cause**: The `/api/features/toggle` endpoint only recognized features explicitly defined in `CORE_FEATURES` and `EXPERIMENTAL_FEATURES` lists. Derived features from sensor statistics configuration (like `wind_avg_1h`) were shown in sensor cards but couldn't be toggled because they weren't in these predefined lists
+  - **Fix**: 
+    - Modified `enable_feature()` and `disable_feature()` methods in `FeatureConfiguration` to dynamically handle derived sensor statistic features
+    - Added `_is_derived_sensor_stat_feature()` helper to validate derived feature names (format: `<sensor>_avg_<window>`)
+    - Added `_create_derived_feature_metadata()` helper to generate metadata for derived features on-the-fly
+    - Updated `get_all_features()` to include dynamically enabled derived features in the feature list
+  - **Behavior**: Users can now toggle any valid derived sensor feature (e.g., `wind_avg_1h`, `pressure_avg_24h`) through the configuration panel without getting 404 errors
+  - Added comprehensive test coverage in `test_derived_feature_toggle.py` with 3 test cases
+  - All 573 tests pass, confirming no regressions
+
 ## [0.0.0.90] - 2025-12-02
 
 - **Fixed Sensor Card Bug: Base Feature Missing for Virtual Sensors**

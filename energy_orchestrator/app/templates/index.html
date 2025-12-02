@@ -4,25 +4,138 @@
     <meta charset="UTF-8">
     <title>Energy Orchestrator</title>
     <style>
+        :root {
+            /* Dark mode (default) */
+            --bg-primary: #020617;
+            --bg-secondary: #111827;
+            --bg-tertiary: #1f2937;
+            --text-primary: #e5e7eb;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --border-color: #374151;
+            --accent-blue: #3b82f6;
+            --accent-blue-hover: #2563eb;
+            --accent-green: #22c55e;
+            --accent-green-dark: #166534;
+            --accent-orange: #f59e0b;
+            --accent-orange-dark: #78350f;
+            --success-bg: #166534;
+            --success-text: #86efac;
+            --error-bg: #991b1b;
+            --error-text: #fca5a5;
+            --info-bg: #1e3a8a;
+            --info-text: #93c5fd;
+        }
+        
+        [data-theme="light"] {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #e2e8f0;
+            --text-primary: #1e293b;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --border-color: #cbd5e1;
+            --accent-blue: #2563eb;
+            --accent-blue-hover: #1d4ed8;
+            --accent-green: #16a34a;
+            --accent-green-dark: #166534;
+            --accent-orange: #d97706;
+            --accent-orange-dark: #92400e;
+            --success-bg: #dcfce7;
+            --success-text: #166534;
+            --error-bg: #fee2e2;
+            --error-text: #991b1b;
+            --info-bg: #dbeafe;
+            --info-text: #1e40af;
+        }
+        
         body {
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             margin: 0;
             padding: 1.5rem;
-            background: #020617;
-            color: #e5e7eb;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background 0.3s, color 0.3s;
         }
         h1 { margin-top: 0; }
         h3 { margin-bottom: 0.5rem; }
+        
+        /* Theme toggle */
+        .header-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 900px;
+            margin-bottom: 1rem;
+        }
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+        .theme-toggle:hover {
+            background: var(--bg-tertiary);
+        }
+        .theme-icon {
+            font-size: 1.2rem;
+        }
+        
+        /* Tabs */
+        .tabs-container {
+            max-width: 900px;
+            margin-bottom: 1rem;
+        }
+        .tabs-nav {
+            display: flex;
+            gap: 0.25rem;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 1rem;
+        }
+        .tab-btn {
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            color: var(--text-secondary);
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+        }
+        .tab-btn.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        
         .card {
-            background: #020617;
+            background: var(--bg-secondary);
             border-radius: 12px;
             padding: 1.5rem;
-            border: 1px solid #1f2937;
+            border: 1px solid var(--border-color);
             max-width: 900px;
             margin-bottom: 1rem;
         }
         .action-btn {
-            background: #3b82f6;
+            background: var(--accent-blue);
             color: white;
             border: none;
             border-radius: 8px;
@@ -34,17 +147,18 @@
             transition: background 0.2s;
         }
         .action-btn:hover {
-            background: #2563eb;
+            background: var(--accent-blue-hover);
         }
         .action-btn:disabled {
-            background: #6b7280;
+            background: var(--text-muted);
             cursor: not-allowed;
         }
         .action-btn.secondary {
-            background: #4b5563;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
         }
         .action-btn.secondary:hover {
-            background: #6b7280;
+            background: var(--border-color);
         }
         .action-btn.success {
             background: #059669;
@@ -67,23 +181,23 @@
             white-space: pre-wrap;
         }
         .status-message.success {
-            background: #166534;
-            color: #86efac;
+            background: var(--success-bg);
+            color: var(--success-text);
             display: block;
         }
         .status-message.error {
-            background: #991b1b;
-            color: #fca5a5;
+            background: var(--error-bg);
+            color: var(--error-text);
             display: block;
         }
         .status-message.loading {
-            background: #1e3a8a;
-            color: #93c5fd;
+            background: var(--info-bg);
+            color: var(--info-text);
             display: block;
         }
         .status-message.info {
-            background: #1e3a8a;
-            color: #93c5fd;
+            background: var(--info-bg);
+            color: var(--info-text);
             display: block;
         }
         .stats-grid {
@@ -93,29 +207,29 @@
             margin-top: 0.5rem;
         }
         .stat-item {
-            background: #111827;
+            background: var(--bg-tertiary);
             padding: 0.5rem;
             border-radius: 4px;
         }
         .stat-label {
             font-size: 0.75rem;
-            color: #9ca3af;
+            color: var(--text-secondary);
         }
         .stat-value {
             font-size: 1.1rem;
             font-weight: 600;
         }
         hr {
-            border-color: #1f2937;
+            border-color: var(--border-color);
             margin: 1.5rem 0;
         }
         textarea {
             width: 100%;
             min-height: 150px;
-            background: #111827;
-            border: 1px solid #374151;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
-            color: #e5e7eb;
+            color: var(--text-primary);
             font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
             font-size: 0.85rem;
             padding: 0.75rem;
@@ -124,7 +238,7 @@
         }
         textarea:focus {
             outline: none;
-            border-color: #3b82f6;
+            border-color: var(--accent-blue);
         }
         .results-table {
             width: 100%;
@@ -135,26 +249,26 @@
         .results-table th, .results-table td {
             padding: 0.5rem;
             text-align: left;
-            border-bottom: 1px solid #374151;
+            border-bottom: 1px solid var(--border-color);
         }
         .results-table th {
-            background: #111827;
-            color: #9ca3af;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
             font-weight: 600;
         }
         .results-table tr:hover {
-            background: #1f2937;
+            background: var(--bg-tertiary);
         }
         .chart-container {
             margin-top: 1rem;
-            background: #111827;
+            background: var(--bg-tertiary);
             border-radius: 8px;
             padding: 1rem;
             min-height: 200px;
         }
         .bar {
             display: inline-block;
-            background: #3b82f6;
+            background: var(--accent-blue);
             margin-right: 2px;
             vertical-align: bottom;
             border-radius: 2px 2px 0 0;
@@ -163,7 +277,7 @@
             display: flex;
             align-items: flex-end;
             height: 150px;
-            border-bottom: 1px solid #374151;
+            border-bottom: 1px solid var(--border-color);
             padding-bottom: 0.5rem;
         }
         .chart-labels {
@@ -171,7 +285,7 @@
             justify-content: space-between;
             margin-top: 0.5rem;
             font-size: 0.75rem;
-            color: #9ca3af;
+            color: var(--text-secondary);
         }
         .sensor-table {
             width: 100%;
@@ -181,22 +295,22 @@
         .sensor-table th, .sensor-table td {
             padding: 0.5rem;
             text-align: left;
-            border-bottom: 1px solid #374151;
+            border-bottom: 1px solid var(--border-color);
         }
         .sensor-table th {
-            background: #111827;
-            color: #9ca3af;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
             font-weight: 600;
         }
         .total-kwh {
             font-size: 1.5rem;
             font-weight: 700;
-            color: #22c55e;
+            color: var(--accent-green);
             margin-top: 0.5rem;
         }
         .example-description {
             font-size: 0.85rem;
-            color: #9ca3af;
+            color: var(--text-secondary);
             margin-bottom: 0.5rem;
         }
         .feature-category {
@@ -208,7 +322,7 @@
             color: #60a5fa;
             margin-bottom: 0.5rem;
             padding-bottom: 0.25rem;
-            border-bottom: 1px solid #374151;
+            border-bottom: 1px solid var(--border-color);
         }
         .feature-list {
             display: grid;
@@ -216,7 +330,7 @@
             gap: 0.5rem;
         }
         .feature-item {
-            background: #111827;
+            background: var(--bg-tertiary);
             border-radius: 6px;
             padding: 0.75rem;
             display: flex;
@@ -224,10 +338,10 @@
             gap: 0.75rem;
         }
         .feature-item.core {
-            border-left: 3px solid #22c55e;
+            border-left: 3px solid var(--accent-green);
         }
         .feature-item.experimental {
-            border-left: 3px solid #f59e0b;
+            border-left: 3px solid var(--accent-orange);
         }
         .feature-item.experimental.disabled {
             opacity: 0.6;
@@ -251,7 +365,7 @@
         .feature-name {
             font-weight: 600;
             font-size: 0.9rem;
-            color: #e5e7eb;
+            color: var(--text-primary);
         }
         .feature-badge {
             display: inline-block;
@@ -262,21 +376,21 @@
             font-weight: 500;
         }
         .feature-badge.core {
-            background: #166534;
+            background: var(--accent-green-dark);
             color: #86efac;
         }
         .feature-badge.experimental {
-            background: #78350f;
+            background: var(--accent-orange-dark);
             color: #fcd34d;
         }
         .feature-description {
             font-size: 0.75rem;
-            color: #9ca3af;
+            color: var(--text-secondary);
             margin-top: 0.25rem;
         }
         .feature-meta {
             font-size: 0.7rem;
-            color: #6b7280;
+            color: var(--text-muted);
             margin-top: 0.25rem;
         }
         .timezone-config {
@@ -285,17 +399,17 @@
             gap: 1rem;
             margin-bottom: 1rem;
             padding: 0.75rem;
-            background: #111827;
+            background: var(--bg-tertiary);
             border-radius: 8px;
         }
         .timezone-config label {
             font-weight: 500;
         }
         .timezone-config select {
-            background: #1f2937;
-            border: 1px solid #374151;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
             border-radius: 6px;
-            color: #e5e7eb;
+            color: var(--text-primary);
             padding: 0.5rem 1rem;
             font-size: 0.9rem;
         }
@@ -304,7 +418,7 @@
             gap: 1.5rem;
             margin-bottom: 1rem;
             padding: 0.75rem;
-            background: #111827;
+            background: var(--bg-tertiary);
             border-radius: 8px;
         }
         .feature-stat {
@@ -313,105 +427,191 @@
         .feature-stat-value {
             font-size: 1.5rem;
             font-weight: 700;
-            color: #3b82f6;
+            color: var(--accent-blue);
         }
         .feature-stat-label {
             font-size: 0.75rem;
-            color: #9ca3af;
+            color: var(--text-secondary);
+        }
+        
+        /* Training data table */
+        .training-data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+        }
+        .training-data-table th, .training-data-table td {
+            padding: 0.5rem;
+            text-align: left;
+            border: 1px solid var(--border-color);
+        }
+        .training-data-table th {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+        .training-data-table td {
+            background: var(--bg-secondary);
         }
     </style>
 </head>
 <body>
-    <h1>⚡ Energy Orchestrator</h1>
+    <div class="header-container">
+        <h1>⚡ Energy Orchestrator</h1>
+        <button class="theme-toggle" onclick="toggleTheme()">
+            <span class="theme-icon" id="themeIcon">🌙</span>
+            <span id="themeText">Dark</span>
+        </button>
+    </div>
     
-    <div class="card">
-        <p>Flask UI draait binnen Home Assistant.</p>
-        <p><strong>Actuele windsnelheid:</strong>
-            {{ wind_speed if wind_speed is not none else "onbekend" }}
-        </p>
-    </div>
-
-    <div class="card">
-        <h3>🔄 Data Resampling</h3>
-        <p>Resample raw sensor data into <span id="sampleRateText">configured</span>-minute time slots and save to resampled_samples table.</p>
-        <div style="margin-bottom: 0.5rem;">
-            <label for="flushCheckbox" style="cursor: pointer;">
-                <input type="checkbox" id="flushCheckbox" style="margin-right: 0.5rem;">
-                Flush existing data (required when sample rate changes)
-            </label>
+    <div class="tabs-container">
+        <div class="tabs-nav">
+            <button class="tab-btn active" onclick="switchTab('configuration')">⚙️ Configuration</button>
+            <button class="tab-btn" onclick="switchTab('training')">🤖 Model Training</button>
+            <button class="tab-btn" onclick="switchTab('sensors')">📊 Sensor Information</button>
         </div>
-        <button class="action-btn" id="resampleBtn" onclick="triggerResample()">Resample Data</button>
-        <div id="resampleStatus" class="status-message"></div>
     </div>
 
-    <div class="card">
-        <h3>🤖 Model Training</h3>
-        <p>Train the heating demand prediction model using resampled data.</p>
-        <button class="action-btn success" id="trainBtn" onclick="trainModel()">Train Model</button>
-        <button class="action-btn secondary" id="statusBtn" onclick="getModelStatus()">Check Status</button>
-        <div id="modelStatus" class="status-message"></div>
-    </div>
-
-    <div class="card">
-        <h3>🌡️ Scenario-Based Prediction (Simplified)</h3>
-        <p class="example-description">Predict heating demand using simple, human-readable inputs. No need to calculate model features - just provide weather forecast and setpoint schedule.</p>
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem;">
-            <button class="action-btn secondary" id="loadScenarioExampleBtn" onclick="loadScenarioExample()">Load Example (24h)</button>
-            <span style="color: #9ca3af;">or load from historical data:</span>
-            <select id="historicalDaySelect" onchange="loadHistoricalDay()" style="background: #111827; border: 1px solid #374151; border-radius: 8px; color: #e5e7eb; padding: 0.5rem; cursor: pointer;">
-                <option value="">Select historical day...</option>
-            </select>
-            <button class="action-btn secondary" id="refreshDaysBtn" onclick="loadAvailableDays()" style="padding: 0.5rem 1rem;">↻</button>
+    <!-- Configuration Tab -->
+    <div id="tab-configuration" class="tab-content active">
+        <div class="card">
+            <h3>🔄 Data Resampling</h3>
+            <p>Resample raw sensor data into <span id="sampleRateText">configured</span>-minute time slots and save to resampled_samples table.</p>
+            <div style="margin-bottom: 0.5rem;">
+                <label for="flushCheckbox" style="cursor: pointer;">
+                    <input type="checkbox" id="flushCheckbox" style="margin-right: 0.5rem;">
+                    Flush existing data (required when sample rate changes)
+                </label>
+            </div>
+            <button class="action-btn" id="resampleBtn" onclick="triggerResample()">Resample Data</button>
+            <div id="resampleStatus" class="status-message"></div>
         </div>
-        <button class="action-btn success" id="runScenarioPredictionBtn" onclick="runScenarioPrediction()">Run Prediction</button>
-        <p class="example-description" style="margin-top: 0.5rem;">Required per timeslot: timestamp (future), outdoor_temperature, wind_speed, humidity, pressure, target_temperature. Optional: indoor_temperature</p>
-        <textarea id="scenarioInput" placeholder='{"timeslots": [{"timestamp": "2024-01-15T14:00:00", "outdoor_temperature": 5.0, "wind_speed": 3.0, "humidity": 75.0, "pressure": 1013.0, "target_temperature": 20.0}, ...]}'></textarea>
-        <div id="scenarioStatus" class="status-message"></div>
-        <div id="scenarioResult"></div>
+
+        <div class="card">
+            <h3>⚙️ Feature Configuration</h3>
+            <p class="example-description">Configure which features are used for model training and prediction. Core features (13) are always active. Experimental features can be enabled/disabled.</p>
+            <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Configuration</button>
+            <div id="featureConfigStatus" class="status-message"></div>
+            <div id="featureConfigContent"></div>
+        </div>
     </div>
 
-    <div class="card">
-        <h3>🔮 Single Slot Prediction</h3>
-        <p class="example-description">Predict heating demand for a single 5-minute time slot.</p>
-        <button class="action-btn secondary" id="loadSingleExampleBtn" onclick="loadSingleSlotExample()">Load Example</button>
-        <button class="action-btn warning" id="runSinglePredictionBtn" onclick="runSingleSlotPrediction()">Run Prediction</button>
-        <textarea id="singleSlotInput" placeholder='{"timeslots": ["2024-01-15T14:00:00"], "scenario_features": [{"outdoor_temp": 5.0, ...}]}'></textarea>
-        <div id="singleSlotStatus" class="status-message"></div>
-        <div id="singleSlotResult"></div>
+    <!-- Model Training Tab -->
+    <div id="tab-training" class="tab-content">
+        <div class="card">
+            <h3>🤖 Model Training</h3>
+            <p>Train the heating demand prediction model using resampled data.</p>
+            <button class="action-btn success" id="trainBtn" onclick="trainModel()">Train Model</button>
+            <button class="action-btn secondary" id="statusBtn" onclick="getModelStatus()">Check Status</button>
+            <div id="modelStatus" class="status-message"></div>
+            <div id="trainingDataTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>🌡️ Scenario-Based Prediction (Simplified)</h3>
+            <p class="example-description">Predict heating demand using simple, human-readable inputs. No need to calculate model features - just provide weather forecast and setpoint schedule.</p>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem;">
+                <button class="action-btn secondary" id="loadScenarioExampleBtn" onclick="loadScenarioExample()">Load Example (24h)</button>
+                <span style="color: var(--text-secondary);">or load from historical data:</span>
+                <select id="historicalDaySelect" onchange="loadHistoricalDay()" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); padding: 0.5rem; cursor: pointer;">
+                    <option value="">Select historical day...</option>
+                </select>
+                <button class="action-btn secondary" id="refreshDaysBtn" onclick="loadAvailableDays()" style="padding: 0.5rem 1rem;">↻</button>
+            </div>
+            <button class="action-btn success" id="runScenarioPredictionBtn" onclick="runScenarioPrediction()">Run Prediction</button>
+            <p class="example-description" style="margin-top: 0.5rem;">Required per timeslot: timestamp (future), outdoor_temperature, wind_speed, humidity, pressure, target_temperature. Optional: indoor_temperature</p>
+            <textarea id="scenarioInput" placeholder='{"timeslots": [{"timestamp": "2024-01-15T14:00:00", "outdoor_temperature": 5.0, "wind_speed": 3.0, "humidity": 75.0, "pressure": 1013.0, "target_temperature": 20.0}, ...]}'></textarea>
+            <div id="scenarioStatus" class="status-message"></div>
+            <div id="scenarioResult"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔮 Single Slot Prediction</h3>
+            <p class="example-description">Predict heating demand for a single 5-minute time slot.</p>
+            <button class="action-btn secondary" id="loadSingleExampleBtn" onclick="loadSingleSlotExample()">Load Example</button>
+            <button class="action-btn warning" id="runSinglePredictionBtn" onclick="runSingleSlotPrediction()">Run Prediction</button>
+            <textarea id="singleSlotInput" placeholder='{"timeslots": ["2024-01-15T14:00:00"], "scenario_features": [{"outdoor_temp": 5.0, ...}]}'></textarea>
+            <div id="singleSlotStatus" class="status-message"></div>
+            <div id="singleSlotResult"></div>
+        </div>
+
+        <div class="card">
+            <h3>📅 Full Day Prediction (24h)</h3>
+            <p class="example-description">Predict heating demand for a complete day with hourly intervals.</p>
+            <button class="action-btn secondary" id="loadDayExampleBtn" onclick="loadFullDayExample()">Load Example</button>
+            <button class="action-btn warning" id="runDayPredictionBtn" onclick="runFullDayPrediction()">Run Prediction</button>
+            <textarea id="fullDayInput" placeholder='{"timeslots": [...], "scenario_features": [...], "update_historical": true}'></textarea>
+            <div id="fullDayStatus" class="status-message"></div>
+            <div id="fullDayResult"></div>
+        </div>
     </div>
 
-    <div class="card">
-        <h3>📅 Full Day Prediction (24h)</h3>
-        <p class="example-description">Predict heating demand for a complete day with hourly intervals.</p>
-        <button class="action-btn secondary" id="loadDayExampleBtn" onclick="loadFullDayExample()">Load Example</button>
-        <button class="action-btn warning" id="runDayPredictionBtn" onclick="runFullDayPrediction()">Run Prediction</button>
-        <textarea id="fullDayInput" placeholder='{"timeslots": [...], "scenario_features": [...], "update_historical": true}'></textarea>
-        <div id="fullDayStatus" class="status-message"></div>
-        <div id="fullDayResult"></div>
-    </div>
-
-    <div class="card">
-        <h3>⚙️ Feature Configuration</h3>
-        <p class="example-description">Configure which features are used for model training and prediction. Core features (13) are always active. Experimental features can be enabled/disabled.</p>
-        <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Configuration</button>
-        <div id="featureConfigStatus" class="status-message"></div>
-        <div id="featureConfigContent"></div>
-    </div>
-
-    <div class="card">
-        <h3>📊 Sensor Information</h3>
-        <p>View first and last timestamp for each sensor in the database.</p>
-        <button class="action-btn secondary" id="loadSensorsBtn" onclick="loadSensorInfo()">Load Sensor Info</button>
-        <div id="sensorInfoStatus" class="status-message"></div>
-        <div id="sensorInfoTable"></div>
+    <!-- Sensor Information Tab -->
+    <div id="tab-sensors" class="tab-content">
+        <div class="card">
+            <h3>📊 Sensor Information</h3>
+            <p>View first and last timestamp for each sensor in the database.</p>
+            <button class="action-btn secondary" id="loadSensorsBtn" onclick="loadSensorInfo()">Load Sensor Info</button>
+            <div id="sensorInfoStatus" class="status-message"></div>
+            <div id="sensorInfoTable"></div>
+        </div>
     </div>
 
     <script>
         // Store historical data when loaded for comparison in table
         let currentHistoricalData = null;
         
+        // Theme management
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeUI(newTheme);
+        }
+        
+        function updateThemeUI(theme) {
+            const icon = document.getElementById('themeIcon');
+            const text = document.getElementById('themeText');
+            if (theme === 'light') {
+                icon.textContent = '☀️';
+                text.textContent = 'Light';
+            } else {
+                icon.textContent = '🌙';
+                text.textContent = 'Dark';
+            }
+        }
+        
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeUI(savedTheme);
+        }
+        
+        // Tab management
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active from all tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById('tab-' + tabName).classList.add('active');
+            
+            // Activate clicked tab button
+            event.target.classList.add('active');
+        }
+        
         // Load available days and sample rate on page load
         document.addEventListener('DOMContentLoaded', function() {
+            initTheme();
             loadAvailableDays();
             loadSampleRate();
         });
@@ -556,10 +756,12 @@
         async function trainModel() {
             const btn = document.getElementById('trainBtn');
             const statusDiv = document.getElementById('modelStatus');
+            const tableDiv = document.getElementById('trainingDataTable');
             
             btn.disabled = true;
             statusDiv.className = 'status-message loading';
             statusDiv.textContent = 'Training model... This may take a while.';
+            tableDiv.innerHTML = '';
             
             try {
                 const response = await fetch('api/train/heating_demand', {
@@ -571,6 +773,7 @@
                 if (response.ok) {
                     const metrics = data.metrics || {};
                     const stats = data.dataset_stats || {};
+                    const trainingData = data.training_data || {};
                     let message = '✓ ' + data.message + '\n\n';
                     message += 'Training samples: ' + (metrics.train_samples || 0) + '\n';
                     message += 'Validation samples: ' + (metrics.val_samples || 0) + '\n';
@@ -583,6 +786,33 @@
                     }
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = message;
+                    
+                    // Display training data table
+                    if (trainingData && (trainingData.dhw_temp || trainingData.hp_kwh_total)) {
+                        let tableHtml = '<h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">📊 Training Data Range</h4>';
+                        tableHtml += '<table class="training-data-table">';
+                        tableHtml += '<thead><tr><th>Sensor</th><th>First Value</th><th>Last Value</th></tr></thead>';
+                        tableHtml += '<tbody>';
+                        
+                        if (trainingData.dhw_temp) {
+                            tableHtml += '<tr>';
+                            tableHtml += '<td><strong>dhw_temp</strong></td>';
+                            tableHtml += '<td>' + (trainingData.dhw_temp.first !== null ? trainingData.dhw_temp.first.toFixed(2) + ' °C' : 'N/A') + '</td>';
+                            tableHtml += '<td>' + (trainingData.dhw_temp.last !== null ? trainingData.dhw_temp.last.toFixed(2) + ' °C' : 'N/A') + '</td>';
+                            tableHtml += '</tr>';
+                        }
+                        
+                        if (trainingData.hp_kwh_total) {
+                            tableHtml += '<tr>';
+                            tableHtml += '<td><strong>hp_kwh_total</strong></td>';
+                            tableHtml += '<td>' + (trainingData.hp_kwh_total.first !== null ? trainingData.hp_kwh_total.first.toFixed(2) + ' kWh' : 'N/A') + '</td>';
+                            tableHtml += '<td>' + (trainingData.hp_kwh_total.last !== null ? trainingData.hp_kwh_total.last.toFixed(2) + ' kWh' : 'N/A') + '</td>';
+                            tableHtml += '</tr>';
+                        }
+                        
+                        tableHtml += '</tbody></table>';
+                        tableDiv.innerHTML = tableHtml;
+                    }
                 } else {
                     let message = '✗ ' + (data.message || 'Training failed');
                     if (data.stats) {

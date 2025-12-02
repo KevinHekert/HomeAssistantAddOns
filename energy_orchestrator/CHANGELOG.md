@@ -2,6 +2,16 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.90] - 2025-12-02
+
+- **Fixed Sensor Card Bug: Base Feature Missing for Virtual Sensors**
+  - **Issue**: Virtual sensors with time-based statistics enabled showed only the statistics (e.g., 4 checkboxes for avg_1h, avg_6h, avg_24h, avg_7d) but were missing the base sensor checkbox (e.g., "Current Value"), resulting in 4 options instead of the expected 5
+  - **Root Cause**: When a sensor wasn't registered in the feature configuration (common for virtual sensors), the base sensor feature was not added to the sensor card
+  - **Fix**: Modified `/api/features/sensor_cards` endpoint to always include the base sensor feature, even when it's not in the feature configuration yet. Virtual sensors and new sensors now correctly display both the base feature AND all enabled time-based statistics
+  - **Example**: The "Setpoint Delta" virtual sensor with 4 statistics enabled now correctly shows 5 checkboxes: 1 for "Current Value" + 4 for time-based averages (avg_1h, avg_6h, avg_24h, avg_7d)
+  - Added test case `test_virtual_sensor_with_stats_shows_base_feature` to validate the fix
+  - Fixes issue #188
+
 ## [0.0.0.89] - 2025-12-02
 
 - **Tests: Removed MariaDB Dependency**

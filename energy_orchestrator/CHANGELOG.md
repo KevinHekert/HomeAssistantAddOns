@@ -2,6 +2,33 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.76] - 2025-12-02
+
+- **Settings Optimizer**: Added automatic optimization feature to find the best model configuration
+  - New "Settings Optimizer" card in the Model Training tab
+  - Cycles through different experimental feature combinations
+  - Trains both single-step and two-step models for each configuration
+  - Finds the configuration with the lowest validation MAPE (%)
+  - Current settings are saved before optimization and restored after completion
+- **Optimizer UI Features**:
+  - "Start Optimization" button to begin the process
+  - Live log display showing optimization progress
+  - Results table sorted by Val MAPE (best at top)
+  - Best result highlighted with star icon (⭐)
+  - "Apply Best Settings" button to save the optimal configuration
+- **New API Endpoints**:
+  - `POST /api/optimizer/run`: Start optimization and get results
+  - `GET /api/optimizer/status`: Get current optimizer status
+  - `POST /api/optimizer/apply`: Apply the best configuration found
+- **New Module**: `ml/optimizer.py` with optimization logic
+  - `run_optimization()`: Main optimization function
+  - `apply_best_configuration()`: Apply and save optimal settings
+  - `OptimizerProgress` and `OptimizationResult` dataclasses
+  - Automatic feature combination generation (baseline, individual features, logical groups)
+- **Tests**: Added 19 new tests for optimizer functionality
+  - Module tests for feature combinations and optimization logic
+  - API endpoint tests for run, status, and apply
+
 ## [0.0.0.75] - 2025-12-02
 
 - **Fixed Sample Rate Handling in Model Training**: Historical aggregation windows now dynamically adjust based on the configured sample rate

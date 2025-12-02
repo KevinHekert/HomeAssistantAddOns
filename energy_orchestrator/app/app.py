@@ -70,6 +70,11 @@ from ml.feature_config import (
     get_feature_details,
     verify_model_features,
 )
+from ml.optimizer import (
+    run_optimization,
+    apply_best_configuration,
+    OptimizerProgress,
+)
 
 
 app = Flask(__name__)
@@ -2530,6 +2535,216 @@ def compare_stored_prediction_endpoint(prediction_id: str):
     except Exception as e:
         _Logger.error("Error comparing prediction: %s", e, exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =============================================================================
+# SETTINGS OPTIMIZER ENDPOINTS
+# =============================================================================
+
+# Global optimizer state
+_optimizer_progress: OptimizerProgress | None = None
+_optimizer_running: bool = False
+
+
+@app.post("/api/optimizer/run")
+def run_optimizer():
+    """
+    Start the settings optimizer to find the best configuration.
+    
+    The optimizer will:
+    1. Save current settings
+    2. Cycle through different feature configurations
+    3. Train both single-step and two-step models
+    4. Find the configuration with the lowest Val MAPE (%)
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Optimizer started",
+        "total_configurations": 12
+    }
+    """
+    global _optimizer_progress, _optimizer_running
+    
+    if _optimizer_running:
+        return jsonify({
+            "status": "error",
+            "message": "Optimizer is already running",
+        }), 400
+    
+    try:
+        _optimizer_running = True
+        _optimizer_progress = None
+        
+        _Logger.info("Starting settings optimizer...")
+        
+        # Run the optimization synchronously (in a real app, this should be async)
+        progress = run_optimization(
+            train_single_step_fn=train_heating_demand_model,
+            train_two_step_fn=train_two_step_heating_demand_model,
+            build_dataset_fn=build_heating_feature_dataset,
+            min_samples=50,
+        )
+        
+        _optimizer_progress = progress
+        _optimizer_running = False
+        
+        # Build response
+        response_data = {
+            "status": "success",
+            "message": "Optimization complete",
+            "phase": progress.phase,
+            "total_configurations": progress.total_configurations,
+            "completed_configurations": progress.completed_configurations,
+            "log": progress.log_messages,
+            "results": [
+                {
+                    "config_name": r.config_name,
+                    "model_type": r.model_type,
+                    "val_mape_pct": round(r.val_mape_pct, 2) if r.val_mape_pct is not None else None,
+                    "val_mae_kwh": round(r.val_mae_kwh, 4) if r.val_mae_kwh is not None else None,
+                    "val_r2": round(r.val_r2, 4) if r.val_r2 is not None else None,
+                    "success": r.success,
+                    "error_message": r.error_message,
+                }
+                for r in progress.results
+            ],
+        }
+        
+        if progress.best_result:
+            response_data["best_result"] = {
+                "config_name": progress.best_result.config_name,
+                "model_type": progress.best_result.model_type,
+                "val_mape_pct": round(progress.best_result.val_mape_pct, 2) if progress.best_result.val_mape_pct else None,
+                "val_mae_kwh": round(progress.best_result.val_mae_kwh, 4) if progress.best_result.val_mae_kwh else None,
+                "val_r2": round(progress.best_result.val_r2, 4) if progress.best_result.val_r2 else None,
+                "experimental_features": progress.best_result.experimental_features,
+            }
+        
+        if progress.error_message:
+            response_data["error"] = progress.error_message
+            
+        return jsonify(response_data)
+        
+    except Exception as e:
+        _optimizer_running = False
+        _Logger.error("Error running optimizer: %s", e, exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/optimizer/status")
+def get_optimizer_status():
+    """
+    Get the current status of the optimizer.
+    
+    Response:
+    {
+        "status": "success",
+        "running": false,
+        "progress": {...}
+    }
+    """
+    global _optimizer_progress, _optimizer_running
+    
+    if _optimizer_progress is None:
+        return jsonify({
+            "status": "success",
+            "running": _optimizer_running,
+            "progress": None,
+            "message": "No optimization has been run yet",
+        })
+    
+    progress = _optimizer_progress
+    
+    response_data = {
+        "status": "success",
+        "running": _optimizer_running,
+        "progress": {
+            "phase": progress.phase,
+            "total_configurations": progress.total_configurations,
+            "completed_configurations": progress.completed_configurations,
+            "current_configuration": progress.current_configuration,
+            "current_model_type": progress.current_model_type,
+            "log": progress.log_messages,
+        },
+    }
+    
+    if progress.best_result:
+        response_data["progress"]["best_result"] = {
+            "config_name": progress.best_result.config_name,
+            "model_type": progress.best_result.model_type,
+            "val_mape_pct": round(progress.best_result.val_mape_pct, 2) if progress.best_result.val_mape_pct else None,
+        }
+    
+    return jsonify(response_data)
+
+
+@app.post("/api/optimizer/apply")
+def apply_optimizer_result():
+    """
+    Apply the best configuration found by the optimizer.
+    
+    This will save the experimental feature settings and optionally
+    enable/disable two-step prediction based on the best result.
+    
+    Request body (optional):
+    {
+        "enable_two_step": true  // Whether to enable two-step if that was best
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Best configuration applied",
+        "applied_settings": {...}
+    }
+    """
+    global _optimizer_progress
+    
+    if _optimizer_progress is None or _optimizer_progress.best_result is None:
+        return jsonify({
+            "status": "error",
+            "message": "No optimization results to apply. Run the optimizer first.",
+        }), 400
+    
+    try:
+        data = request.get_json() or {}
+        enable_two_step = data.get("enable_two_step", True)
+        
+        best = _optimizer_progress.best_result
+        
+        success = apply_best_configuration(
+            best_result=best,
+            enable_two_step=enable_two_step and best.model_type == "two_step",
+        )
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Best configuration applied and saved",
+                "applied_settings": {
+                    "config_name": best.config_name,
+                    "model_type": best.model_type,
+                    "experimental_features": best.experimental_features,
+                    "two_step_enabled": enable_two_step and best.model_type == "two_step",
+                    "val_mape_pct": round(best.val_mape_pct, 2) if best.val_mape_pct else None,
+                },
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to save configuration",
+            }), 500
+            
+    except Exception as e:
+        _Logger.error("Error applying optimizer result: %s", e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
 
 
 if __name__ == "__main__":

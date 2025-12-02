@@ -1027,10 +1027,16 @@ def predict_heating_demand_scenario():
         model = _get_model()
     
     if model is None or not model.is_available:
-        return jsonify({
-            "status": "error",
-            "message": "Model not trained. Please train the model first via POST /api/train/heating_demand",
-        }), 503
+        if use_two_step:
+            return jsonify({
+                "status": "error",
+                "message": "Two-step model not trained. Please train the model first via POST /api/train/two_step_heating_demand",
+            }), 503
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Model not trained. Please train the model first via POST /api/train/heating_demand",
+            }), 503
     
     try:
         data = request.get_json()

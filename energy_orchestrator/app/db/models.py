@@ -45,7 +45,12 @@ class SensorMapping(Base):
 
 
 class ResampledSample(Base):
-    """Stores resampled values per 5-minute slot per category."""
+    """Stores resampled values per 5-minute slot per category.
+    
+    The is_derived field indicates whether this sample is:
+    - False: Direct resampling from raw sensor data
+    - True: Calculated/derived from other resampled data (e.g., virtual sensors, averages)
+    """
     __tablename__ = "resampled_samples"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -53,6 +58,7 @@ class ResampledSample(Base):
     category: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     value: Mapped[float] = mapped_column(Double, nullable=False)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    is_derived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
 
     __table_args__ = (
         UniqueConstraint("slot_start", "category", name="uq_slot_category"),

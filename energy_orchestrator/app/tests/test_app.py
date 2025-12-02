@@ -1110,18 +1110,19 @@ class TestResampleWithSampleRate:
             assert data["stats"]["sample_rate_minutes"] == 10
             mock_resample.assert_called_once_with(10)
 
-    def test_resample_invalid_rate_too_low(self, client):
-        """Resample with sample rate < 1 returns error."""
+    def test_resample_invalid_rate_not_divisor(self, client):
+        """Resample with sample rate that doesn't divide 60 returns error."""
         response = client.post(
             "/resample",
-            json={"sample_rate_minutes": 0},
+            json={"sample_rate_minutes": 7},
             content_type="application/json",
         )
 
         assert response.status_code == 400
         data = response.get_json()
         assert data["status"] == "error"
-        assert "between 1 and 60" in data["message"]
+        # Check that the error message mentions valid rates
+        assert "[1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]" in data["message"]
 
     def test_resample_invalid_rate_too_high(self, client):
         """Resample with sample rate > 60 returns error."""
@@ -1134,7 +1135,6 @@ class TestResampleWithSampleRate:
         assert response.status_code == 400
         data = response.get_json()
         assert data["status"] == "error"
-        assert "between 1 and 60" in data["message"]
 
     def test_resample_default_rate(self, client):
         """Resample without custom rate uses default."""

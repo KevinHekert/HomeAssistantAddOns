@@ -1039,19 +1039,20 @@ class TestConfigurableSampleRate:
         monkeypatch.setenv("SAMPLE_RATE_MINUTES", "10")
         assert get_sample_rate_minutes() == 10
 
-    def test_get_sample_rate_minimum(self, monkeypatch):
-        """Sample rate below 1 defaults to 5."""
+    def test_get_sample_rate_invalid_not_divisor(self, monkeypatch):
+        """Sample rate that doesn't divide 60 defaults to 5."""
         from db.resample import get_sample_rate_minutes
-        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "0")
+        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "7")
         assert get_sample_rate_minutes() == 5
 
-    def test_get_sample_rate_maximum(self, monkeypatch):
-        """Sample rate above 60 is capped to 60."""
-        from db.resample import get_sample_rate_minutes
-        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "120")
-        assert get_sample_rate_minutes() == 60
+    def test_get_sample_rate_valid_divisors(self, monkeypatch):
+        """All valid divisors of 60 are accepted."""
+        from db.resample import get_sample_rate_minutes, VALID_SAMPLE_RATES
+        for rate in VALID_SAMPLE_RATES:
+            monkeypatch.setenv("SAMPLE_RATE_MINUTES", str(rate))
+            assert get_sample_rate_minutes() == rate
 
-    def test_get_sample_rate_invalid(self, monkeypatch):
+    def test_get_sample_rate_invalid_string(self, monkeypatch):
         """Invalid sample rate defaults to 5."""
         from db.resample import get_sample_rate_minutes
         monkeypatch.setenv("SAMPLE_RATE_MINUTES", "invalid")

@@ -21,38 +21,35 @@ from db.core import engine, init_db_schema
 
 _Logger = logging.getLogger(__name__)
 
+# Valid sample rates that divide evenly into 60 minutes
+VALID_SAMPLE_RATES = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]
+
+# Default step size for resampling (used for backward compatibility)
+RESAMPLE_STEP = timedelta(minutes=5)
+
 
 def get_sample_rate_minutes() -> int:
     """Get the sample rate in minutes from environment variable.
     
+    Valid sample rates are divisors of 60: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60.
+    This ensures that time slots align properly at hour boundaries.
+    
     Returns:
-        Sample rate in minutes, defaults to 5 if not configured.
+        Sample rate in minutes, defaults to 5 if not configured or invalid.
     """
     try:
         rate = int(os.environ.get("SAMPLE_RATE_MINUTES", "5"))
-        if rate < 1:
-            _Logger.warning("Invalid sample rate %d, using default 5 minutes", rate)
+        if rate not in VALID_SAMPLE_RATES:
+            _Logger.warning(
+                "Invalid sample rate %d. Valid rates are %s. Using default 5 minutes",
+                rate,
+                VALID_SAMPLE_RATES,
+            )
             return 5
-        if rate > 60:
-            _Logger.warning("Sample rate %d exceeds maximum 60, using 60 minutes", rate)
-            return 60
         return rate
     except ValueError:
         _Logger.warning("Invalid SAMPLE_RATE_MINUTES value, using default 5 minutes")
         return 5
-
-
-def get_resample_step() -> timedelta:
-    """Get the resample step as a timedelta.
-    
-    Returns:
-        timedelta representing the sample rate.
-    """
-    return timedelta(minutes=get_sample_rate_minutes())
-
-
-# Default step size for resampling (can be overridden by environment variable)
-RESAMPLE_STEP = timedelta(minutes=5)  # Default, actual value from get_resample_step()
 
 
 @dataclass

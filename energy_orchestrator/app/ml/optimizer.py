@@ -13,6 +13,7 @@ lowest validation MAPE.
 """
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
@@ -270,11 +271,15 @@ def run_optimization(
             
             try:
                 model, metrics = train_single_step_fn(df)
+                # Handle potential NaN in val_mape
+                val_mape_pct = None
+                if metrics.val_mape is not None and not math.isnan(metrics.val_mape):
+                    val_mape_pct = metrics.val_mape * 100
                 result = OptimizationResult(
                     config_name=config_name,
                     model_type="single_step",
                     experimental_features=combo.copy(),
-                    val_mape_pct=metrics.val_mape * 100 if metrics.val_mape == metrics.val_mape else None,
+                    val_mape_pct=val_mape_pct,
                     val_mae_kwh=metrics.val_mae,
                     val_r2=metrics.val_r2,
                     train_samples=metrics.train_samples,
@@ -330,11 +335,15 @@ def run_optimization(
             try:
                 model, metrics = train_two_step_fn(df)
                 # Two-step model uses regressor MAPE for comparison
+                # Handle potential NaN in regressor_val_mape
+                val_mape_pct = None
+                if metrics.regressor_val_mape is not None and not math.isnan(metrics.regressor_val_mape):
+                    val_mape_pct = metrics.regressor_val_mape * 100
                 result = OptimizationResult(
                     config_name=config_name,
                     model_type="two_step",
                     experimental_features=combo.copy(),
-                    val_mape_pct=metrics.regressor_val_mape * 100 if metrics.regressor_val_mape == metrics.regressor_val_mape else None,
+                    val_mape_pct=val_mape_pct,
                     val_mae_kwh=metrics.regressor_val_mae,
                     val_r2=metrics.regressor_val_r2,
                     train_samples=metrics.regressor_train_samples,

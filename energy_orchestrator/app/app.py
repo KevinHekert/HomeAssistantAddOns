@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta
+from typing import Optional
 from flask import Flask, render_template, jsonify, request
 import pandas as pd
 from ha.ha_api import get_entity_state
@@ -2542,7 +2543,7 @@ def compare_stored_prediction_endpoint(prediction_id: str):
 # =============================================================================
 
 # Global optimizer state
-_optimizer_progress: OptimizerProgress | None = None
+_optimizer_progress: Optional[OptimizerProgress] = None
 _optimizer_running: bool = False
 
 

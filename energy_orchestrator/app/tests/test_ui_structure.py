@@ -88,14 +88,17 @@ def test_feature_configuration_has_guidance():
     feature_config_section = config_tab_content[feature_config_start:feature_config_start + 1500]
     
     # Verify it has helpful guidance text
-    assert "raw sensors" in feature_config_section.lower(), (
-        "Feature Configuration should mention raw sensors"
+    assert "model training and prediction" in feature_config_section.lower(), (
+        "Feature Configuration should mention model training and prediction"
     )
-    assert "virtual" in feature_config_section.lower() or "derived" in feature_config_section.lower(), (
-        "Feature Configuration should mention virtual/derived sensors"
+    assert "special cards" in feature_config_section.lower() or "time/date" in feature_config_section.lower(), (
+        "Feature Configuration should mention special cards or time/date features"
     )
     assert "Sensor Configuration" in feature_config_section, (
         "Feature Configuration should reference the Sensor Configuration tab"
+    )
+    assert "core" in feature_config_section.lower() and "experimental" in feature_config_section.lower(), (
+        "Feature Configuration should mention CORE and EXPERIMENTAL features"
     )
 
 

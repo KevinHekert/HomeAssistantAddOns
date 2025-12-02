@@ -375,8 +375,9 @@ class FeatureConfiguration:
                 self.experimental_enabled[feature.name] = False
     
     def get_all_features(self) -> list[FeatureMetadata]:
-        """Get all features (core + experimental) with current enabled state."""
+        """Get all features (core + experimental + derived) with current enabled state."""
         features = []
+        seen_names = set()
         
         # Core features use configured state (but enabled by default)
         for f in CORE_FEATURES:
@@ -389,6 +390,7 @@ class FeatureConfiguration:
                 is_core=True,
                 enabled=self.core_enabled.get(f.name, True),
             ))
+            seen_names.add(f.name)
         
         # Experimental features use configured state
         for f in EXPERIMENTAL_FEATURES:
@@ -401,6 +403,16 @@ class FeatureConfiguration:
                 is_core=False,
                 enabled=self.experimental_enabled.get(f.name, False),
             ))
+            seen_names.add(f.name)
+        
+        # Add dynamically created derived features from experimental_enabled
+        # These are features like "wind_avg_1h" that don't exist in CORE/EXPERIMENTAL lists
+        for feature_name, enabled in self.experimental_enabled.items():
+            if feature_name not in seen_names and self._is_derived_sensor_stat_feature(feature_name):
+                # Create metadata for derived feature
+                metadata = self._create_derived_feature_metadata(feature_name, enabled)
+                if metadata:
+                    features.append(metadata)
         
         return features
     
@@ -495,7 +507,7 @@ class FeatureConfiguration:
     
     def enable_feature(self, feature_name: str) -> bool:
         """
-        Enable any feature (core or experimental).
+        Enable any feature (core, experimental, or derived from sensor stats).
         
         Args:
             feature_name: Name of the feature to enable
@@ -507,11 +519,16 @@ class FeatureConfiguration:
             return True
         if self.enable_experimental_feature(feature_name):
             return True
+        # Check if this is a derived feature from sensor stats (e.g., wind_avg_1h)
+        if self._is_derived_sensor_stat_feature(feature_name):
+            self.experimental_enabled[feature_name] = True
+            _Logger.info("Enabled derived sensor stat feature: %s", feature_name)
+            return True
         return False
     
     def disable_feature(self, feature_name: str) -> bool:
         """
-        Disable any feature (core or experimental).
+        Disable any feature (core, experimental, or derived from sensor stats).
         
         Args:
             feature_name: Name of the feature to disable
@@ -523,7 +540,120 @@ class FeatureConfiguration:
             return True
         if self.disable_experimental_feature(feature_name):
             return True
+        # Check if this is a derived feature from sensor stats
+        if self._is_derived_sensor_stat_feature(feature_name):
+            self.experimental_enabled[feature_name] = False
+            _Logger.info("Disabled derived sensor stat feature: %s", feature_name)
+            return True
         return False
+    
+    def _is_derived_sensor_stat_feature(self, feature_name: str) -> bool:
+        """
+        Check if a feature name corresponds to a derived sensor statistic.
+        
+        Derived features have the format: <sensor_name>_avg_<time_window>
+        Examples: wind_avg_1h, outdoor_temp_avg_6h, pressure_avg_24h
+        
+        Args:
+            feature_name: Name of the feature to check
+            
+        Returns:
+            True if this is a valid derived sensor stat feature, False otherwise
+        """
+        # Check if the feature follows the pattern sensor_avg_<window>
+        if "_avg_" not in feature_name:
+            return False
+        
+        parts = feature_name.rsplit("_avg_", 1)
+        if len(parts) != 2:
+            return False
+        
+        sensor_name, time_window = parts
+        
+        # Validate the time window
+        valid_windows = {"1h", "6h", "24h", "7d"}
+        if time_window not in valid_windows:
+            return False
+        
+        # Check if this sensor exists in sensor category configuration
+        try:
+            from db.sensor_category_config import get_sensor_category_config
+            sensor_config = get_sensor_category_config()
+            return sensor_config.get_sensor_config(sensor_name) is not None
+        except Exception as e:
+            _Logger.warning("Error checking sensor config for %s: %s", sensor_name, e)
+            return False
+    
+    def _create_derived_feature_metadata(self, feature_name: str, enabled: bool) -> Optional[FeatureMetadata]:
+        """
+        Create FeatureMetadata for a derived sensor statistic feature.
+        
+        Args:
+            feature_name: Name of the feature (e.g., "wind_avg_1h")
+            enabled: Whether the feature is currently enabled
+            
+        Returns:
+            FeatureMetadata object or None if the feature is invalid
+        """
+        if "_avg_" not in feature_name:
+            return None
+        
+        parts = feature_name.rsplit("_avg_", 1)
+        if len(parts) != 2:
+            return None
+        
+        sensor_name, time_window = parts
+        
+        # Map time window to TimeWindow enum
+        time_window_map = {
+            "1h": TimeWindow.HOUR_1,
+            "6h": TimeWindow.HOUR_6,
+            "24h": TimeWindow.HOUR_24,
+            "7d": TimeWindow.DAY_7,
+        }
+        time_window_enum = time_window_map.get(time_window, TimeWindow.NONE)
+        
+        # Try to get sensor configuration for unit and category
+        try:
+            from db.sensor_category_config import get_sensor_category_config, get_sensor_definition
+            sensor_config = get_sensor_category_config()
+            sensor_conf = sensor_config.get_sensor_config(sensor_name)
+            
+            if sensor_conf is None:
+                return None
+            
+            # Get sensor definition for display information
+            sensor_def = get_sensor_definition(sensor_name)
+            
+            # Determine category based on sensor type
+            category = FeatureCategory.WEATHER  # Default
+            if sensor_def:
+                sensor_type = sensor_def.sensor_type.value
+                if sensor_type == "indoor":
+                    category = FeatureCategory.INDOOR
+                elif sensor_type == "control":
+                    category = FeatureCategory.CONTROL
+                elif sensor_type == "usage":
+                    category = FeatureCategory.USAGE
+            
+            # Create descriptive text
+            window_text = time_window.upper()
+            description = f"{window_text} average for {sensor_name}"
+            if sensor_def:
+                description = f"{window_text} average of {sensor_def.display_name}"
+            
+            return FeatureMetadata(
+                name=feature_name,
+                category=category,
+                description=description,
+                unit=sensor_conf.unit or "",
+                time_window=time_window_enum,
+                is_core=False,
+                enabled=enabled,
+            )
+        except Exception as e:
+            _Logger.warning("Error creating metadata for derived feature %s: %s", feature_name, e)
+            return None
     
     def set_timezone(self, timezone: str) -> bool:
         """

@@ -2,6 +2,43 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.83] - 2025-12-02
+
+- **Sensor Configuration UI Reorganization and Data Lineage Improvements**
+  - **UI Changes**:
+    - Removed duplicate "📡 Sensor Configuration" section from Configuration tab
+    - Kept only "⚙️ Feature Configuration" on Configuration tab with enhanced guidance text
+    - Configuration tab now focuses on system-wide settings (resampling, sync, features, weather)
+    - Sensor Configuration tab retains all sensor management: Raw Sensors, Virtual Sensors, Feature Stats
+  - **Database Schema Enhancements**:
+    - Added `is_derived` boolean column to `resampled_samples` table to distinguish data lineage:
+      - `is_derived=False`: Direct time-weighted averages from raw sensor data
+      - `is_derived=True`: Virtual/derived sensors calculated from resampled raw data
+    - Created `feature_statistics` table for time-span rolling averages:
+      - Stores avg_1h, avg_6h, avg_24h, avg_7d calculated from resampled data
+      - Fields: sensor_name, stat_type, slot_start, value, unit, source_sample_count
+      - Separate from resampled_samples for clarity and performance
+    - Migration logic handles existing databases automatically via `init_db_schema()`
+  - **Resampling Order Enforcement**:
+    - Step 1: Resample raw sensors → `resampled_samples` (is_derived=False)
+    - Step 2: Calculate virtual sensors from step 1 → `resampled_samples` (is_derived=True)
+    - Step 3: Calculate time-span averages → `feature_statistics` (separate invocation)
+    - Example: 1 hour with 5-min intervals = 12 raw samples + 12 virtual samples + 12 averages
+  - **New Module**: `db/calculate_feature_stats.py` for time-span average calculation
+    - `calculate_feature_statistics()`: Main calculation function
+    - `calculate_rolling_average()`: Rolling window averages
+    - `get_all_sensor_names()`: Discovers all sensors (raw + virtual + from resampled data)
+    - `flush_feature_statistics()`: Clears all statistics for recalculation
+    - Configuration-driven: Only calculates enabled statistics per sensor
+  - **Testing**:
+    - 6 new schema migration tests: column addition, defaults, querying, backward compatibility
+    - 6 new resampling tests: is_derived flags, 1 hour = 12 records scenario, all timeframes
+    - 8 new feature statistics tests: rolling averages, configuration respect, table isolation
+    - 5 new UI structure tests: tab organization, duplicate removal, content validation
+    - All 98+ tests pass (64 resample + 6 schema + 15 virtual + 8 feature stats + 5 UI)
+  - **Documentation**: Added comprehensive inline documentation for data lineage and calculation order
+  - Fixes KevinHekert/HomeAssistantAddOns#174
+
 ## [0.0.0.82] - 2025-12-02
 
 - **Virtual Sensor Resampling**: Fixed issue where virtual sensors were not calculated during resampling

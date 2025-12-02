@@ -1819,6 +1819,10 @@ def get_sensors_with_statistics():
         
         # Add raw sensors
         for sensor_config in sensor_category_config.get_enabled_sensors():
+            # Get the sensor definition to access display_name
+            sensor_def = get_sensor_definition(sensor_config.category_name)
+            display_name = sensor_def.display_name if sensor_def else sensor_config.category_name
+            
             enabled_stats = feature_stats_config.get_enabled_stats_for_sensor(sensor_config.category_name)
             stat_features = [
                 {
@@ -1830,7 +1834,7 @@ def get_sensors_with_statistics():
             
             sensors_list.append({
                 "name": sensor_config.category_name,
-                "display_name": sensor_config.display_name,
+                "display_name": display_name,
                 "type": "raw",
                 "enabled": sensor_config.enabled,
                 "enabled_stats": [s.value for s in enabled_stats],

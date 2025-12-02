@@ -571,9 +571,13 @@
                 and their time-based averages.
             </p>
             
-            <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Configuration</button>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Features</button>
+                <button class="action-btn secondary" id="loadSensorsWithStatsBtn" onclick="loadSensorsWithStats()">Show Sensors & Statistics</button>
+            </div>
             <div id="featureConfigStatus" class="status-message"></div>
             <div id="featureConfigContent"></div>
+            <div id="sensorsWithStatsContent" style="margin-top: 1rem;"></div>
         </div>
 
         <div class="card">
@@ -2113,6 +2117,87 @@
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
                 loadFeatureConfig();
+            }
+        }
+
+        async function loadSensorsWithStats() {
+            const btn = document.getElementById('loadSensorsWithStatsBtn');
+            const statusDiv = document.getElementById('featureConfigStatus');
+            const contentDiv = document.getElementById('sensorsWithStatsContent');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading sensors and statistics...';
+            
+            try {
+                const response = await fetch('api/features/sensors_with_stats');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Loaded ${data.total_count} sensors (${data.raw_count} raw + ${data.virtual_count} virtual)`;
+                    
+                    // Build UI
+                    let html = '<div class="feature-category">';
+                    html += '<div class="feature-category-title">📊 All Sensors with Time-Based Statistics</div>';
+                    html += '<div class="feature-list">';
+                    
+                    data.sensors.forEach(sensor => {
+                        const itemClass = sensor.type === 'raw' ? 'core' : 'experimental';
+                        const badgeClass = sensor.type === 'raw' ? 'core' : 'experimental';
+                        const badgeText = sensor.type === 'raw' ? 'RAW SENSOR' : 'VIRTUAL SENSOR';
+                        const icon = sensor.type === 'raw' ? '📡' : '🔗';
+                        
+                        html += `<div class="feature-item ${itemClass}">`;
+                        html += `<div class="feature-info">`;
+                        html += `<div class="feature-name">${icon} ${sensor.display_name || sensor.name}`;
+                        html += `<span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                        
+                        if (sensor.description) {
+                            html += `<div class="feature-description">${sensor.description}</div>`;
+                        }
+                        
+                        // Show enabled statistics
+                        if (sensor.enabled_stats && sensor.enabled_stats.length > 0) {
+                            html += `<div class="feature-meta">`;
+                            html += `Enabled statistics: ${sensor.enabled_stats.join(', ')}`;
+                            html += `</div>`;
+                            
+                            // Show generated feature names
+                            if (sensor.stat_features && sensor.stat_features.length > 0) {
+                                html += `<div class="feature-meta" style="font-size: 0.75rem; color: var(--text-muted);">`;
+                                html += `Features: `;
+                                sensor.stat_features.forEach((feat, idx) => {
+                                    if (idx > 0) html += ', ';
+                                    html += `<code>${feat.name}</code>`;
+                                });
+                                html += `</div>`;
+                            }
+                        } else {
+                            html += `<div class="feature-meta" style="color: var(--text-muted);">`;
+                            html += `No time-based statistics enabled`;
+                            html += `</div>`;
+                        }
+                        
+                        html += `</div>`;
+                        html += `</div>`;
+                    });
+                    
+                    html += '</div>';
+                    html += '</div>';
+                    
+                    contentDiv.innerHTML = html;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error: ' + data.message;
+                    contentDiv.innerHTML = '';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                contentDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
             }
         }
 

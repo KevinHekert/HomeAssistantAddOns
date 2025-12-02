@@ -1578,6 +1578,111 @@ def set_feature_timezone():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.get("/api/features/sensors_with_stats")
+def get_sensors_with_statistics():
+    """
+    Get comprehensive sensor information including their time-based statistics.
+    
+    This endpoint provides all sensors (raw + virtual) with their enabled statistics
+    for display in the Feature Configuration section.
+    
+    Response:
+    {
+        "status": "success",
+        "sensors": [
+            {
+                "name": "outdoor_temp",
+                "display_name": "Outdoor Temperature",
+                "type": "raw",
+                "enabled": true,
+                "enabled_stats": ["avg_1h", "avg_6h", "avg_24h"],
+                "stat_features": [
+                    {"name": "outdoor_temp_avg_1h", "type": "avg_1h"},
+                    {"name": "outdoor_temp_avg_6h", "type": "avg_6h"},
+                    ...
+                ]
+            },
+            {
+                "name": "temp_delta",
+                "display_name": "Temperature Delta",
+                "type": "virtual",
+                "enabled": true,
+                "description": "Target - Indoor",
+                "enabled_stats": ["avg_1h"],
+                ...
+            }
+        ],
+        "total_count": 15,
+        "raw_count": 10,
+        "virtual_count": 5
+    }
+    """
+    try:
+        sensor_category_config = get_sensor_category_config()
+        virtual_sensors_config = get_virtual_sensors_config()
+        feature_stats_config = get_feature_stats_config()
+        
+        sensors_list = []
+        raw_count = 0
+        virtual_count = 0
+        
+        # Add raw sensors
+        for sensor_config in sensor_category_config.get_enabled_sensors():
+            enabled_stats = feature_stats_config.get_enabled_stats_for_sensor(sensor_config.category_name)
+            stat_features = [
+                {
+                    "name": feature_stats_config.get_sensor_config(sensor_config.category_name).get_stat_category_name(stat),
+                    "type": stat.value
+                }
+                for stat in enabled_stats
+            ]
+            
+            sensors_list.append({
+                "name": sensor_config.category_name,
+                "display_name": sensor_config.display_name,
+                "type": "raw",
+                "enabled": sensor_config.enabled,
+                "enabled_stats": [s.value for s in enabled_stats],
+                "stat_features": stat_features,
+            })
+            raw_count += 1
+        
+        # Add virtual sensors
+        for virtual_sensor in virtual_sensors_config.get_enabled_sensors():
+            enabled_stats = feature_stats_config.get_enabled_stats_for_sensor(virtual_sensor.name)
+            stat_features = [
+                {
+                    "name": feature_stats_config.get_sensor_config(virtual_sensor.name).get_stat_category_name(stat),
+                    "type": stat.value
+                }
+                for stat in enabled_stats
+            ]
+            
+            sensors_list.append({
+                "name": virtual_sensor.name,
+                "display_name": virtual_sensor.display_name,
+                "type": "virtual",
+                "enabled": virtual_sensor.enabled,
+                "description": virtual_sensor.description,
+                "operation": virtual_sensor.operation.value,
+                "enabled_stats": [s.value for s in enabled_stats],
+                "stat_features": stat_features,
+            })
+            virtual_count += 1
+        
+        return jsonify({
+            "status": "success",
+            "sensors": sensors_list,
+            "total_count": len(sensors_list),
+            "raw_count": raw_count,
+            "virtual_count": virtual_count,
+        })
+    except Exception as e:
+        _Logger.error("Error getting sensors with statistics: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
 @app.get("/api/features/metadata")
 def get_features_metadata():
     """

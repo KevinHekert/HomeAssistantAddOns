@@ -33,6 +33,15 @@ from db.sensor_category_config import (
     CORE_SENSORS,
     EXPERIMENTAL_SENSORS,
 )
+from db.virtual_sensors import (
+    get_virtual_sensors_config,
+    VirtualSensorDefinition,
+    VirtualSensorOperation,
+)
+from db.feature_stats import (
+    get_feature_stats_config,
+    StatType,
+)
 from db.prediction_storage import (
     store_prediction,
     get_stored_predictions,
@@ -2974,6 +2983,85 @@ def set_sensor_entity():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.post("/api/sensors/set_unit")
+def set_sensor_unit():
+    """
+    Set the unit for a sensor category.
+    
+    Works for both core and experimental sensors.
+    
+    Request body:
+    {
+        "category_name": "outdoor_temp",
+        "unit": "°C"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Unit for 'outdoor_temp' set to '°C'",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        category_name = data.get("category_name")
+        unit = data.get("unit", "").strip()
+        
+        if not category_name:
+            return jsonify({
+                "status": "error",
+                "message": "category_name is required",
+            }), 400
+        
+        # Unit can be empty to clear/reset it
+        
+        # Verify sensor exists
+        sensor_def = get_sensor_definition(category_name)
+        if sensor_def is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Unknown sensor category: {category_name}",
+            }), 400
+        
+        config = get_sensor_category_config()
+        result = config.set_unit(category_name, unit)
+        
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to set unit for '{category_name}'",
+            }), 500
+        
+        # Save configuration
+        config.save()
+        
+        sensor_config = config.get_sensor_config(category_name)
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Unit for '{category_name}' set to '{unit}'" if unit else f"Unit for '{category_name}' cleared",
+            "sensor": {
+                "category_name": category_name,
+                "display_name": sensor_def.display_name,
+                "entity_id": sensor_config.entity_id,
+                "unit": sensor_config.unit,
+                "enabled": sensor_config.enabled,
+                "is_core": sensor_def.is_core,
+            },
+        })
+    except Exception as e:
+        _Logger.error("Error setting sensor unit: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.get("/api/sensors/definitions")
 def get_sensor_definitions_api():
     """
@@ -3002,6 +3090,352 @@ def get_sensor_definitions_api():
         })
     except Exception as e:
         _Logger.error("Error getting sensor definitions: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =============================================================================
+# VIRTUAL SENSORS ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/virtual_sensors/list")
+def list_virtual_sensors():
+    """
+    Get list of all virtual sensors.
+    
+    Response:
+    {
+        "status": "success",
+        "sensors": [...],
+        "count": 5
+    }
+    """
+    try:
+        config = get_virtual_sensors_config()
+        sensors = config.get_all_sensors()
+        
+        return jsonify({
+            "status": "success",
+            "sensors": [s.to_dict() for s in sensors],
+            "count": len(sensors),
+        })
+    except Exception as e:
+        _Logger.error("Error listing virtual sensors: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/virtual_sensors/add")
+def add_virtual_sensor():
+    """
+    Add a new virtual sensor.
+    
+    Request body:
+    {
+        "name": "temp_delta",
+        "display_name": "Temperature Delta",
+        "description": "Difference between target and indoor temperature",
+        "source_sensor1": "target_temp",
+        "source_sensor2": "indoor_temp",
+        "operation": "subtract",
+        "unit": "°C"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Virtual sensor 'temp_delta' created",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        # Validate required fields
+        required_fields = ["name", "display_name", "description", "source_sensor1", "source_sensor2", "operation"]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "status": "error",
+                    "message": f"'{field}' is required",
+                }), 400
+        
+        # Validate operation
+        try:
+            operation = VirtualSensorOperation(data["operation"])
+        except ValueError:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid operation. Must be one of: {[op.value for op in VirtualSensorOperation]}",
+            }), 400
+        
+        # Create virtual sensor definition
+        sensor = VirtualSensorDefinition(
+            name=data["name"],
+            display_name=data["display_name"],
+            description=data["description"],
+            source_sensor1=data["source_sensor1"],
+            source_sensor2=data["source_sensor2"],
+            operation=operation,
+            unit=data.get("unit", ""),
+            enabled=data.get("enabled", True),
+        )
+        
+        # Add to configuration
+        config = get_virtual_sensors_config()
+        if not config.add_sensor(sensor):
+            return jsonify({
+                "status": "error",
+                "message": f"Virtual sensor '{sensor.name}' already exists",
+            }), 400
+        
+        # Save configuration
+        config.save()
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Virtual sensor '{sensor.name}' created",
+            "sensor": sensor.to_dict(),
+        })
+    except Exception as e:
+        _Logger.error("Error adding virtual sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.delete("/api/virtual_sensors/<name>")
+def delete_virtual_sensor(name: str):
+    """
+    Delete a virtual sensor.
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Virtual sensor deleted"
+    }
+    """
+    try:
+        config = get_virtual_sensors_config()
+        
+        if not config.remove_sensor(name):
+            return jsonify({
+                "status": "error",
+                "message": f"Virtual sensor '{name}' not found",
+            }), 404
+        
+        # Save configuration
+        config.save()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Virtual sensor deleted",
+        })
+    except Exception as e:
+        _Logger.error("Error deleting virtual sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/virtual_sensors/<name>/toggle")
+def toggle_virtual_sensor(name: str):
+    """
+    Enable or disable a virtual sensor.
+    
+    Request body:
+    {
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Virtual sensor enabled",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or "enabled" not in data:
+            return jsonify({
+                "status": "error",
+                "message": "enabled field is required",
+            }), 400
+        
+        config = get_virtual_sensors_config()
+        sensor = config.get_sensor(name)
+        
+        if sensor is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Virtual sensor '{name}' not found",
+            }), 404
+        
+        enabled = bool(data["enabled"])
+        
+        if enabled:
+            config.enable_sensor(name)
+        else:
+            config.disable_sensor(name)
+        
+        # Save configuration
+        config.save()
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Virtual sensor {status}",
+            "sensor": sensor.to_dict(),
+        })
+    except Exception as e:
+        _Logger.error("Error toggling virtual sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =============================================================================
+# FEATURE STATS CONFIGURATION ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/feature_stats/config")
+def get_feature_stats_config_api():
+    """
+    Get feature statistics configuration for all sensors.
+    
+    Shows which time-based statistics (avg_1h, avg_6h, avg_24h, avg_7d)
+    are enabled for each sensor.
+    
+    Response:
+    {
+        "status": "success",
+        "sensors": {
+            "outdoor_temp": {
+                "enabled_stats": ["avg_1h", "avg_6h", "avg_24h"],
+                "stat_categories": ["outdoor_temp_avg_1h", "outdoor_temp_avg_6h", "outdoor_temp_avg_24h"]
+            },
+            ...
+        },
+        "all_stat_types": ["avg_1h", "avg_6h", "avg_24h", "avg_7d"]
+    }
+    """
+    try:
+        stats_config = get_feature_stats_config()
+        sensor_category_config = get_sensor_category_config()
+        virtual_sensors_config = get_virtual_sensors_config()
+        
+        # Get all available sensors (raw + virtual)
+        all_sensors = []
+        
+        # Add raw sensors
+        for sensor_config in sensor_category_config.get_enabled_sensors():
+            all_sensors.append({
+                "name": sensor_config.category_name,
+                "type": "raw",
+                "enabled": sensor_config.enabled,
+            })
+        
+        # Add virtual sensors
+        for virtual_sensor in virtual_sensors_config.get_enabled_sensors():
+            all_sensors.append({
+                "name": virtual_sensor.name,
+                "type": "virtual",
+                "enabled": virtual_sensor.enabled,
+            })
+        
+        # Build response with stats configuration for each sensor
+        sensors_with_stats = {}
+        for sensor in all_sensors:
+            sensor_name = sensor["name"]
+            enabled_stats = stats_config.get_enabled_stats_for_sensor(sensor_name)
+            stat_categories = [
+                stats_config.get_sensor_config(sensor_name).get_stat_category_name(stat)
+                for stat in enabled_stats
+            ]
+            
+            sensors_with_stats[sensor_name] = {
+                "sensor_type": sensor["type"],
+                "enabled_stats": [s.value for s in enabled_stats],
+                "stat_categories": stat_categories,
+            }
+        
+        return jsonify({
+            "status": "success",
+            "sensors": sensors_with_stats,
+            "all_stat_types": [s.value for s in StatType],
+        })
+    except Exception as e:
+        _Logger.error("Error getting feature stats config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/feature_stats/set")
+def set_feature_stat():
+    """
+    Enable or disable a specific statistic for a sensor.
+    
+    Request body:
+    {
+        "sensor_name": "outdoor_temp",
+        "stat_type": "avg_1h",
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Statistic 'avg_1h' for 'outdoor_temp' enabled",
+        "enabled_stats": ["avg_1h", "avg_6h", "avg_24h"]
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        sensor_name = data.get("sensor_name")
+        stat_type_str = data.get("stat_type")
+        enabled = data.get("enabled")
+        
+        if not sensor_name or not stat_type_str or enabled is None:
+            return jsonify({
+                "status": "error",
+                "message": "sensor_name, stat_type, and enabled are required",
+            }), 400
+        
+        # Validate stat_type
+        try:
+            stat_type = StatType(stat_type_str)
+        except ValueError:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid stat_type. Must be one of: {[s.value for s in StatType]}",
+            }), 400
+        
+        # Update configuration
+        config = get_feature_stats_config()
+        config.set_stat_enabled(sensor_name, stat_type, bool(enabled))
+        
+        # Save configuration
+        config.save()
+        
+        # Get updated stats for this sensor
+        enabled_stats = config.get_enabled_stats_for_sensor(sensor_name)
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Statistic '{stat_type.value}' for '{sensor_name}' {status}",
+            "enabled_stats": [s.value for s in enabled_stats],
+        })
+    except Exception as e:
+        _Logger.error("Error setting feature stat: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

@@ -2,6 +2,125 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.81] - 2025-12-02
+
+- **Feature Statistics Configuration**: Implemented Step 5 of sensor configuration feature - Time-based Feature Stats
+  - **New Module**: `db/feature_stats.py` for feature statistics management
+    - `StatType` enum: avg_1h, avg_6h, avg_24h, avg_7d
+    - `SensorStatsConfig` dataclass for per-sensor statistics configuration
+    - `FeatureStatsConfiguration` class for global configuration management
+    - Default stats enabled: avg_1h, avg_6h, avg_24h
+    - Persistent JSON storage at `/data/feature_stats_config.json`
+  - **New API Endpoints**:
+    - `GET /api/feature_stats/config`: Get statistics configuration for all sensors
+    - `POST /api/feature_stats/set`: Enable/disable a specific statistic for a sensor
+  - **UI Implementation**:
+    - Feature Stats Configuration section now fully functional
+    - Table display with checkboxes for each stat type per sensor
+    - Shows sensor type (Raw/Virtual) with badges
+    - Interactive checkboxes to enable/disable each statistic
+    - Real-time status updates when toggling statistics
+    - Explanatory text about stat generation
+  - **Functionality**:
+    - Works for both raw sensors and virtual sensors
+    - Each sensor can have different statistics enabled
+    - Statistics are stored with category names like "sensor_name_avg_1h"
+    - Configuration persists across restarts
+  - **Example Usage**:
+    - Enable avg_1h for outdoor_temp → creates "outdoor_temp_avg_1h" during resampling
+    - Enable avg_6h and avg_24h for temp_delta (virtual sensor) → creates aggregated delta values
+  - **Note**: Statistics calculation will be integrated into resampling in Step 6
+- **Bug Fix**: Fixed indentation error in sensor_category_config.py (duplicate return statements)
+- **Tests**: All 524 existing tests pass
+
+## [0.0.0.80] - 2025-12-02
+
+- **Virtual Sensors Implementation**: Implemented Step 4 of sensor configuration feature - Virtual (Derived) Sensors
+  - **New Module**: `db/virtual_sensors.py` for virtual sensor management
+    - `VirtualSensorDefinition` dataclass for sensor definitions
+    - `VirtualSensorOperation` enum: subtract, add, multiply, divide, average
+    - `VirtualSensorsConfiguration` class for configuration management
+    - `calculate()` method to compute virtual sensor values from two source sensors
+    - Persistent JSON storage at `/data/virtual_sensors_config.json`
+  - **New API Endpoints**:
+    - `GET /api/virtual_sensors/list`: List all virtual sensors with their configurations
+    - `POST /api/virtual_sensors/add`: Create a new virtual sensor
+    - `DELETE /api/virtual_sensors/<name>`: Delete a virtual sensor
+    - `POST /api/virtual_sensors/<name>/toggle`: Enable/disable a virtual sensor
+  - **UI Enhancements**:
+    - Virtual Sensors section now fully functional
+    - Table display showing name, formula, unit, status
+    - "Add Virtual Sensor" dialog with prompts for all required fields
+    - Enable/Disable buttons for each virtual sensor
+    - Delete button with confirmation dialog
+    - Reload button to refresh the list
+    - Formula display with mathematical symbols (-, +, ×, ÷, avg)
+    - Enabled/Disabled status badges
+  - **Supported Operations**:
+    - `subtract`: sensor1 - sensor2 (e.g., temp_delta = target_temp - indoor_temp)
+    - `add`: sensor1 + sensor2 (e.g., total_power = device1 + device2)
+    - `multiply`: sensor1 × sensor2 (e.g., energy = power × time)
+    - `divide`: sensor1 ÷ sensor2 (with zero-division protection)
+    - `average`: (sensor1 + sensor2) / 2
+  - **Examples**:
+    - Create "temp_delta" = target_temp - indoor_temp (heating demand indicator)
+    - Create "outdoor_wind_factor" = wind × outdoor_temp (wind chill indicator)
+  - **Note**: Virtual sensor calculations will be integrated into resampling in Step 6
+
+## [0.0.0.79] - 2025-12-02
+
+- **Unit Field Storage and Configuration**: Implemented Step 3 of sensor configuration feature
+  - Added `unit` field to `SensorConfig` dataclass
+  - Units can now be stored per sensor in the configuration file
+  - Unit can override the default unit from `SensorDefinition`
+  - **New API Endpoint**: `POST /api/sensors/set_unit`
+    - Accepts `category_name` and `unit` parameters
+    - Saves unit to sensor configuration
+    - Returns updated sensor configuration
+  - **Database Model Updates**:
+    - `SensorConfig.unit` field added with default empty string
+    - `to_dict()` and `from_dict()` methods updated to handle unit
+    - `set_unit()` method added to `SensorCategoryConfiguration` class
+  - **UI Updates**:
+    - Unit input fields are now functional
+    - `saveRawSensor()` function now saves both entity ID and unit
+    - Displays success message when both are saved successfully
+    - Shows warning if entity ID saved but unit failed
+  - **Configuration Persistence**:
+    - Units are stored in `/data/sensor_category_config.json`
+    - Configuration is saved automatically when unit is updated
+    - `get_sensors_by_type()` now returns configured unit (or default if not set)
+- **Backwards Compatibility**: Existing configurations without unit field will default to empty string
+
+## [0.0.0.78] - 2025-12-02
+
+- **New Sensor Configuration Tab**: Added new "📡 Sensor Configuration" tab in the UI
+  - Step 1 of comprehensive sensor configuration and virtual sensor feature
+  - Tab positioned between Configuration and Model Training tabs
+  - Three main sections created: Raw Sensors, Virtual Sensors, and Feature Stats Configuration
+- **Raw Sensors Section**: Interface to view and configure all raw sensors
+  - Displays all sensors grouped by type (Usage, Weather, Indoor, Heating)
+  - Shows sensor display name, description, entity ID, and unit fields
+  - Core sensors displayed with green badge (always enabled)
+  - Experimental sensors displayed with orange badge (can be enabled/disabled)
+  - Individual Save button for each sensor
+  - Uses existing `/api/sensors/category_config` endpoint for loading
+  - Uses existing `/api/sensors/set_entity` endpoint for saving
+  - `loadRawSensors()` JavaScript function to load and display sensor list
+  - `saveRawSensor()` JavaScript function to save individual sensor configuration
+- **Virtual Sensors Section** (placeholder for Step 4):
+  - Button to add new virtual sensors
+  - Reload list button
+  - Placeholder message indicating feature will be implemented next
+- **Feature Stats Configuration Section** (placeholder for Step 5):
+  - Placeholder for time-based statistics configuration
+  - Will enable avg_1h, avg_6h, avg_24h, avg_7d generation per sensor
+- **UI Improvements**:
+  - Added `.action-btn.small` CSS class for inline action buttons
+  - Consistent styling with existing UI theme
+  - Responsive table layout for sensor configuration
+- **Note**: This is the first step of 8-step implementation. Virtual sensors and feature stats functionality will be added in subsequent steps.
+
 ## [0.0.0.77] - 2025-12-02
 
 - **Sensor Category Configuration**: Refactored sensor configuration with Core/Experimental categories

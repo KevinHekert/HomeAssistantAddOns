@@ -172,6 +172,11 @@
         .action-btn.warning:hover {
             background: #b45309;
         }
+        .action-btn.small {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            margin: 0.2rem;
+        }
         .status-message {
             margin-top: 0.75rem;
             padding: 0.75rem;
@@ -468,6 +473,7 @@
     <div class="tabs-container">
         <div class="tabs-nav">
             <button class="tab-btn active" onclick="switchTab('configuration')">⚙️ Configuration</button>
+            <button class="tab-btn" onclick="switchTab('sensorConfig')">📡 Sensor Configuration</button>
             <button class="tab-btn" onclick="switchTab('training')">🤖 Model Training</button>
             <button class="tab-btn" onclick="switchTab('sensors')">📊 Sensor Information</button>
         </div>
@@ -639,6 +645,36 @@
             <button class="action-btn secondary" id="testWeatherBtn" onclick="testWeatherApi()">Test Connection</button>
             <button class="action-btn secondary" id="loadWeatherConfigBtn" onclick="loadWeatherConfig()">Reload</button>
             <div id="weatherConfigStatus" class="status-message"></div>
+        </div>
+    </div>
+
+    <!-- Sensor Configuration Tab -->
+    <div id="tab-sensorConfig" class="tab-content">
+        <div class="card">
+            <h3>📊 Raw Sensors</h3>
+            <p>Configure raw sensors that are directly read from Home Assistant. Add unit information and view current values.</p>
+            <button class="action-btn secondary" id="loadRawSensorsBtn" onclick="loadRawSensors()">Load Sensors</button>
+            <div id="rawSensorsStatus" class="status-message"></div>
+            <div id="rawSensorsTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔗 Virtual Sensors</h3>
+            <p>Create virtual (derived) sensors based on two existing sensors. Example: delta = target_temp - indoor_temp</p>
+            <div style="margin-bottom: 20px;">
+                <button class="action-btn" id="addVirtualSensorBtn" onclick="showAddVirtualSensorDialog()">+ Add Virtual Sensor</button>
+                <button class="action-btn secondary" id="loadVirtualSensorsBtn" onclick="loadVirtualSensors()">Reload List</button>
+            </div>
+            <div id="virtualSensorsStatus" class="status-message"></div>
+            <div id="virtualSensorsTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>📈 Feature Stats Configuration</h3>
+            <p>Configure which time-based statistics (avg_1h, avg_6h, avg_24h, avg_7d) should be generated for each sensor during resampling.</p>
+            <button class="action-btn secondary" id="loadFeatureStatsBtn" onclick="loadFeatureStatsConfig()">Load Configuration</button>
+            <div id="featureStatsStatus" class="status-message"></div>
+            <div id="featureStatsTable"></div>
         </div>
     </div>
 
@@ -2668,6 +2704,463 @@
                 statusDiv.textContent = '✗ Error: ' + error.message;
             } finally {
                 btn.disabled = false;
+            }
+        }
+
+        // ===================================================================
+        // Sensor Configuration Tab Functions
+        // ===================================================================
+
+        // Load raw sensors list
+        async function loadRawSensors() {
+            const statusDiv = document.getElementById('rawSensorsStatus');
+            const tableDiv = document.getElementById('rawSensorsTable');
+            const btn = document.getElementById('loadRawSensorsBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading raw sensors...';
+            
+            try {
+                const response = await fetch('api/sensors/category_config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Loaded ${data.config.enabled_sensor_count} enabled sensors`;
+                    
+                    // Build sensors table grouped by type
+                    let html = '<div style="margin-top: 20px;">';
+                    
+                    const sensorTypes = data.sensors_by_type;
+                    for (const [type, sensors] of Object.entries(sensorTypes)) {
+                        html += `<h4 style="margin-top: 20px; margin-bottom: 10px; text-transform: capitalize;">${type} Sensors</h4>`;
+                        html += '<table class="data-table">';
+                        html += '<thead><tr>';
+                        html += '<th>Sensor</th><th>Entity ID</th><th>Unit</th><th>Status</th><th>Actions</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        for (const sensor of sensors) {
+                            const statusBadge = sensor.is_core 
+                                ? '<span style="padding: 2px 8px; background: var(--success-color); color: white; border-radius: 3px; font-size: 0.8em;">Core</span>'
+                                : (sensor.enabled 
+                                    ? '<span style="padding: 2px 8px; background: var(--warning-color); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
+                                    : '<span style="padding: 2px 8px; background: var(--secondary-color); color: white; border-radius: 3px; font-size: 0.8em;">Disabled</span>');
+                            
+                            html += '<tr>';
+                            html += `<td><strong>${sensor.display_name}</strong><br><small style="color: var(--text-secondary);">${sensor.description}</small></td>`;
+                            html += `<td><input type="text" value="${sensor.entity_id || ''}" id="entity_${sensor.category_name}" style="width: 300px;" placeholder="sensor.example"></td>`;
+                            html += `<td><input type="text" value="${sensor.unit || ''}" id="unit_${sensor.category_name}" style="width: 80px;" placeholder="Unit"></td>`;
+                            html += `<td>${statusBadge}</td>`;
+                            html += `<td><button class="action-btn small" onclick="saveRawSensor('${sensor.category_name}')">Save</button></td>`;
+                            html += '</tr>';
+                        }
+                        
+                        html += '</tbody></table>';
+                    }
+                    
+                    html += '</div>';
+                    tableDiv.innerHTML = html;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    tableDiv.innerHTML = '';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                tableDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Save a single raw sensor configuration
+        async function saveRawSensor(categoryName) {
+            const entityIdInput = document.getElementById(`entity_${categoryName}`);
+            const unitInput = document.getElementById(`unit_${categoryName}`);
+            const statusDiv = document.getElementById('rawSensorsStatus');
+            
+            if (!entityIdInput || !unitInput) {
+                return;
+            }
+            
+            const entityId = entityIdInput.value.trim();
+            const unit = unitInput.value.trim();
+            
+            if (!entityId) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Entity ID is required';
+                return;
+            }
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `Saving ${categoryName}...`;
+            
+            try {
+                // Save entity ID
+                const entityResponse = await fetch('api/sensors/set_entity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category_name: categoryName,
+                        entity_id: entityId
+                    })
+                });
+                
+                const entityData = await entityResponse.json();
+                
+                if (!entityResponse.ok) {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + entityData.message;
+                    return;
+                }
+                
+                // Save unit
+                const unitResponse = await fetch('api/sensors/set_unit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category_name: categoryName,
+                        unit: unit
+                    })
+                });
+                
+                const unitData = await unitResponse.json();
+                
+                if (unitResponse.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Saved ${categoryName}: Entity ID and unit updated`;
+                    setTimeout(() => { statusDiv.textContent = ''; }, 3000);
+                } else {
+                    statusDiv.className = 'status-message warning';
+                    statusDiv.textContent = `⚠ Entity ID saved but unit failed: ${unitData.message}`;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Load virtual sensors list
+        async function loadVirtualSensors() {
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            const tableDiv = document.getElementById('virtualSensorsTable');
+            const btn = document.getElementById('loadVirtualSensorsBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading virtual sensors...';
+            
+            try {
+                const response = await fetch('api/virtual_sensors/list');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Loaded ${data.count} virtual sensors`;
+                    
+                    if (data.count === 0) {
+                        tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">No virtual sensors defined yet. Click "+ Add Virtual Sensor" to create one.</p>';
+                    } else {
+                        // Build virtual sensors table
+                        let html = '<table class="data-table" style="margin-top: 20px;">';
+                        html += '<thead><tr>';
+                        html += '<th>Name</th><th>Formula</th><th>Unit</th><th>Status</th><th>Actions</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        for (const sensor of data.sensors) {
+                            const statusBadge = sensor.enabled
+                                ? '<span style="padding: 2px 8px; background: var(--success-color); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
+                                : '<span style="padding: 2px 8px; background: var(--text-muted); color: white; border-radius: 3px; font-size: 0.8em;">Disabled</span>';
+                            
+                            const operationSymbol = {
+                                'subtract': '-',
+                                'add': '+',
+                                'multiply': '×',
+                                'divide': '÷',
+                                'average': 'avg'
+                            }[sensor.operation] || sensor.operation;
+                            
+                            html += '<tr>';
+                            html += `<td><strong>${sensor.display_name}</strong><br><small style="color: var(--text-secondary);">${sensor.description}</small></td>`;
+                            html += `<td><code>${sensor.source_sensor1} ${operationSymbol} ${sensor.source_sensor2}</code></td>`;
+                            html += `<td>${sensor.unit || '-'}</td>`;
+                            html += `<td>${statusBadge}</td>`;
+                            html += `<td>`;
+                            html += `<button class="action-btn small" onclick="toggleVirtualSensor('${sensor.name}', ${!sensor.enabled})">${sensor.enabled ? 'Disable' : 'Enable'}</button>`;
+                            html += `<button class="action-btn small warning" onclick="deleteVirtualSensor('${sensor.name}')">Delete</button>`;
+                            html += `</td>`;
+                            html += '</tr>';
+                        }
+                        
+                        html += '</tbody></table>';
+                        tableDiv.innerHTML = html;
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    tableDiv.innerHTML = '';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                tableDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Show dialog to add a new virtual sensor
+        async function showAddVirtualSensorDialog() {
+            // Get available sensors for dropdowns
+            const sensorsResponse = await fetch('api/sensors/category_config');
+            if (!sensorsResponse.ok) {
+                alert('Failed to load sensors list');
+                return;
+            }
+            const sensorsData = await sensorsResponse.json();
+            
+            // Build list of all available sensors
+            const allSensors = [];
+            for (const [type, sensors] of Object.entries(sensorsData.sensors_by_type)) {
+                for (const sensor of sensors) {
+                    if (sensor.enabled) {
+                        allSensors.push({
+                            value: sensor.category_name,
+                            label: `${sensor.display_name} (${sensor.category_name})`
+                        });
+                    }
+                }
+            }
+            
+            // Create dialog
+            const name = prompt('Enter virtual sensor name (e.g., temp_delta):');
+            if (!name) return;
+            
+            const displayName = prompt('Enter display name (e.g., Temperature Delta):');
+            if (!displayName) return;
+            
+            const description = prompt('Enter description:');
+            if (!description) return;
+            
+            const sensor1 = prompt(`Enter first sensor (available: ${allSensors.map(s => s.value).join(', ')}):`);
+            if (!sensor1) return;
+            
+            const sensor2 = prompt(`Enter second sensor (available: ${allSensors.map(s => s.value).join(', ')}):`);
+            if (!sensor2) return;
+            
+            const operation = prompt('Enter operation (subtract, add, multiply, divide, average):');
+            if (!operation) return;
+            
+            const unit = prompt('Enter unit (optional):') || '';
+            
+            // Create virtual sensor
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Creating virtual sensor...';
+            
+            try {
+                const response = await fetch('api/virtual_sensors/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        display_name: displayName,
+                        description: description,
+                        source_sensor1: sensor1,
+                        source_sensor2: sensor2,
+                        operation: operation,
+                        unit: unit
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload the list
+                    await loadVirtualSensors();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Toggle virtual sensor enabled/disabled
+        async function toggleVirtualSensor(name, enabled) {
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `${enabled ? 'Enabling' : 'Disabling'} virtual sensor...`;
+            
+            try {
+                const response = await fetch(`api/virtual_sensors/${name}/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: enabled })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload the list
+                    await loadVirtualSensors();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Delete virtual sensor
+        async function deleteVirtualSensor(name) {
+            if (!confirm(`Are you sure you want to delete virtual sensor '${name}'?`)) {
+                return;
+            }
+            
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Deleting virtual sensor...';
+            
+            try {
+                const response = await fetch(`api/virtual_sensors/${name}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload the list
+                    await loadVirtualSensors();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Load feature stats configuration
+        async function loadFeatureStatsConfig() {
+            const statusDiv = document.getElementById('featureStatsStatus');
+            const tableDiv = document.getElementById('featureStatsTable');
+            const btn = document.getElementById('loadFeatureStatsBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading feature stats configuration...';
+            
+            try {
+                const response = await fetch('api/feature_stats/config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    const sensorCount = Object.keys(data.sensors).length;
+                    statusDiv.textContent = `✓ Loaded feature stats configuration for ${sensorCount} sensors`;
+                    
+                    if (sensorCount === 0) {
+                        tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">No sensors configured yet.</p>';
+                    } else {
+                        // Build feature stats configuration table
+                        let html = '<table class="data-table" style="margin-top: 20px;">';
+                        html += '<thead><tr>';
+                        html += '<th>Sensor</th><th>Type</th>';
+                        
+                        // Add column for each stat type
+                        for (const statType of data.all_stat_types) {
+                            html += `<th>${statType}</th>`;
+                        }
+                        
+                        html += '</tr></thead><tbody>';
+                        
+                        for (const [sensorName, sensorConfig] of Object.entries(data.sensors)) {
+                            html += '<tr>';
+                            html += `<td><strong>${sensorName}</strong></td>`;
+                            
+                            const typeBadge = sensorConfig.sensor_type === 'raw'
+                                ? '<span style="padding: 2px 8px; background: var(--accent-blue); color: white; border-radius: 3px; font-size: 0.8em;">Raw</span>'
+                                : '<span style="padding: 2px 8px; background: var(--warning-color); color: white; border-radius: 3px; font-size: 0.8em;">Virtual</span>';
+                            html += `<td>${typeBadge}</td>`;
+                            
+                            // Add checkbox for each stat type
+                            for (const statType of data.all_stat_types) {
+                                const isEnabled = sensorConfig.enabled_stats.includes(statType);
+                                html += `<td><input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleFeatureStat('${sensorName}', '${statType}', this.checked)"></td>`;
+                            }
+                            
+                            html += '</tr>';
+                        }
+                        
+                        html += '</tbody></table>';
+                        html += '<p style="margin-top: 10px; color: var(--text-secondary); font-size: 0.9em;">';
+                        html += 'Check boxes to enable time-based statistics generation during resampling. ';
+                        html += 'For example, enabling "avg_1h" for outdoor_temp will create "outdoor_temp_avg_1h" during resampling.';
+                        html += '</p>';
+                        tableDiv.innerHTML = html;
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    tableDiv.innerHTML = '';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                tableDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Toggle a feature stat for a sensor
+        async function toggleFeatureStat(sensorName, statType, enabled) {
+            const statusDiv = document.getElementById('featureStatsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `${enabled ? 'Enabling' : 'Disabling'} ${statType} for ${sensorName}...`;
+            
+            try {
+                const response = await fetch('api/feature_stats/set', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sensor_name: sensorName,
+                        stat_type: statType,
+                        enabled: enabled
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    setTimeout(() => { statusDiv.textContent = ''; }, 2000);
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    // Reload to restore correct state
+                    await loadFeatureStatsConfig();
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                // Reload to restore correct state
+                await loadFeatureStatsConfig();
             }
         }
     </script>

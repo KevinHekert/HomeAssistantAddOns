@@ -7,12 +7,11 @@ from urllib.parse import urlencode, quote
 
 from db.samples import sample_exists, log_sample
 from db.sync_state import update_sync_attempt
+from db.sync_config import get_backfill_days, get_sync_window_days
 
 _Logger = logging.getLogger(__name__)
 
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN")
-BACKFILL_IF_NO_SAMPLES_DAYS = 14
-MAX_WINDOW_DAYS = 1
 
 
 def parse_state_to_float(state: str | None) -> float | None:
@@ -95,12 +94,12 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
     Sync alle history uit Home Assistant voor deze entity.
 
     - Als er nog geen samples zijn (since is None):
-      start = nu - BACKFILL_IF_NO_SAMPLES_DAYS
-      end   = start + MAX_WINDOW_DAYS
+      start = nu - backfill_days (from config)
+      end   = start + sync_window_days (from config)
 
     - Als er al samples zijn:
       start = since - 5 minuten
-      end   = start + MAX_WINDOW_DAYS (maar niet voorbij nu)
+      end   = start + sync_window_days (maar niet voorbij nu)
 
     - Voegt alleen nieuwe samples toe (op basis van entity_id + timestamp).
     - Slaat altijd een sync-poging op in SyncStatus (ook bij geen data / fout).
@@ -121,11 +120,14 @@ def sync_history_for_entity(entity_id: str, since: datetime | None) -> int:
     if since is not None and since.tzinfo is None:
         since = since.replace(tzinfo=timezone.utc)
 
-    window = timedelta(days=MAX_WINDOW_DAYS)
+    # Get configurable values
+    backfill_days = get_backfill_days()
+    sync_window_days = get_sync_window_days()
+    window = timedelta(days=sync_window_days)
 
     if since is None:
-        # DB is leeg → begin 14 dagen terug en haal maar 1 dag op
-        start = now_utc - timedelta(days=BACKFILL_IF_NO_SAMPLES_DAYS)
+        # DB is leeg → begin backfill_days terug en haal maar sync_window_days op
+        start = now_utc - timedelta(days=backfill_days)
     else:
         # Wel samples → vanaf laatste sample, klein stukje terug voor veiligheid
         start = since - timedelta(minutes=5)

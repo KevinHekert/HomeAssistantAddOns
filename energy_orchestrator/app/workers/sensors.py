@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from db.core import test_db_connection, init_db_schema
 from db.samples import get_latest_sample_timestamp
 from db.sync_state import get_sync_status
+from db.sync_config import get_sensor_sync_interval, get_sensor_loop_interval
 from ha.ha_api import sync_history_for_entity
 
 _Logger = logging.getLogger(__name__)
@@ -130,7 +131,7 @@ def _sync_entity(entity_id: str) -> None:
                 continue
 
         # Normal case: wait before next entity
-        time.sleep(1)
+        time.sleep(get_sensor_sync_interval())
         break
     else:
         # Max iterations reached - log warning and continue normally
@@ -139,7 +140,7 @@ def _sync_entity(entity_id: str) -> None:
             max_iterations,
             entity_id,
         )
-        time.sleep(1)
+        time.sleep(get_sensor_sync_interval())
 
 
 def sensor_logging_worker():
@@ -163,8 +164,8 @@ def sensor_logging_worker():
         except Exception as e:
             _Logger.error("Onverwachte fout in sensor logging worker-loop: %s", e)
 
-        # Voor testing: minimaal wachten tussen loops
-        time.sleep(1)
+        # Wait between sync loop iterations (configurable)
+        time.sleep(get_sensor_loop_interval())
 
 
 def start_sensor_logging_worker():

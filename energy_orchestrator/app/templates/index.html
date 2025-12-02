@@ -509,8 +509,63 @@
         </div>
 
         <div class="card">
+            <h3>📡 Sync Configuration</h3>
+            <p>Configure how sensor data is synchronized from Home Assistant history.</p>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                <div class="stat-item">
+                    <div class="stat-label">Backfill Days</div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="number" id="backfillDaysInput" min="1" max="365" value="14" 
+                            style="width: 80px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem; font-size: 0.9rem;">
+                        <span style="color: var(--text-secondary); font-size: 0.8rem;">days (when no samples exist)</span>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Sync Window Size</div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="number" id="syncWindowDaysInput" min="1" max="30" value="1" 
+                            style="width: 80px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem; font-size: 0.9rem;">
+                        <span style="color: var(--text-secondary); font-size: 0.8rem;">days per sync request</span>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Sensor Sync Interval</div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="number" id="sensorSyncIntervalInput" min="1" max="3600" value="1" 
+                            style="width: 80px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem; font-size: 0.9rem;">
+                        <span style="color: var(--text-secondary); font-size: 0.8rem;">seconds between sensors</span>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Loop Interval</div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="number" id="sensorLoopIntervalInput" min="1" max="3600" value="1" 
+                            style="width: 80px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem; font-size: 0.9rem;">
+                        <span style="color: var(--text-secondary); font-size: 0.8rem;">seconds between sync loops</span>
+                    </div>
+                </div>
+            </div>
+            
+            <button class="action-btn" id="saveSyncConfigBtn" onclick="saveSyncConfig()">Save Configuration</button>
+            <button class="action-btn secondary" id="loadSyncConfigBtn" onclick="loadSyncConfig()">Reload</button>
+            <div id="syncConfigStatus" class="status-message"></div>
+        </div>
+
+        <div class="card">
             <h3>⚙️ Feature Configuration</h3>
             <p class="example-description">Configure which features are used for model training and prediction. Core features (13) are always active. Experimental features can be enabled/disabled.</p>
+            
+            <div class="timezone-config" style="margin-bottom: 1rem;">
+                <label for="twoStepPredictionToggle" style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="twoStepPredictionToggle" onchange="toggleTwoStepPrediction(this.checked)" style="width: 18px; height: 18px;">
+                    <span>🔀 Two-Step Prediction</span>
+                </label>
+                <span style="color: var(--text-secondary); font-size: 0.8rem; margin-left: 1rem;">
+                    First classifies active/inactive hours, then predicts kWh for active hours only
+                </span>
+            </div>
+            
             <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Configuration</button>
             <div id="featureConfigStatus" class="status-message"></div>
             <div id="featureConfigContent"></div>
@@ -615,6 +670,8 @@
             initTheme();
             loadAvailableDays();
             loadSampleRate();
+            loadSyncConfig();
+            loadTwoStepPredictionStatus();
         });
         
         async function loadSampleRate() {
@@ -690,6 +747,110 @@
                 }
             } catch (error) {
                 console.error('Error loading available days:', error);
+            }
+        }
+        
+        async function loadSyncConfig() {
+            try {
+                const response = await fetch('api/sync_config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('backfillDaysInput').value = data.config.backfill_days;
+                    document.getElementById('syncWindowDaysInput').value = data.config.sync_window_days;
+                    document.getElementById('sensorSyncIntervalInput').value = data.config.sensor_sync_interval;
+                    document.getElementById('sensorLoopIntervalInput').value = data.config.sensor_loop_interval;
+                }
+            } catch (error) {
+                console.error('Error loading sync config:', error);
+            }
+        }
+        
+        async function saveSyncConfig() {
+            const statusDiv = document.getElementById('syncConfigStatus');
+            const btn = document.getElementById('saveSyncConfigBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Saving configuration...';
+            
+            try {
+                const backfillDays = parseInt(document.getElementById('backfillDaysInput').value);
+                const syncWindowDays = parseInt(document.getElementById('syncWindowDaysInput').value);
+                const sensorSyncInterval = parseInt(document.getElementById('sensorSyncIntervalInput').value);
+                const sensorLoopInterval = parseInt(document.getElementById('sensorLoopIntervalInput').value);
+                
+                const response = await fetch('api/sync_config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        backfill_days: backfillDays,
+                        sync_window_days: syncWindowDays,
+                        sensor_sync_interval: sensorSyncInterval,
+                        sensor_loop_interval: sensorLoopInterval
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Update input values with saved values
+                    document.getElementById('backfillDaysInput').value = data.config.backfill_days;
+                    document.getElementById('syncWindowDaysInput').value = data.config.sync_window_days;
+                    document.getElementById('sensorSyncIntervalInput').value = data.config.sensor_sync_interval;
+                    document.getElementById('sensorLoopIntervalInput').value = data.config.sensor_loop_interval;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error: ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        
+        async function loadTwoStepPredictionStatus() {
+            try {
+                const response = await fetch('api/features/two_step_prediction');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('twoStepPredictionToggle').checked = data.two_step_prediction_enabled;
+                }
+            } catch (error) {
+                console.error('Error loading two-step prediction status:', error);
+            }
+        }
+        
+        async function toggleTwoStepPrediction(enabled) {
+            const statusDiv = document.getElementById('featureConfigStatus');
+            
+            try {
+                const response = await fetch('api/features/two_step_prediction', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: enabled })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    // Reload to restore checkbox state
+                    loadTwoStepPredictionStatus();
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                loadTwoStepPredictionStatus();
             }
         }
         

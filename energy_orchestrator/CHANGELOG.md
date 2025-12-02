@@ -2,6 +2,22 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.71] - 2025-12-02
+
+- **Fixed Weerlive API Parsing**: Fixed parsing of the actual Weerlive API v2 response format
+  - The API provides hourly forecast data (`uur_verw`) at the root level of the JSON response, not inside `liveweer[0]`
+  - Added support for the actual Weerlive API v2 field names:
+    - `windkmh`: Wind speed in km/h (automatically converted to m/s for internal use)
+    - `windms`: Wind speed in m/s (alternative field)
+    - `timestamp`: Unix timestamp for each hourly forecast
+  - Added support for the actual datetime format: "DD-MM-YYYY HH:00" (e.g., "02-12-2025 14:00")
+  - Maintains backwards compatibility with older format (uur_verw inside liveweer, winds field, HH:MM format)
+- **New Test Cases**: Added 4 new tests for Weerlive API v2 format parsing
+  - Test for parsing uur_verw at root level with windkmh field
+  - Test for windms field parsing
+  - Test for DD-MM-YYYY HH:00 datetime format parsing
+  - Integration test for fetch_weather_forecast with full API v2 response
+
 ## [0.0.0.70] - 2025-12-02
 
 - **Weather API Integration**: Added integration with weerlive.nl API for weather forecast data

@@ -297,7 +297,9 @@ def fetch_weather_forecast(api_key: str | None = None, location: str | None = No
             pass
 
         # Parse hourly forecasts
-        hourly_forecasts = _parse_hourly_forecasts(live_data)
+        # The Weerlive API v2 provides hourly forecasts in 'uur_verw' at root level
+        # Also check inside live_data for backwards compatibility
+        hourly_forecasts = _parse_hourly_forecasts(data, live_data)
 
         if not hourly_forecasts:
             return WeatherForecastResult(
@@ -337,25 +339,53 @@ def fetch_weather_forecast(api_key: str | None = None, location: str | None = No
         )
 
 
-def _parse_hourly_forecasts(live_data: dict) -> list[HourlyForecast]:
+def _parse_hourly_forecasts(api_response: dict, live_data: dict | None = None) -> list[HourlyForecast]:
     """Parse hourly forecast data from weerlive.nl API response.
 
-    The weerlive.nl API v2 provides hourly forecast in the 'uur_verw' field.
+    The weerlive.nl API v2 provides hourly forecast in the 'uur_verw' field at the root level.
+    For backwards compatibility, also supports 'uur_verw' inside the live_data object.
+
+    The API provides these fields in the hourly forecast:
+    - uur: timestamp in format "DD-MM-YYYY HH:00" (e.g., "02-12-2025 14:00")
+    - timestamp: Unix timestamp
+    - temp: temperature in °C
+    - windkmh: wind speed in km/h
+    - windms: wind speed in m/s
+    - neersl: precipitation in mm
 
     Args:
-        live_data: The 'liveweer' data from API response.
+        api_response: The full API response dict (may contain 'uur_verw' at root level).
+        live_data: The 'liveweer[0]' data from API response (for backwards compatibility).
 
     Returns:
         List of HourlyForecast objects.
     """
     forecasts = []
 
+    # For backwards compatibility, if live_data is passed as first argument and
+    # api_response is a dict with 'uur_verw', treat it as live_data
+    if live_data is None and "uur_verw" in api_response:
+        # First argument is the API response with uur_verw at root level
+        uur_verw = api_response.get("uur_verw", [])
+        # Get current values from liveweer[0] if available
+        if "liveweer" in api_response and len(api_response["liveweer"]) > 0:
+            live_data = api_response["liveweer"][0]
+        else:
+            live_data = api_response
+    elif live_data is None:
+        # For backwards compatibility: first argument is live_data (old format)
+        live_data = api_response
+        uur_verw = live_data.get("uur_verw", [])
+    else:
+        # New format: api_response contains uur_verw at root level
+        # First check for uur_verw at root level, then fall back to live_data
+        uur_verw = api_response.get("uur_verw", [])
+        if not uur_verw:
+            uur_verw = live_data.get("uur_verw", [])
+
     # Get current values as defaults
     current_humidity = _safe_float(live_data.get("lv", 80))
     current_pressure = _safe_float(live_data.get("luchtd", 1013))
-
-    # The API provides hourly forecasts in the 'uur_verw' list
-    uur_verw = live_data.get("uur_verw", [])
 
     # Get current datetime for reference
     now = datetime.now()
@@ -364,28 +394,55 @@ def _parse_hourly_forecasts(live_data: dict) -> list[HourlyForecast]:
         if not isinstance(hour_data, dict):
             continue
 
-        # Parse timestamp - the API provides time in format "HH:MM"
+        # Parse timestamp - the API may provide:
+        # 1. "uur" in format "DD-MM-YYYY HH:00" (e.g., "02-12-2025 14:00")
+        # 2. "uur" in format "HH:MM" (older format)
+        # 3. "timestamp" as Unix timestamp
         uur = hour_data.get("uur", "")
-        if uur:
+        timestamp_unix = hour_data.get("timestamp")
+        
+        forecast_dt = None
+        
+        if timestamp_unix:
+            # Use Unix timestamp if available
             try:
-                hour, minute = map(int, uur.split(":"))
-                # Determine date based on hour
-                forecast_dt = now.replace(hour=hour, minute=0, second=0, microsecond=0)
-                if forecast_dt <= now:
-                    forecast_dt += timedelta(days=1)
+                forecast_dt = datetime.fromtimestamp(int(timestamp_unix))
+            except (ValueError, OSError, TypeError):
+                pass
+        
+        if forecast_dt is None and uur:
+            try:
+                # Try DD-MM-YYYY HH:00 format first (e.g., "02-12-2025 14:00")
+                if " " in uur and len(uur) > 10:
+                    forecast_dt = datetime.strptime(uur, "%d-%m-%Y %H:%M")
+                else:
+                    # Try HH:MM format (older format)
+                    hour, minute = map(int, uur.split(":"))
+                    forecast_dt = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+                    if forecast_dt <= now:
+                        forecast_dt += timedelta(days=1)
             except (ValueError, AttributeError):
-                # Fall back to incrementing from now
-                forecast_dt = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=i + 1)
-        else:
+                pass
+        
+        if forecast_dt is None:
+            # Fall back to incrementing from now
             forecast_dt = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=i + 1)
 
         # Parse forecast values
         temp = _safe_float(hour_data.get("temp", 0))
         
-        # Wind speed - convert from km/h to m/s if needed (API typically returns m/s)
-        winds = _safe_float(hour_data.get("winds", 0))
-        # Note: The API returns wind speed directly; conversion may not be needed
-        # but we should verify the unit from the API
+        # Wind speed - try multiple fields:
+        # - windkmh: wind speed in km/h (convert to m/s for internal use)
+        # - windms: wind speed in m/s
+        # - winds: legacy field (assumed m/s)
+        wind_speed_ms = 0.0
+        if "windkmh" in hour_data:
+            # Convert km/h to m/s: divide by 3.6
+            wind_speed_ms = _safe_float(hour_data.get("windkmh", 0)) / 3.6
+        elif "windms" in hour_data:
+            wind_speed_ms = _safe_float(hour_data.get("windms", 0))
+        else:
+            wind_speed_ms = _safe_float(hour_data.get("winds", 0))
 
         # Humidity and pressure from current values (API may not provide hourly)
         humidity = _safe_float(hour_data.get("lv", current_humidity))
@@ -394,13 +451,13 @@ def _parse_hourly_forecasts(live_data: dict) -> list[HourlyForecast]:
         # Precipitation
         precip = _safe_float(hour_data.get("neersl", 0))
 
-        # Weather description
-        description = hour_data.get("samenv", "")
+        # Weather description (may be "image" in new format)
+        description = hour_data.get("samenv", hour_data.get("image", ""))
 
         forecasts.append(HourlyForecast(
             timestamp=forecast_dt,
             temperature=temp,
-            wind_speed=winds,
+            wind_speed=wind_speed_ms,
             humidity=humidity,
             pressure=pressure,
             precipitation=precip,

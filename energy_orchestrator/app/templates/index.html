@@ -587,9 +587,9 @@
         <div class="card">
             <h3>⚙️ Feature Configuration</h3>
             <p class="example-description">
-                Configure which features are used for model training and prediction. Features are organized into special cards for Time/Date and Usage, 
-                plus sensor cards showing aggregation features. Core features are labeled 'CORE' but can be disabled. 
-                Experimental features are labeled 'EXPERIMENTAL' and disabled by default.
+                Configure which features are used for model training and prediction. Time/Date and kWh features are always shown. 
+                Physical sensor cards with their aggregation features can be shown/hidden using the button below.
+                Core features are labeled 'CORE' but can be disabled. Experimental features are labeled 'EXPERIMENTAL' and disabled by default.
             </p>
             <p class="example-description" style="margin-top: 0.5rem;">
                 <strong>📝 Note:</strong> Configuration loads automatically. To manage raw sensors and configure which statistics to calculate, 
@@ -598,6 +598,12 @@
             
             <div id="featureConfigStatus" class="status-message"></div>
             <div id="featureConfigContent"></div>
+            
+            <button class="action-btn secondary" id="showSensorCardsBtn" onclick="toggleSensorCards()" style="margin-top: 1rem; margin-bottom: 1rem;">
+                📊 Show Sensor Cards
+            </button>
+            
+            <div id="sensorCardsContainer" style="display: none;"></div>
         </div>
 
         <div class="card">
@@ -1990,12 +1996,13 @@
         async function loadFeatureConfigAuto() {
             const statusDiv = document.getElementById('featureConfigStatus');
             const contentDiv = document.getElementById('featureConfigContent');
+            const sensorContainer = document.getElementById('sensorCardsContainer');
             
             statusDiv.className = 'status-message loading';
-            statusDiv.textContent = 'Loading feature configuration...';
+            statusDiv.textContent = 'Loading configuration...';
             
             try {
-                // Load special cards and sensor cards in parallel
+                // Load special cards, sensor cards, and config in parallel
                 const [specialResponse, sensorResponse, configResponse] = await Promise.all([
                     fetch('api/features/special_cards'),
                     fetch('api/features/sensor_cards'),
@@ -2015,7 +2022,7 @@
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = `✓ Configuration loaded: ${activeCount} active features (${coreCount} core + ${experimentalCount} experimental)`;
                     
-                    // Build UI
+                    // Build UI for main content (stats, timezone, special cards)
                     let html = '';
                     
                     // Feature stats
@@ -2040,7 +2047,7 @@
                     html += '</select>';
                     html += '</div>';
                     
-                    // Special Cards (Time/Date and Usage)
+                    // Special Cards (Time/Date and kWh - always visible)
                     specialData.cards.forEach(card => {
                         html += '<div class="feature-category">';
                         html += `<div class="feature-category-title">${card.name}</div>`;
@@ -2071,11 +2078,14 @@
                         html += '</div>';
                     });
                     
-                    // Sensor Cards
+                    contentDiv.innerHTML = html;
+                    
+                    // Build sensor cards HTML (hidden by default, shown on button click)
+                    let sensorHtml = '';
                     sensorData.sensor_cards.forEach(sensor => {
-                        html += '<div class="feature-category">';
-                        html += `<div class="feature-category-title">🌡️ ${sensor.display_name}</div>`;
-                        html += '<div class="feature-list">';
+                        sensorHtml += '<div class="feature-category">';
+                        sensorHtml += `<div class="feature-category-title">🌡️ ${sensor.display_name}</div>`;
+                        sensorHtml += '<div class="feature-list">';
                         
                         sensor.features.forEach(f => {
                             const itemClass = f.is_core ? 'core' : (f.enabled ? 'experimental' : 'experimental disabled');
@@ -2087,21 +2097,21 @@
                             const safeDesc = f.description.replace(/</g, '&lt;').replace(/>/g, '&gt;');
                             const safeUnit = f.unit.replace(/</g, '&lt;').replace(/>/g, '&gt;');
                             
-                            html += `<div class="feature-item ${itemClass}">`;
-                            html += `<div class="feature-toggle"><input type="checkbox" ${checked} data-feature="${safeName}" onchange="toggleFeatureAuto(this.dataset.feature, this.checked)"></div>`;
-                            html += `<div class="feature-info">`;
-                            html += `<div class="feature-name">${safeName} <span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
-                            html += `<div class="feature-description">${safeDesc}</div>`;
-                            html += `<div class="feature-meta">Unit: ${safeUnit}${f.time_window !== 'none' ? ' | Window: ' + f.time_window : ''}</div>`;
-                            html += `</div>`;
-                            html += `</div>`;
+                            sensorHtml += `<div class="feature-item ${itemClass}">`;
+                            sensorHtml += `<div class="feature-toggle"><input type="checkbox" ${checked} data-feature="${safeName}" onchange="toggleFeatureAuto(this.dataset.feature, this.checked)"></div>`;
+                            sensorHtml += `<div class="feature-info">`;
+                            sensorHtml += `<div class="feature-name">${safeName} <span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                            sensorHtml += `<div class="feature-description">${safeDesc}</div>`;
+                            sensorHtml += `<div class="feature-meta">Unit: ${safeUnit}${f.time_window !== 'none' ? ' | Window: ' + f.time_window : ''}</div>`;
+                            sensorHtml += `</div>`;
+                            sensorHtml += `</div>`;
                         });
                         
-                        html += '</div>';
-                        html += '</div>';
+                        sensorHtml += '</div>';
+                        sensorHtml += '</div>';
                     });
                     
-                    contentDiv.innerHTML = html;
+                    sensorContainer.innerHTML = sensorHtml;
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ Error loading configuration';
@@ -2109,6 +2119,21 @@
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+        
+        
+        function toggleSensorCards() {
+            const container = document.getElementById('sensorCardsContainer');
+            const btn = document.getElementById('showSensorCardsBtn');
+            
+            // Toggle visibility
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                btn.textContent = '📊 Hide Sensor Cards';
+            } else {
+                container.style.display = 'none';
+                btn.textContent = '📊 Show Sensor Cards';
             }
         }
         

@@ -2,6 +2,17 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.87] - 2025-12-02
+
+- **UI Improvement: Sensor Cards Display**
+  - **Time/Date and kWh cards are now always visible** - These special feature cards (Time & Date Features and Heating Usage Features) load automatically and remain visible
+  - **Physical sensor cards are hidden behind a toggle button** - Sensor cards like Outdoor Temperature and Indoor Temperature with their aggregation features (avg_1h, avg_6h, etc.) are now hidden by default
+  - Added "📊 Show Sensor Cards" button to toggle visibility of physical sensor cards
+  - Button text changes between "Show Sensor Cards" and "Hide Sensor Cards" based on visibility state
+  - Sensor cards are loaded once on page load (no lazy loading) and toggled for better performance
+  - **Each sensor card groups the sensor with its derived features** - e.g., Indoor Temperature card shows indoor_temp, indoor_temp_avg_1h, etc.
+  - Features displayed depend on what's enabled in the Sensor Configuration tab
+
 ## [0.0.0.86] - 2025-12-02
 
 - **Fixed Sensor Visibility Issue**: Sensors are now correctly displayed on the configuration page

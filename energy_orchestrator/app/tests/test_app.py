@@ -45,7 +45,7 @@ class TestResampleEndpoint:
             start_time=datetime(2024, 1, 1, 12, 0, 0),
             end_time=datetime(2024, 1, 1, 20, 0, 0),
         )
-        with patch("app.resample_all_categories_to_5min") as mock_resample:
+        with patch("app.resample_all_categories") as mock_resample:
             mock_resample.return_value = mock_stats
 
             response = client.post("/resample")
@@ -62,7 +62,7 @@ class TestResampleEndpoint:
 
     def test_resample_error(self, client):
         """Error during resample returns 500 with error message."""
-        with patch("app.resample_all_categories_to_5min") as mock_resample:
+        with patch("app.resample_all_categories") as mock_resample:
             mock_resample.side_effect = Exception("Database error")
 
             response = client.post("/resample")
@@ -1147,7 +1147,7 @@ class TestResampleWithSampleRate:
             end_time=datetime(2024, 1, 1, 20, 0, 0),
             sample_rate_minutes=5,
         )
-        with patch("app.resample_all_categories_to_5min") as mock_resample:
+        with patch("app.resample_all_categories") as mock_resample:
             mock_resample.return_value = mock_stats
 
             response = client.post("/resample")
@@ -1223,7 +1223,7 @@ class TestResampleWithSampleRate:
             sample_rate_minutes=5,
             table_flushed=True,
         )
-        with patch("app.resample_all_categories_to_5min") as mock_resample:
+        with patch("app.resample_all_categories") as mock_resample:
             mock_resample.return_value = mock_stats
 
             response = client.post(
@@ -1236,4 +1236,4 @@ class TestResampleWithSampleRate:
             data = response.get_json()
             assert data["status"] == "success"
             assert data["stats"]["table_flushed"] is True
-            mock_resample.assert_called_once_with(flush=True)
+            mock_resample.assert_called_once_with(None, flush=True)

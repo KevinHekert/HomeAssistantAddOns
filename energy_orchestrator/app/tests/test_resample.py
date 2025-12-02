@@ -26,7 +26,7 @@ from db.resample import (
     compute_time_weighted_avg,
     get_global_range_for_all_categories,
     get_primary_entities_by_category,
-    resample_all_categories_to_5min,
+    resample_all_categories,
 )
 import db.core as core_module
 import db.resample as resample_module
@@ -481,12 +481,12 @@ class TestComputeTimeWeightedAvg:
 
 
 class TestResampleAllCategoriesTo5Min:
-    """Test the main resample_all_categories_to_5min function."""
+    """Test the main resample_all_categories function."""
 
     def test_no_mappings_no_error(self, patch_engine):
         """No mappings should log warning and return without error."""
         # Should not raise
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         # No resampled data should exist
         with Session(patch_engine) as session:
@@ -507,7 +507,7 @@ class TestResampleAllCategoriesTo5Min:
             session.commit()
 
         # Should not raise
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         # No resampled data should exist
         with Session(patch_engine) as session:
@@ -543,7 +543,7 @@ class TestResampleAllCategoriesTo5Min:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -593,7 +593,7 @@ class TestResampleAllCategoriesTo5Min:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -665,7 +665,7 @@ class TestResampleAllCategoriesTo5Min:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -716,8 +716,8 @@ class TestResampleAllCategoriesTo5Min:
             session.commit()
 
         # Run resample twice
-        resample_all_categories_to_5min()
-        resample_all_categories_to_5min()
+        resample_all_categories()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = session.query(ResampledSample).all()
@@ -765,7 +765,7 @@ class TestResampleAllCategoriesTo5Min:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -852,7 +852,7 @@ class TestMultipleCategoriesResampling:
             )
             session.commit()
 
-        resample_all_categories_to_5min()
+        resample_all_categories()
 
         with Session(patch_engine) as session:
             resampled = (
@@ -879,11 +879,11 @@ class TestMultipleCategoriesResampling:
 
 
 class TestResampleStats:
-    """Test that resample_all_categories_to_5min returns correct ResampleStats."""
+    """Test that resample_all_categories returns correct ResampleStats."""
 
     def test_returns_stats_no_mappings(self, patch_engine):
         """No mappings returns stats with zero values."""
-        stats = resample_all_categories_to_5min()
+        stats = resample_all_categories()
 
         assert isinstance(stats, ResampleStats)
         assert stats.slots_processed == 0
@@ -906,7 +906,7 @@ class TestResampleStats:
             )
             session.commit()
 
-        stats = resample_all_categories_to_5min()
+        stats = resample_all_categories()
 
         assert isinstance(stats, ResampleStats)
         assert stats.slots_processed == 0
@@ -945,7 +945,7 @@ class TestResampleStats:
             )
             session.commit()
 
-        stats = resample_all_categories_to_5min()
+        stats = resample_all_categories()
 
         assert isinstance(stats, ResampleStats)
         assert stats.slots_processed == 2
@@ -1014,7 +1014,7 @@ class TestResampleStats:
             )
             session.commit()
 
-        stats = resample_all_categories_to_5min()
+        stats = resample_all_categories()
 
         assert isinstance(stats, ResampleStats)
         # Global range is [12:10, 12:20] → 2 slots: [12:10, 12:15) and [12:15, 12:20)

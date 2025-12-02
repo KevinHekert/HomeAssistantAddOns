@@ -4,7 +4,7 @@ from flask import Flask, render_template, jsonify, request
 import pandas as pd
 from ha.ha_api import get_entity_state
 from workers import start_sensor_logging_worker
-from db.resample import resample_all_categories_to_5min, resample_all_categories, get_sample_rate_minutes, VALID_SAMPLE_RATES, flush_resampled_samples
+from db.resample import resample_all_categories, get_sample_rate_minutes, VALID_SAMPLE_RATES, flush_resampled_samples
 from db.core import init_db_schema
 from db.sensor_config import sync_sensor_mappings
 from db.samples import get_sensor_info
@@ -109,10 +109,8 @@ def trigger_resample():
         
         _Logger.info("Resample triggered via UI with sample_rate=%s, flush=%s", sample_rate or "default", flush)
         
-        if sample_rate is not None:
-            stats = resample_all_categories(sample_rate, flush=flush)
-        else:
-            stats = resample_all_categories_to_5min(flush=flush)
+        # Always use resample_all_categories - it uses configured rate when sample_rate is None
+        stats = resample_all_categories(sample_rate, flush=flush)
         
         return jsonify({
             "status": "success",

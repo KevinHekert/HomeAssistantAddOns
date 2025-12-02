@@ -2,6 +2,35 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.78] - 2025-12-02
+
+- **New Sensor Configuration Tab**: Added new "📡 Sensor Configuration" tab in the UI
+  - Step 1 of comprehensive sensor configuration and virtual sensor feature
+  - Tab positioned between Configuration and Model Training tabs
+  - Three main sections created: Raw Sensors, Virtual Sensors, and Feature Stats Configuration
+- **Raw Sensors Section**: Interface to view and configure all raw sensors
+  - Displays all sensors grouped by type (Usage, Weather, Indoor, Heating)
+  - Shows sensor display name, description, entity ID, and unit fields
+  - Core sensors displayed with green badge (always enabled)
+  - Experimental sensors displayed with orange badge (can be enabled/disabled)
+  - Individual Save button for each sensor
+  - Uses existing `/api/sensors/category_config` endpoint for loading
+  - Uses existing `/api/sensors/set_entity` endpoint for saving
+  - `loadRawSensors()` JavaScript function to load and display sensor list
+  - `saveRawSensor()` JavaScript function to save individual sensor configuration
+- **Virtual Sensors Section** (placeholder for Step 4):
+  - Button to add new virtual sensors
+  - Reload list button
+  - Placeholder message indicating feature will be implemented next
+- **Feature Stats Configuration Section** (placeholder for Step 5):
+  - Placeholder for time-based statistics configuration
+  - Will enable avg_1h, avg_6h, avg_24h, avg_7d generation per sensor
+- **UI Improvements**:
+  - Added `.action-btn.small` CSS class for inline action buttons
+  - Consistent styling with existing UI theme
+  - Responsive table layout for sensor configuration
+- **Note**: This is the first step of 8-step implementation. Virtual sensors and feature stats functionality will be added in subsequent steps.
+
 ## [0.0.0.77] - 2025-12-02
 
 - **Sensor Category Configuration**: Refactored sensor configuration with Core/Experimental categories

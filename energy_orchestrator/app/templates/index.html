@@ -172,6 +172,11 @@
         .action-btn.warning:hover {
             background: #b45309;
         }
+        .action-btn.small {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            margin: 0.2rem;
+        }
         .status-message {
             margin-top: 0.75rem;
             padding: 0.75rem;
@@ -468,6 +473,7 @@
     <div class="tabs-container">
         <div class="tabs-nav">
             <button class="tab-btn active" onclick="switchTab('configuration')">⚙️ Configuration</button>
+            <button class="tab-btn" onclick="switchTab('sensorConfig')">📡 Sensor Configuration</button>
             <button class="tab-btn" onclick="switchTab('training')">🤖 Model Training</button>
             <button class="tab-btn" onclick="switchTab('sensors')">📊 Sensor Information</button>
         </div>
@@ -639,6 +645,36 @@
             <button class="action-btn secondary" id="testWeatherBtn" onclick="testWeatherApi()">Test Connection</button>
             <button class="action-btn secondary" id="loadWeatherConfigBtn" onclick="loadWeatherConfig()">Reload</button>
             <div id="weatherConfigStatus" class="status-message"></div>
+        </div>
+    </div>
+
+    <!-- Sensor Configuration Tab -->
+    <div id="tab-sensorConfig" class="tab-content">
+        <div class="card">
+            <h3>📊 Raw Sensors</h3>
+            <p>Configure raw sensors that are directly read from Home Assistant. Add unit information and view current values.</p>
+            <button class="action-btn secondary" id="loadRawSensorsBtn" onclick="loadRawSensors()">Load Sensors</button>
+            <div id="rawSensorsStatus" class="status-message"></div>
+            <div id="rawSensorsTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔗 Virtual Sensors</h3>
+            <p>Create virtual (derived) sensors based on two existing sensors. Example: delta = target_temp - indoor_temp</p>
+            <div style="margin-bottom: 20px;">
+                <button class="action-btn" id="addVirtualSensorBtn" onclick="showAddVirtualSensorDialog()">+ Add Virtual Sensor</button>
+                <button class="action-btn secondary" id="loadVirtualSensorsBtn" onclick="loadVirtualSensors()">Reload List</button>
+            </div>
+            <div id="virtualSensorsStatus" class="status-message"></div>
+            <div id="virtualSensorsTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>📈 Feature Stats Configuration</h3>
+            <p>Configure which time-based statistics (avg_1h, avg_6h, avg_24h, avg_7d) should be generated for each sensor during resampling.</p>
+            <button class="action-btn secondary" id="loadFeatureStatsBtn" onclick="loadFeatureStatsConfig()">Load Configuration</button>
+            <div id="featureStatsStatus" class="status-message"></div>
+            <div id="featureStatsTable"></div>
         </div>
     </div>
 
@@ -2666,6 +2702,176 @@
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ===================================================================
+        // Sensor Configuration Tab Functions
+        // ===================================================================
+
+        // Load raw sensors list
+        async function loadRawSensors() {
+            const statusDiv = document.getElementById('rawSensorsStatus');
+            const tableDiv = document.getElementById('rawSensorsTable');
+            const btn = document.getElementById('loadRawSensorsBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading raw sensors...';
+            
+            try {
+                const response = await fetch('api/sensors/category_config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Loaded ${data.config.enabled_sensor_count} enabled sensors`;
+                    
+                    // Build sensors table grouped by type
+                    let html = '<div style="margin-top: 20px;">';
+                    
+                    const sensorTypes = data.sensors_by_type;
+                    for (const [type, sensors] of Object.entries(sensorTypes)) {
+                        html += `<h4 style="margin-top: 20px; margin-bottom: 10px; text-transform: capitalize;">${type} Sensors</h4>`;
+                        html += '<table class="data-table">';
+                        html += '<thead><tr>';
+                        html += '<th>Sensor</th><th>Entity ID</th><th>Unit</th><th>Status</th><th>Actions</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        for (const sensor of sensors) {
+                            const statusBadge = sensor.is_core 
+                                ? '<span style="padding: 2px 8px; background: var(--success-color); color: white; border-radius: 3px; font-size: 0.8em;">Core</span>'
+                                : (sensor.enabled 
+                                    ? '<span style="padding: 2px 8px; background: var(--warning-color); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
+                                    : '<span style="padding: 2px 8px; background: var(--secondary-color); color: white; border-radius: 3px; font-size: 0.8em;">Disabled</span>');
+                            
+                            html += '<tr>';
+                            html += `<td><strong>${sensor.display_name}</strong><br><small style="color: var(--text-secondary);">${sensor.description}</small></td>`;
+                            html += `<td><input type="text" value="${sensor.entity_id || ''}" id="entity_${sensor.category_name}" style="width: 300px;" placeholder="sensor.example"></td>`;
+                            html += `<td><input type="text" value="${sensor.unit || ''}" id="unit_${sensor.category_name}" style="width: 80px;" placeholder="Unit"></td>`;
+                            html += `<td>${statusBadge}</td>`;
+                            html += `<td><button class="action-btn small" onclick="saveRawSensor('${sensor.category_name}')">Save</button></td>`;
+                            html += '</tr>';
+                        }
+                        
+                        html += '</tbody></table>';
+                    }
+                    
+                    html += '</div>';
+                    tableDiv.innerHTML = html;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    tableDiv.innerHTML = '';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                tableDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Save a single raw sensor configuration
+        async function saveRawSensor(categoryName) {
+            const entityIdInput = document.getElementById(`entity_${categoryName}`);
+            const unitInput = document.getElementById(`unit_${categoryName}`);
+            const statusDiv = document.getElementById('rawSensorsStatus');
+            
+            if (!entityIdInput || !unitInput) {
+                return;
+            }
+            
+            const entityId = entityIdInput.value.trim();
+            const unit = unitInput.value.trim();
+            
+            if (!entityId) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Entity ID is required';
+                return;
+            }
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `Saving ${categoryName}...`;
+            
+            try {
+                const response = await fetch('api/sensors/set_entity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category_name: categoryName,
+                        entity_id: entityId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Note: Unit saving will be implemented in Step 3
+                    setTimeout(() => { statusDiv.textContent = ''; }, 3000);
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Load virtual sensors list
+        async function loadVirtualSensors() {
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            const tableDiv = document.getElementById('virtualSensorsTable');
+            const btn = document.getElementById('loadVirtualSensorsBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading virtual sensors...';
+            
+            try {
+                // This will be implemented in Step 4
+                statusDiv.className = 'status-message';
+                statusDiv.textContent = 'Virtual sensors feature will be implemented in next step';
+                tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">No virtual sensors defined yet.</p>';
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                tableDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Show dialog to add a new virtual sensor
+        function showAddVirtualSensorDialog() {
+            alert('Add Virtual Sensor dialog will be implemented in Step 4');
+        }
+
+        // Load feature stats configuration
+        async function loadFeatureStatsConfig() {
+            const statusDiv = document.getElementById('featureStatsStatus');
+            const tableDiv = document.getElementById('featureStatsTable');
+            const btn = document.getElementById('loadFeatureStatsBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading feature stats configuration...';
+            
+            try {
+                // This will be implemented in Step 5
+                statusDiv.className = 'status-message';
+                statusDiv.textContent = 'Feature stats configuration will be implemented in next step';
+                tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">Feature stats configuration not yet available.</p>';
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                tableDiv.innerHTML = '';
             } finally {
                 btn.disabled = false;
             }

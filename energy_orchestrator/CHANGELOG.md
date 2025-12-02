@@ -22,6 +22,19 @@ All notable changes to this add-on will be documented in this file.
   - `get_feature_details()`: Returns detailed metadata for each feature
   - `verify_model_features()`: Verifies model features match dataset features
 - **Tests**: Added 7 new tests for feature verification functionality
+- **Fixed Weerlive API Parsing**: Fixed parsing of the actual Weerlive API v2 response format
+  - The API provides hourly forecast data (`uur_verw`) at the root level of the JSON response, not inside `liveweer[0]`
+  - Added support for the actual Weerlive API v2 field names:
+    - `windkmh`: Wind speed in km/h (automatically converted to m/s for internal use)
+    - `windms`: Wind speed in m/s (alternative field)
+    - `timestamp`: Unix timestamp for each hourly forecast
+  - Added support for the actual datetime format: "DD-MM-YYYY HH:00" (e.g., "02-12-2025 14:00")
+  - Maintains backwards compatibility with older format (uur_verw inside liveweer, winds field, HH:MM format)
+- **New Test Cases**: Added 4 new tests for Weerlive API v2 format parsing
+  - Test for parsing uur_verw at root level with windkmh field
+  - Test for windms field parsing
+  - Test for DD-MM-YYYY HH:00 datetime format parsing
+  - Integration test for fetch_weather_forecast with full API v2 response
 - **Incremental Resampling**: When resampling without flush, the system now starts from the latest resampled slot minus 2x the sample rate, instead of reprocessing all historical data
   - Example: With 5-minute sample rate and latest resampled slot at 12:55, resampling starts from 12:45 (12:55 - 2*5)
   - This significantly improves performance for regular resample operations

@@ -567,15 +567,15 @@ def predict_two_step_scenario(
         updated_features = features.copy()
         
         if "heating_kwh_last_6h" in model.feature_names:
-            # Add predictions from last 6 hours
-            recent_preds = [p.predicted_kwh for p in predictions[-72:]]
+            # Add predictions from last 6 hours (hourly slots)
+            recent_preds = [p.predicted_kwh for p in predictions[-6:]]
             updated_features["heating_kwh_last_6h"] = (
                 features.get("heating_kwh_last_6h", 0) + sum(recent_preds)
             )
         
         if "heating_kwh_last_24h" in model.feature_names:
-            # Add predictions from last 24 hours
-            recent_preds = [p.predicted_kwh for p in predictions[-288:]]
+            # Add predictions from last 24 hours (hourly slots)
+            recent_preds = [p.predicted_kwh for p in predictions[-24:]]
             updated_features["heating_kwh_last_24h"] = (
                 features.get("heating_kwh_last_24h", 0) + sum(recent_preds)
             )

@@ -358,15 +358,15 @@ def predict_scenario(
         updated_features = features.copy()
         
         if "heating_kwh_last_6h" in model.feature_names:
-            # Add predictions from last 6 hours (12 slots per hour * 6 = 72 slots)
-            recent_preds = predictions[-72:] if len(predictions) >= 72 else predictions
+            # Add predictions from last 6 hours (hourly slots for scenario predictions)
+            recent_preds = predictions[-6:] if len(predictions) >= 6 else predictions
             updated_features["heating_kwh_last_6h"] = (
                 features.get("heating_kwh_last_6h", 0) + sum(recent_preds)
             )
         
         if "heating_kwh_last_24h" in model.feature_names:
-            # Add predictions from last 24 hours
-            recent_preds = predictions[-288:] if len(predictions) >= 288 else predictions
+            # Add predictions from last 24 hours (hourly slots for scenario predictions)
+            recent_preds = predictions[-24:] if len(predictions) >= 24 else predictions
             updated_features["heating_kwh_last_24h"] = (
                 features.get("heating_kwh_last_24h", 0) + sum(recent_preds)
             )

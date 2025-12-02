@@ -1,14 +1,18 @@
 """
-Resampling logic for aggregating raw sensor samples into 5-minute time slots.
+Resampling logic for aggregating raw sensor samples into configurable time slots.
 
 This module provides functionality to:
 1. Map logical categories to Home Assistant entities
 2. Compute time-weighted averages for sensor data
-3. Resample raw samples into uniform 5-minute time slots
+3. Resample raw samples into uniform time slots (configurable, default 5 minutes)
 """
 
+import json
 import logging
+import os
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,8 +23,164 @@ from db.core import engine, init_db_schema
 
 _Logger = logging.getLogger(__name__)
 
-# Fixed step size for resampling
+# Valid sample rates that divide evenly into 60 minutes
+VALID_SAMPLE_RATES = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]
+
+# Default step size for resampling (used for backward compatibility)
 RESAMPLE_STEP = timedelta(minutes=5)
+
+# Default sample rate in minutes
+DEFAULT_SAMPLE_RATE = 5
+
+# Configuration file path for persistent sample rate storage
+# In Home Assistant add-ons, /data is the persistent data directory
+CONFIG_FILE_PATH = Path(os.environ.get("DATA_DIR", "/data")) / "resample_config.json"
+
+
+def _load_sample_rate_config() -> int:
+    """Load sample rate from persistent configuration file.
+    
+    Returns:
+        Sample rate in minutes, defaults to 5 if not configured or invalid.
+    """
+    try:
+        if CONFIG_FILE_PATH.exists():
+            with open(CONFIG_FILE_PATH, "r") as f:
+                config = json.load(f)
+                rate = config.get("sample_rate_minutes", DEFAULT_SAMPLE_RATE)
+                if isinstance(rate, int) and rate in VALID_SAMPLE_RATES:
+                    return rate
+                _Logger.warning(
+                    "Invalid sample rate %s in config. Valid rates are %s. Using default %d minutes",
+                    rate,
+                    VALID_SAMPLE_RATES,
+                    DEFAULT_SAMPLE_RATE,
+                )
+    except (json.JSONDecodeError, OSError) as e:
+        _Logger.warning("Error loading sample rate config: %s. Using default %d minutes", e, DEFAULT_SAMPLE_RATE)
+    return DEFAULT_SAMPLE_RATE
+
+
+def _save_sample_rate_config(rate: int) -> bool:
+    """Save sample rate to persistent configuration file.
+    
+    Args:
+        rate: Sample rate in minutes. Must be one of VALID_SAMPLE_RATES.
+        
+    Returns:
+        True if saved successfully, False otherwise.
+    """
+    if rate not in VALID_SAMPLE_RATES:
+        _Logger.error("Cannot save invalid sample rate %d. Valid rates are %s", rate, VALID_SAMPLE_RATES)
+        return False
+    
+    try:
+        # Ensure parent directory exists
+        CONFIG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Load existing config or create new
+        config = {}
+        if CONFIG_FILE_PATH.exists():
+            try:
+                with open(CONFIG_FILE_PATH, "r") as f:
+                    config = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        
+        # Update sample rate
+        config["sample_rate_minutes"] = rate
+        
+        # Save config
+        with open(CONFIG_FILE_PATH, "w") as f:
+            json.dump(config, f, indent=2)
+        
+        _Logger.info("Sample rate saved to config: %d minutes", rate)
+        return True
+    except OSError as e:
+        _Logger.error("Error saving sample rate config: %s", e)
+        return False
+
+
+def get_sample_rate_minutes() -> int:
+    """Get the sample rate in minutes from persistent configuration.
+    
+    Valid sample rates are divisors of 60: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60.
+    This ensures that time slots align properly at hour boundaries.
+    
+    Returns:
+        Sample rate in minutes, defaults to 5 if not configured or invalid.
+    """
+    return _load_sample_rate_config()
+
+
+def set_sample_rate_minutes(rate: int) -> bool:
+    """Set the sample rate in minutes and persist to configuration.
+    
+    Args:
+        rate: Sample rate in minutes. Must be one of VALID_SAMPLE_RATES.
+        
+    Returns:
+        True if saved successfully, False if rate is invalid or save failed.
+    """
+    if rate not in VALID_SAMPLE_RATES:
+        _Logger.warning(
+            "Invalid sample rate %d. Valid rates are %s.",
+            rate,
+            VALID_SAMPLE_RATES,
+        )
+        return False
+    return _save_sample_rate_config(rate)
+
+
+@dataclass
+class ResampleStats:
+    """Statistics about the resampling operation."""
+    slots_processed: int
+    slots_saved: int
+    slots_skipped: int
+    categories: list[str]
+    start_time: datetime | None
+    end_time: datetime | None
+    sample_rate_minutes: int = 5
+    table_flushed: bool = False
+
+
+def flush_resampled_samples() -> int:
+    """
+    Delete all records from the resampled_samples table.
+    
+    This should be called before resampling when the sample rate changes,
+    because existing resampled data computed with a different interval
+    becomes invalid.
+    
+    Returns:
+        Number of rows deleted.
+    """
+    try:
+        with Session(engine) as session:
+            count = session.query(ResampledSample).delete()
+            session.commit()
+            _Logger.info("Flushed resampled_samples table: %d rows deleted", count)
+            return count
+    except SQLAlchemyError as e:
+        _Logger.error("Error flushing resampled_samples table: %s", e)
+        raise
+
+
+def get_latest_resampled_slot_start() -> datetime | None:
+    """
+    Get the latest slot_start datetime from the resampled_samples table.
+    
+    Returns:
+        The maximum slot_start datetime, or None if the table is empty.
+    """
+    try:
+        with Session(engine) as session:
+            result = session.query(func.max(ResampledSample.slot_start)).scalar()
+            return result
+    except SQLAlchemyError as e:
+        _Logger.error("Error getting latest resampled slot start: %s", e)
+        return None
 
 
 def get_primary_entities_by_category() -> dict[str, str]:
@@ -222,25 +382,70 @@ def _align_to_5min_boundary(dt: datetime) -> datetime:
     Align a datetime downwards to the nearest 5-minute boundary.
 
     Strips seconds/microseconds and floors minutes to a multiple of 5.
+    
+    Note: This function uses a fixed 5-minute boundary for backward compatibility.
+    For configurable sample rates, use _align_to_boundary().
     """
     aligned_minutes = (dt.minute // 5) * 5
     return dt.replace(minute=aligned_minutes, second=0, microsecond=0)
 
 
-def resample_all_categories_to_5min() -> None:
+def _align_to_boundary(dt: datetime, sample_rate_minutes: int) -> datetime:
     """
-    Resample raw sensor samples into 5-minute slots for all configured categories.
+    Align a datetime downwards to the nearest boundary based on sample rate.
+
+    Strips seconds/microseconds and floors minutes to a multiple of sample_rate_minutes.
+    
+    Args:
+        dt: The datetime to align.
+        sample_rate_minutes: The sample rate in minutes (e.g., 5, 10, 15, 30, 60).
+        
+    Returns:
+        Aligned datetime with seconds/microseconds stripped and minutes floored.
+    """
+    if sample_rate_minutes <= 0:
+        sample_rate_minutes = 5
+    
+    aligned_minutes = (dt.minute // sample_rate_minutes) * sample_rate_minutes
+    return dt.replace(minute=aligned_minutes, second=0, microsecond=0)
+
+
+def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool = False) -> ResampleStats:
+    """
+    Resample raw sensor samples into time slots for all configured categories.
 
     This function:
     1. Ensures DB schema exists (creates tables if missing).
-    2. Fetches category-to-entity mappings.
-    3. Computes the global time range where all categories have data.
-    4. Iterates over 5-minute slots and computes time-weighted averages.
-    5. Only writes complete slots (all categories have values).
-    6. Ensures idempotence by deleting existing rows before inserting.
+    2. Optionally flushes the resampled_samples table (for sample rate changes).
+    3. Fetches category-to-entity mappings.
+    4. Computes the global time range where all categories have data.
+    5. Iterates over time slots and computes time-weighted averages.
+    6. Only writes complete slots (all categories have values).
+    7. Ensures idempotence by deleting existing rows before inserting.
+    
+    Args:
+        sample_rate_minutes: Optional sample rate in minutes. If None, uses
+            the configured SAMPLE_RATE_MINUTES environment variable (default 5).
+        flush: If True, flush (delete all) existing resampled data before
+            resampling. This should be used when the sample rate changes.
+
+    Returns:
+        ResampleStats with statistics about the resampling operation.
     """
+    # Use provided sample rate or get from environment
+    if sample_rate_minutes is None:
+        sample_rate_minutes = get_sample_rate_minutes()
+    
+    resample_step = timedelta(minutes=sample_rate_minutes)
+    
     # Step 1: Ensure DB schema exists
     init_db_schema()
+    
+    # Step 1.5: Flush existing resampled data if requested
+    table_flushed = False
+    if flush:
+        flush_resampled_samples()
+        table_flushed = True
 
     # Step 2: Fetch mappings
     category_to_entity = get_primary_entities_by_category()
@@ -249,7 +454,16 @@ def resample_all_categories_to_5min() -> None:
         _Logger.warning(
             "No active sensor mappings configured, skipping resample."
         )
-        return
+        return ResampleStats(
+            slots_processed=0,
+            slots_saved=0,
+            slots_skipped=0,
+            categories=[],
+            start_time=None,
+            end_time=None,
+            sample_rate_minutes=sample_rate_minutes,
+            table_flushed=table_flushed,
+        )
 
     # Step 3: Get global time range
     global_start, global_end, category_to_entity = get_global_range_for_all_categories()
@@ -258,25 +472,61 @@ def resample_all_categories_to_5min() -> None:
         _Logger.warning(
             "No global time range available for all categories, skipping resample."
         )
-        return
+        return ResampleStats(
+            slots_processed=0,
+            slots_saved=0,
+            slots_skipped=0,
+            categories=list(category_to_entity.keys()),
+            start_time=None,
+            end_time=None,
+            sample_rate_minutes=sample_rate_minutes,
+            table_flushed=table_flushed,
+        )
 
-    # Step 4: Align global_start to 5-minute boundary
-    aligned_start = _align_to_5min_boundary(global_start)
+    # Step 4: Align global_start to boundary based on sample rate
+    aligned_start = _align_to_boundary(global_start, sample_rate_minutes)
+    
+    # Step 4.5: For incremental resampling (when flush=False), start from
+    # the latest resampled slot minus 2 * sample_rate_minutes.
+    # This ensures we re-process recent slots that may have incomplete data.
+    effective_start = aligned_start
+    if not flush:
+        latest_resampled = get_latest_resampled_slot_start()
+        if latest_resampled is not None:
+            # Go back 2 * sample_rate_minutes from the latest resampled slot
+            incremental_start = latest_resampled - timedelta(minutes=2 * sample_rate_minutes)
+            # Align to boundary
+            incremental_start = _align_to_boundary(incremental_start, sample_rate_minutes)
+            # Use incremental start only if it's after the global aligned start
+            if incremental_start > aligned_start:
+                effective_start = incremental_start
+                _Logger.info(
+                    "Incremental resample: starting from %s (latest resampled: %s)",
+                    effective_start,
+                    latest_resampled,
+                )
 
     _Logger.info(
-        "Starting resample: aligned_start=%s, global_end=%s, categories=%s",
-        aligned_start,
+        "Starting resample: effective_start=%s, global_end=%s, categories=%s, sample_rate=%dm",
+        effective_start,
         global_end,
         list(category_to_entity.keys()),
+        sample_rate_minutes,
     )
+
+    # Track statistics
+    slots_processed = 0
+    slots_saved = 0
+    slots_skipped = 0
 
     # Step 5: Iterate over slots
     try:
         with Session(engine) as session:
-            slot_start = aligned_start
+            slot_start = effective_start
 
             while slot_start < global_end:
-                slot_end = slot_start + RESAMPLE_STEP
+                slot_end = slot_start + resample_step
+                slots_processed += 1
 
                 # Compute values for all categories
                 slot_values: dict[str, tuple[float, str | None]] = {}
@@ -314,13 +564,34 @@ def resample_all_categories_to_5min() -> None:
                             unit=unit,
                         )
                         session.add(resampled)
+                    slots_saved += 1
+                else:
+                    slots_skipped += 1
 
                 slot_start = slot_end
 
             # Step 6: Commit all changes
             session.commit()
 
-            _Logger.info("Resample completed successfully.")
+            _Logger.info(
+                "Resample completed successfully. Processed: %d, Saved: %d, Skipped: %d, Rate: %dm",
+                slots_processed,
+                slots_saved,
+                slots_skipped,
+                sample_rate_minutes,
+            )
+
+            return ResampleStats(
+                slots_processed=slots_processed,
+                slots_saved=slots_saved,
+                slots_skipped=slots_skipped,
+                categories=list(category_to_entity.keys()),
+                start_time=effective_start,
+                end_time=global_end,
+                sample_rate_minutes=sample_rate_minutes,
+                table_flushed=table_flushed,
+            )
 
     except SQLAlchemyError as e:
         _Logger.error("Error during resampling: %s", e)
+        raise

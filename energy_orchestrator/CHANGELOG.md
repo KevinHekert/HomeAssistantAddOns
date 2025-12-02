@@ -2,6 +2,22 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.62] - 2025-12-02
+
+- **Resampling Interval UI Configuration**: Moved sample rate configuration from config.yaml to UI
+  - Sample rate can now be changed directly from the Configuration tab in the UI
+  - New dropdown selector for sample rate (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60 minutes)
+  - Sample rate is persisted to `/data/resample_config.json` for persistence across restarts
+  - When sample rate is changed, the "Flush existing data" checkbox is automatically checked
+- **API Changes**:
+  - Added `POST /api/sample_rate` endpoint to update sample rate from UI
+  - Added `set_sample_rate_minutes()` function to persist sample rate configuration
+  - Sample rate is now read from persistent JSON config instead of environment variable
+- **Config Changes**:
+  - Removed `sample_rate_minutes` from add-on configuration options
+  - Removed `SAMPLE_RATE_MINUTES` environment variable from run.sh
+- Added tests for new sample rate persistence functionality
+
 ## [0.0.0.61] - 2025-12-02
 
 - **Improved Training Data Table**: Enhanced training data display with all sensor categories

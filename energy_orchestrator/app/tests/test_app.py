@@ -1337,3 +1337,147 @@ class TestResampleWithSampleRate:
             assert data["status"] == "success"
             assert data["stats"]["table_flushed"] is True
             mock_resample.assert_called_once_with(None, flush=True)
+
+
+class TestSampleRateEndpoints:
+    """Test the /api/sample_rate GET and POST endpoints."""
+
+    def test_get_sample_rate_success(self, client):
+        """Get sample rate returns 200 with current rate."""
+        with patch("app.get_sample_rate_minutes") as mock_get_rate:
+            mock_get_rate.return_value = 5
+
+            response = client.get("/api/sample_rate")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["sample_rate_minutes"] == 5
+            assert "valid_rates" in data
+            assert 5 in data["valid_rates"]
+
+    def test_get_sample_rate_custom_value(self, client):
+        """Get sample rate returns custom configured rate."""
+        with patch("app.get_sample_rate_minutes") as mock_get_rate:
+            mock_get_rate.return_value = 15
+
+            response = client.get("/api/sample_rate")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["sample_rate_minutes"] == 15
+            assert "15-minute" in data["description"]
+
+    def test_get_sample_rate_error(self, client):
+        """Get sample rate returns 500 on error."""
+        with patch("app.get_sample_rate_minutes") as mock_get_rate:
+            mock_get_rate.side_effect = Exception("Config error")
+
+            response = client.get("/api/sample_rate")
+
+            assert response.status_code == 500
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "Config error" in data["message"]
+
+    def test_update_sample_rate_success(self, client):
+        """Update sample rate returns 200 with new rate."""
+        with patch("app.set_sample_rate_minutes") as mock_set_rate:
+            mock_set_rate.return_value = True
+
+            response = client.post(
+                "/api/sample_rate",
+                json={"sample_rate_minutes": 10},
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["sample_rate_minutes"] == 10
+            assert "10 minutes" in data["message"]
+            assert "note" in data
+            mock_set_rate.assert_called_once_with(10)
+
+    def test_update_sample_rate_no_body(self, client):
+        """Update sample rate without body returns 400."""
+        response = client.post("/api/sample_rate")
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "valid_rates" in data
+
+    def test_update_sample_rate_missing_field(self, client):
+        """Update sample rate without sample_rate_minutes returns 400."""
+        response = client.post(
+            "/api/sample_rate",
+            json={"other_field": 10},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "sample_rate_minutes is required" in data["message"]
+
+    def test_update_sample_rate_invalid_value(self, client):
+        """Update sample rate with invalid value returns 400."""
+        response = client.post(
+            "/api/sample_rate",
+            json={"sample_rate_minutes": 7},  # 7 is not a valid divisor of 60
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "must be one of" in data["message"]
+        assert "valid_rates" in data
+
+    def test_update_sample_rate_invalid_type(self, client):
+        """Update sample rate with non-integer returns 400."""
+        response = client.post(
+            "/api/sample_rate",
+            json={"sample_rate_minutes": "five"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "must be an integer" in data["message"]
+
+    def test_update_sample_rate_save_failure(self, client):
+        """Update sample rate returns 500 if save fails."""
+        with patch("app.set_sample_rate_minutes") as mock_set_rate:
+            mock_set_rate.return_value = False
+
+            response = client.post(
+                "/api/sample_rate",
+                json={"sample_rate_minutes": 10},
+                content_type="application/json",
+            )
+
+            assert response.status_code == 500
+            data = response.get_json()
+            assert data["status"] == "error"
+            assert "Failed to save" in data["message"]
+
+    def test_update_sample_rate_all_valid_rates(self, client):
+        """Update sample rate works with all valid rates."""
+        valid_rates = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]
+        
+        for rate in valid_rates:
+            with patch("app.set_sample_rate_minutes") as mock_set_rate:
+                mock_set_rate.return_value = True
+
+                response = client.post(
+                    "/api/sample_rate",
+                    json={"sample_rate_minutes": rate},
+                    content_type="application/json",
+                )
+
+                assert response.status_code == 200, f"Failed for rate {rate}"
+                data = response.get_json()
+                assert data["sample_rate_minutes"] == rate

@@ -652,6 +652,7 @@ def validate_feature_set(feature_names: list[str]) -> tuple[bool, list[str]]:
 
 
 # Raw sensor features (directly from sensors, no computation)
+# These map directly to sensor values without any aggregation or derivation
 RAW_SENSOR_FEATURES = {
     "outdoor_temp",
     "wind",
@@ -662,6 +663,7 @@ RAW_SENSOR_FEATURES = {
 }
 
 # Calculated/derived features (computed from raw data)
+# These are computed through aggregation, derivation, or time-based logic
 CALCULATED_FEATURES = {
     # Aggregated averages
     "outdoor_temp_avg_1h",
@@ -698,10 +700,11 @@ def categorize_features(feature_names: list[str]) -> dict[str, list[str]]:
         feature_names: List of feature names to categorize
         
     Returns:
-        Dictionary with 'raw' and 'calculated' lists
+        Dictionary with 'raw_sensor_features' and 'calculated_features' lists
     """
     raw = []
     calculated = []
+    unknown = []
     
     for name in feature_names:
         if name in RAW_SENSOR_FEATURES:
@@ -709,13 +712,21 @@ def categorize_features(feature_names: list[str]) -> dict[str, list[str]]:
         elif name in CALCULATED_FEATURES:
             calculated.append(name)
         else:
-            # Unknown features go to calculated by default
+            # Unknown features logged and categorized as calculated
+            _Logger.debug("Unknown feature '%s' categorized as calculated", name)
+            unknown.append(name)
             calculated.append(name)
     
-    return {
+    result = {
         "raw_sensor_features": raw,
         "calculated_features": calculated,
     }
+    
+    # Include unknown features in response if any were found
+    if unknown:
+        result["unknown_features"] = unknown
+    
+    return result
 
 
 def get_feature_details(feature_names: list[str]) -> list[dict]:

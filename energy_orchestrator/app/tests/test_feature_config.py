@@ -553,3 +553,17 @@ class TestFeatureVerification:
         assert result["verified"] is True
         assert "wind" in result["unused_in_model"]
         assert "humidity" in result["unused_in_model"]
+    
+    def test_categorize_features_unknown(self):
+        """Unknown features are categorized and reported."""
+        from ml.feature_config import categorize_features
+        
+        features = ["outdoor_temp", "unknown_feature", "another_unknown"]
+        result = categorize_features(features)
+        
+        assert "outdoor_temp" in result["raw_sensor_features"]
+        assert "unknown_feature" in result["calculated_features"]
+        assert "another_unknown" in result["calculated_features"]
+        assert "unknown_features" in result
+        assert "unknown_feature" in result["unknown_features"]
+        assert "another_unknown" in result["unknown_features"]

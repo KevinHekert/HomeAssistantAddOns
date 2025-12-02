@@ -11,6 +11,15 @@ from .heating_demand_model import (
     predict_single_slot,
     predict_scenario,
 )
+from .two_step_model import (
+    TwoStepHeatingDemandModel,
+    TwoStepPrediction,
+    TwoStepTrainingMetrics,
+    TwoStepModelNotAvailableError,
+    train_two_step_heating_demand_model,
+    load_two_step_heating_demand_model,
+    predict_two_step_scenario,
+)
 
 __all__ = [
     "build_heating_feature_dataset",
@@ -22,4 +31,11 @@ __all__ = [
     "load_heating_demand_model",
     "predict_single_slot",
     "predict_scenario",
+    "TwoStepHeatingDemandModel",
+    "TwoStepPrediction",
+    "TwoStepTrainingMetrics",
+    "TwoStepModelNotAvailableError",
+    "train_two_step_heating_demand_model",
+    "load_two_step_heating_demand_model",
+    "predict_two_step_scenario",
 ]

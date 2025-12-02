@@ -28,6 +28,13 @@ from ml.heating_demand_model import (
     train_heating_demand_model,
     predict_scenario,
 )
+from ml.two_step_model import (
+    TwoStepHeatingDemandModel,
+    TwoStepModelNotAvailableError,
+    load_two_step_heating_demand_model,
+    train_two_step_heating_demand_model,
+    predict_two_step_scenario,
+)
 from ml.feature_config import (
     get_feature_config,
     reload_feature_config,
@@ -48,8 +55,9 @@ WIND_ENTITY_ID = "sensor.knmi_windsnelheid"
 # Precision for prediction output values
 PREDICTION_DECIMAL_PLACES = 4
 
-# Global model instance
+# Global model instances
 _heating_model: HeatingDemandModel | None = None
+_two_step_model: TwoStepHeatingDemandModel | None = None
 
 
 def _get_model() -> HeatingDemandModel | None:
@@ -61,6 +69,17 @@ def _get_model() -> HeatingDemandModel | None:
         except Exception as e:
             _Logger.error("Failed to load heating demand model: %s", e)
     return _heating_model
+
+
+def _get_two_step_model() -> TwoStepHeatingDemandModel | None:
+    """Get the global two-step heating demand model, loading it if necessary."""
+    global _two_step_model
+    if _two_step_model is None:
+        try:
+            _two_step_model = load_two_step_heating_demand_model()
+        except Exception as e:
+            _Logger.error("Failed to load two-step heating demand model: %s", e)
+    return _two_step_model
 
 
 @app.get("/")
@@ -1415,13 +1434,372 @@ def get_features_metadata():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# =============================================================================
+# TWO-STEP PREDICTION ENDPOINTS (EXPERIMENTAL)
+# =============================================================================
+
+
+@app.get("/api/features/two_step_prediction")
+def get_two_step_prediction_config():
+    """
+    Get the two-step prediction configuration status.
+    
+    Two-step prediction is an experimental feature that:
+    1. First classifies whether heating will be active in a given hour
+    2. Then predicts kWh consumption only for active hours
+    
+    Response:
+    {
+        "status": "success",
+        "two_step_prediction_enabled": false,
+        "description": "Two-step prediction: classifier + regressor for better accuracy"
+    }
+    """
+    try:
+        config = get_feature_config()
+        two_step_model = _get_two_step_model()
+        
+        return jsonify({
+            "status": "success",
+            "two_step_prediction_enabled": config.is_two_step_prediction_enabled(),
+            "two_step_model_available": two_step_model is not None and two_step_model.is_available,
+            "activity_threshold_kwh": two_step_model.activity_threshold_kwh if two_step_model else None,
+            "description": "Two-step prediction: classifier + regressor for better accuracy. "
+                          "First predicts if heating is active, then predicts kWh for active hours only.",
+        })
+    except Exception as e:
+        _Logger.error("Error getting two-step prediction config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/features/two_step_prediction")
+def toggle_two_step_prediction():
+    """
+    Enable or disable two-step prediction mode.
+    
+    Request body:
+    {
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Two-step prediction enabled",
+        "two_step_prediction_enabled": true
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        enabled = data.get("enabled")
+        
+        if enabled is None:
+            return jsonify({
+                "status": "error",
+                "message": "enabled is required (true or false)",
+            }), 400
+        
+        config = get_feature_config()
+        
+        if enabled:
+            config.enable_two_step_prediction()
+        else:
+            config.disable_two_step_prediction()
+        
+        # Save configuration
+        config.save()
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Two-step prediction {status}",
+            "two_step_prediction_enabled": config.is_two_step_prediction_enabled(),
+        })
+    except Exception as e:
+        _Logger.error("Error toggling two-step prediction: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/train/two_step_heating_demand")
+def train_two_step_heating_demand():
+    """
+    Train the two-step heating demand prediction model.
+    
+    This trains:
+    1. A classifier to predict active/inactive hours
+    2. A regressor to predict kWh for active hours only
+    
+    The activity threshold is automatically computed from the training data.
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Two-step model trained successfully",
+        "threshold": {
+            "computed_threshold_kwh": 0.05,
+            "active_samples": 2500,
+            "inactive_samples": 1500
+        },
+        "classifier_metrics": {
+            "accuracy": 0.92,
+            "precision": 0.88,
+            "recall": 0.95,
+            "f1": 0.91
+        },
+        "regressor_metrics": {
+            "train_samples": 2000,
+            "val_samples": 500,
+            "train_mae_kwh": 0.15,
+            "val_mae_kwh": 0.18,
+            "val_mape_pct": 12.5,
+            "val_r2": 0.85
+        }
+    }
+    """
+    global _two_step_model
+    try:
+        _Logger.info("Training two-step heating demand model...")
+        
+        # Build feature dataset (same as single-step model)
+        df, stats = build_heating_feature_dataset(min_samples=50)
+        
+        if df is None:
+            return jsonify({
+                "status": "error",
+                "message": "Insufficient data for training",
+                "stats": {
+                    "total_slots": stats.total_slots,
+                    "valid_slots": stats.valid_slots,
+                    "dropped_missing_features": stats.dropped_missing_features,
+                    "dropped_missing_target": stats.dropped_missing_target,
+                },
+            }), 400
+        
+        # Train two-step model
+        model, metrics = train_two_step_heating_demand_model(df)
+        _two_step_model = model
+        
+        return jsonify({
+            "status": "success",
+            "message": "Two-step model trained successfully",
+            "threshold": {
+                "computed_threshold_kwh": round(metrics.computed_threshold_kwh, 4),
+                "active_samples": metrics.active_samples,
+                "inactive_samples": metrics.inactive_samples,
+            },
+            "classifier_metrics": {
+                "accuracy": round(metrics.classifier_accuracy, 4),
+                "precision": round(metrics.classifier_precision, 4),
+                "recall": round(metrics.classifier_recall, 4),
+                "f1": round(metrics.classifier_f1, 4),
+            },
+            "regressor_metrics": {
+                "train_samples": metrics.regressor_train_samples,
+                "val_samples": metrics.regressor_val_samples,
+                "train_mae_kwh": round(metrics.regressor_train_mae, 4),
+                "val_mae_kwh": round(metrics.regressor_val_mae, 4),
+                "val_mape_pct": round(metrics.regressor_val_mape * 100, 2) if metrics.regressor_val_mape == metrics.regressor_val_mape else None,
+                "val_r2": round(metrics.regressor_val_r2, 4),
+            },
+            "dataset_stats": {
+                "total_slots": stats.total_slots,
+                "valid_slots": stats.valid_slots,
+                "features_used": stats.features_used,
+            },
+            "training_data": _build_training_data_response(stats),
+        })
+        
+    except Exception as e:
+        _Logger.error("Error training two-step heating demand model: %s", e, exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/model/two_step_status")
+def get_two_step_model_status():
+    """Get the status of the two-step heating demand model."""
+    model = _get_two_step_model()
+    
+    if model is None or not model.is_available:
+        return jsonify({
+            "status": "not_available",
+            "message": "No trained two-step model available. "
+                      "Train via POST /api/train/two_step_heating_demand",
+        })
+    
+    return jsonify({
+        "status": "available",
+        "activity_threshold_kwh": round(model.activity_threshold_kwh, 4),
+        "features": model.feature_names,
+        "training_timestamp": model.training_timestamp.isoformat() if model.training_timestamp else None,
+    })
+
+
+@app.post("/api/predictions/two_step_scenario")
+def predict_two_step_heating_demand_scenario():
+    """
+    Predict heating demand using the two-step model with simplified inputs.
+    
+    This endpoint uses the experimental two-step approach:
+    1. First classifies each hour as active or inactive
+    2. For active hours, predicts kWh consumption
+    3. Inactive hours are predicted as 0 kWh
+    
+    Request body: (same as /api/predictions/scenario)
+    {
+        "timeslots": [
+            {
+                "timestamp": "2024-01-15T14:00:00",
+                "outdoor_temperature": 5.0,
+                "wind_speed": 3.0,
+                "humidity": 75.0,
+                "pressure": 1013.0,
+                "target_temperature": 20.0,
+                "indoor_temperature": 19.5
+            },
+            ...
+        ]
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "predictions": [
+            {
+                "timestamp": "2024-01-15T14:00:00",
+                "is_active": true,
+                "predicted_kwh": 1.2345,
+                "activity_probability": 0.87
+            },
+            ...
+        ],
+        "summary": {
+            "total_kwh": 24.5,
+            "active_hours": 18,
+            "inactive_hours": 6
+        }
+    }
+    """
+    model = _get_two_step_model()
+    
+    if model is None or not model.is_available:
+        return jsonify({
+            "status": "error",
+            "message": "Two-step model not trained. "
+                      "Please train via POST /api/train/two_step_heating_demand",
+        }), 503
+    
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        timeslots = data.get("timeslots", [])
+        
+        if not timeslots:
+            return jsonify({
+                "status": "error",
+                "message": "timeslots is required and must be non-empty",
+                "required_fields": SIMPLIFIED_REQUIRED_FIELDS,
+                "optional_fields": SIMPLIFIED_OPTIONAL_FIELDS,
+            }), 400
+        
+        # Validate simplified scenario input
+        validation = validate_simplified_scenario(timeslots)
+        
+        if not validation.valid:
+            return jsonify({
+                "status": "error",
+                "message": "Validation failed",
+                "errors": validation.errors,
+                "required_fields": SIMPLIFIED_REQUIRED_FIELDS,
+                "optional_fields": SIMPLIFIED_OPTIONAL_FIELDS,
+            }), 400
+        
+        # Convert simplified input to model features
+        model_features, parsed_timestamps = convert_simplified_to_model_features(
+            timeslots,
+            model.feature_names,
+            include_historical_heating=True,
+        )
+        
+        # Make predictions using two-step approach
+        predictions = predict_two_step_scenario(
+            model,
+            model_features,
+            update_historical=True,
+        )
+        
+        # Build response with detailed prediction info
+        prediction_results = []
+        active_count = 0
+        inactive_count = 0
+        total_kwh = 0.0
+        
+        for ts, pred in zip(parsed_timestamps, predictions):
+            prediction_results.append({
+                "timestamp": ts.isoformat(),
+                "is_active": pred.is_active,
+                "predicted_kwh": round(pred.predicted_kwh, PREDICTION_DECIMAL_PLACES),
+                "activity_probability": round(pred.classifier_probability, 4),
+            })
+            
+            if pred.is_active:
+                active_count += 1
+            else:
+                inactive_count += 1
+            total_kwh += pred.predicted_kwh
+        
+        return jsonify({
+            "status": "success",
+            "predictions": prediction_results,
+            "summary": {
+                "total_kwh": round(total_kwh, PREDICTION_DECIMAL_PLACES),
+                "active_hours": active_count,
+                "inactive_hours": inactive_count,
+            },
+            "model_info": {
+                "activity_threshold_kwh": round(model.activity_threshold_kwh, 4),
+                "training_timestamp": model.training_timestamp.isoformat() if model.training_timestamp else None,
+            },
+        })
+        
+    except TwoStepModelNotAvailableError:
+        return jsonify({
+            "status": "error",
+            "message": "Two-step model not available",
+        }), 503
+    except ValueError as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 400
+    except Exception as e:
+        _Logger.error("Error predicting with two-step model: %s", e, exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
 if __name__ == "__main__":
     # Initialize database schema and sensor mappings before starting workers
     init_db_schema()
     sync_sensor_mappings()
     
-    # Try to load existing model
+    # Try to load existing models
     _get_model()
+    _get_two_step_model()
     
     start_sensor_logging_worker()
     app.run(host="0.0.0.0", port=8099, debug=False)

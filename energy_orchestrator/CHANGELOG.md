@@ -2,6 +2,39 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.63] - 2025-12-02
+
+- **Two-Step Heat Pump Prediction (Experimental)**: Added new two-step prediction approach for better accuracy
+  - Step 1: Classifier predicts whether heating will be active or inactive in a given hour
+  - Step 2: Regressor predicts kWh consumption only for active hours (inactive = 0 kWh)
+  - Solves overestimation when pump is off and underestimation during heavy heating
+- **Automatic Threshold Detection**: Activity threshold is automatically computed from training data
+  - Uses 5th percentile of positive kWh values as threshold
+  - Minimum threshold of 0.01 kWh to filter noise
+  - Threshold is stored with model and reused for predictions
+  - No manual configuration required by end users
+- **New API Endpoints**:
+  - `GET /api/features/two_step_prediction`: Get two-step prediction configuration status
+  - `POST /api/features/two_step_prediction`: Enable/disable two-step prediction mode
+  - `POST /api/train/two_step_heating_demand`: Train the two-step model (classifier + regressor)
+  - `GET /api/model/two_step_status`: Get two-step model status and threshold info
+  - `POST /api/predictions/two_step_scenario`: Make predictions using two-step approach
+- **New Module**: `ml/two_step_model.py` with complete implementation
+  - `TwoStepHeatingDemandModel` class with classifier and regressor
+  - `TwoStepPrediction` dataclass with is_active, predicted_kwh, activity_probability
+  - `train_two_step_heating_demand_model()` for training both models
+  - `predict_two_step_scenario()` for scenario-based predictions
+- **Feature Configuration Updates**:
+  - Added `two_step_prediction_enabled` flag to FeatureConfiguration
+  - New methods: `enable_two_step_prediction()`, `disable_two_step_prediction()`, `is_two_step_prediction_enabled()`
+  - Configuration persists across restarts
+- **Tests**: Added 27 new tests for two-step prediction functionality
+  - Threshold computation tests
+  - Classifier and regressor training tests
+  - Prediction tests for active/inactive hours
+  - Model persistence tests
+  - Feature configuration tests
+
 ## [0.0.0.62] - 2025-12-02
 
 - **Resampling Interval UI Configuration**: Moved sample rate configuration from config.yaml to UI

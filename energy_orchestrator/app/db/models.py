@@ -63,3 +63,32 @@ class ResampledSample(Base):
     __table_args__ = (
         UniqueConstraint("slot_start", "category", name="uq_slot_category"),
     )
+
+
+class FeatureStatistic(Base):
+    """Stores time-span average statistics calculated from resampled data.
+    
+    This table stores rolling time-window averages (avg_1h, avg_6h, avg_24h, avg_7d)
+    calculated from the resampled_samples table. These statistics are:
+    - Calculated AFTER raw sensor resampling and virtual sensor calculations
+    - Used as features for model training when enabled in configuration
+    - Separate from raw/virtual sensor data for clarity and performance
+    
+    Examples:
+    - outdoor_temp_avg_1h: 1-hour rolling average of outdoor temperature
+    - indoor_temp_avg_24h: 24-hour rolling average of indoor temperature
+    - temp_delta_avg_6h: 6-hour rolling average of the virtual temp_delta sensor
+    """
+    __tablename__ = "feature_statistics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slot_start: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    sensor_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    stat_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # avg_1h, avg_6h, avg_24h, avg_7d
+    value: Mapped[float] = mapped_column(Double, nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # Number of samples used
+
+    __table_args__ = (
+        UniqueConstraint("slot_start", "sensor_name", "stat_type", name="uq_feature_stat"),
+    )

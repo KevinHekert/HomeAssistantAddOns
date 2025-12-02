@@ -2,6 +2,22 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.60] - 2025-12-02
+
+- **Dark/Light Mode Toggle**: Added theme toggle button in header
+  - Uses CSS variables for consistent theming across light and dark modes
+  - Theme preference is saved to localStorage
+  - Defaults to dark mode
+- **Tabbed Interface**: Reorganized UI into three tabs
+  - Configuration tab: Data resampling and feature configuration
+  - Model Training tab: Model training, predictions, and scenario testing
+  - Sensor Information tab: Sensor data overview
+- **Training Data Table**: Added table showing first/last values when training model
+  - Displays dhw_temp and hp_kwh_total ranges
+  - API endpoint updated to return `training_data` with first/last values
+  - New `TrainingDataRange` dataclass for capturing sensor ranges
+- **Removed Wind Card**: Removed test wind speed card from UI
+
 ## [0.0.0.59] - 2025-12-02
 
 - **Flush Resample Table on Sample Rate Change**: Added ability to flush existing resampled data before resampling

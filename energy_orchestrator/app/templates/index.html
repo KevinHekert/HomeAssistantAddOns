@@ -3065,16 +3065,102 @@
             statusDiv.textContent = 'Loading feature stats configuration...';
             
             try {
-                // This will be implemented in Step 5
-                statusDiv.className = 'status-message';
-                statusDiv.textContent = 'Feature stats configuration will be implemented in next step';
-                tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">Feature stats configuration not yet available.</p>';
+                const response = await fetch('api/feature_stats/config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    const sensorCount = Object.keys(data.sensors).length;
+                    statusDiv.textContent = `✓ Loaded feature stats configuration for ${sensorCount} sensors`;
+                    
+                    if (sensorCount === 0) {
+                        tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">No sensors configured yet.</p>';
+                    } else {
+                        // Build feature stats configuration table
+                        let html = '<table class="data-table" style="margin-top: 20px;">';
+                        html += '<thead><tr>';
+                        html += '<th>Sensor</th><th>Type</th>';
+                        
+                        // Add column for each stat type
+                        for (const statType of data.all_stat_types) {
+                            html += `<th>${statType}</th>`;
+                        }
+                        
+                        html += '</tr></thead><tbody>';
+                        
+                        for (const [sensorName, sensorConfig] of Object.entries(data.sensors)) {
+                            html += '<tr>';
+                            html += `<td><strong>${sensorName}</strong></td>`;
+                            
+                            const typeBadge = sensorConfig.sensor_type === 'raw'
+                                ? '<span style="padding: 2px 8px; background: var(--accent-blue); color: white; border-radius: 3px; font-size: 0.8em;">Raw</span>'
+                                : '<span style="padding: 2px 8px; background: var(--warning-color); color: white; border-radius: 3px; font-size: 0.8em;">Virtual</span>';
+                            html += `<td>${typeBadge}</td>`;
+                            
+                            // Add checkbox for each stat type
+                            for (const statType of data.all_stat_types) {
+                                const isEnabled = sensorConfig.enabled_stats.includes(statType);
+                                html += `<td><input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleFeatureStat('${sensorName}', '${statType}', this.checked)"></td>`;
+                            }
+                            
+                            html += '</tr>';
+                        }
+                        
+                        html += '</tbody></table>';
+                        html += '<p style="margin-top: 10px; color: var(--text-secondary); font-size: 0.9em;">';
+                        html += 'Check boxes to enable time-based statistics generation during resampling. ';
+                        html += 'For example, enabling "avg_1h" for outdoor_temp will create "outdoor_temp_avg_1h" during resampling.';
+                        html += '</p>';
+                        tableDiv.innerHTML = html;
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    tableDiv.innerHTML = '';
+                }
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
                 tableDiv.innerHTML = '';
             } finally {
                 btn.disabled = false;
+            }
+        }
+
+        // Toggle a feature stat for a sensor
+        async function toggleFeatureStat(sensorName, statType, enabled) {
+            const statusDiv = document.getElementById('featureStatsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `${enabled ? 'Enabling' : 'Disabling'} ${statType} for ${sensorName}...`;
+            
+            try {
+                const response = await fetch('api/feature_stats/set', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sensor_name: sensorName,
+                        stat_type: statType,
+                        enabled: enabled
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    setTimeout(() => { statusDiv.textContent = ''; }, 2000);
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    // Reload to restore correct state
+                    await loadFeatureStatsConfig();
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                // Reload to restore correct state
+                await loadFeatureStatsConfig();
             }
         }
     </script>

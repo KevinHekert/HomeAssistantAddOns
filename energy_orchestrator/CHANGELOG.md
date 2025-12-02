@@ -2,6 +2,37 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.81] - 2025-12-02
+
+- **Feature Statistics Configuration**: Implemented Step 5 of sensor configuration feature - Time-based Feature Stats
+  - **New Module**: `db/feature_stats.py` for feature statistics management
+    - `StatType` enum: avg_1h, avg_6h, avg_24h, avg_7d
+    - `SensorStatsConfig` dataclass for per-sensor statistics configuration
+    - `FeatureStatsConfiguration` class for global configuration management
+    - Default stats enabled: avg_1h, avg_6h, avg_24h
+    - Persistent JSON storage at `/data/feature_stats_config.json`
+  - **New API Endpoints**:
+    - `GET /api/feature_stats/config`: Get statistics configuration for all sensors
+    - `POST /api/feature_stats/set`: Enable/disable a specific statistic for a sensor
+  - **UI Implementation**:
+    - Feature Stats Configuration section now fully functional
+    - Table display with checkboxes for each stat type per sensor
+    - Shows sensor type (Raw/Virtual) with badges
+    - Interactive checkboxes to enable/disable each statistic
+    - Real-time status updates when toggling statistics
+    - Explanatory text about stat generation
+  - **Functionality**:
+    - Works for both raw sensors and virtual sensors
+    - Each sensor can have different statistics enabled
+    - Statistics are stored with category names like "sensor_name_avg_1h"
+    - Configuration persists across restarts
+  - **Example Usage**:
+    - Enable avg_1h for outdoor_temp → creates "outdoor_temp_avg_1h" during resampling
+    - Enable avg_6h and avg_24h for temp_delta (virtual sensor) → creates aggregated delta values
+  - **Note**: Statistics calculation will be integrated into resampling in Step 6
+- **Bug Fix**: Fixed indentation error in sensor_category_config.py (duplicate return statements)
+- **Tests**: All 524 existing tests pass
+
 ## [0.0.0.80] - 2025-12-02
 
 - **Virtual Sensors Implementation**: Implemented Step 4 of sensor configuration feature - Virtual (Derived) Sensors

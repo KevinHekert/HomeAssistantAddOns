@@ -38,6 +38,10 @@ from db.virtual_sensors import (
     VirtualSensorDefinition,
     VirtualSensorOperation,
 )
+from db.feature_stats import (
+    get_feature_stats_config,
+    StatType,
+)
 from db.prediction_storage import (
     store_prediction,
     get_stored_predictions,
@@ -3288,6 +3292,150 @@ def toggle_virtual_sensor(name: str):
         })
     except Exception as e:
         _Logger.error("Error toggling virtual sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =============================================================================
+# FEATURE STATS CONFIGURATION ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/feature_stats/config")
+def get_feature_stats_config_api():
+    """
+    Get feature statistics configuration for all sensors.
+    
+    Shows which time-based statistics (avg_1h, avg_6h, avg_24h, avg_7d)
+    are enabled for each sensor.
+    
+    Response:
+    {
+        "status": "success",
+        "sensors": {
+            "outdoor_temp": {
+                "enabled_stats": ["avg_1h", "avg_6h", "avg_24h"],
+                "stat_categories": ["outdoor_temp_avg_1h", "outdoor_temp_avg_6h", "outdoor_temp_avg_24h"]
+            },
+            ...
+        },
+        "all_stat_types": ["avg_1h", "avg_6h", "avg_24h", "avg_7d"]
+    }
+    """
+    try:
+        stats_config = get_feature_stats_config()
+        sensor_category_config = get_sensor_category_config()
+        virtual_sensors_config = get_virtual_sensors_config()
+        
+        # Get all available sensors (raw + virtual)
+        all_sensors = []
+        
+        # Add raw sensors
+        for sensor_config in sensor_category_config.get_enabled_sensors():
+            all_sensors.append({
+                "name": sensor_config.category_name,
+                "type": "raw",
+                "enabled": sensor_config.enabled,
+            })
+        
+        # Add virtual sensors
+        for virtual_sensor in virtual_sensors_config.get_enabled_sensors():
+            all_sensors.append({
+                "name": virtual_sensor.name,
+                "type": "virtual",
+                "enabled": virtual_sensor.enabled,
+            })
+        
+        # Build response with stats configuration for each sensor
+        sensors_with_stats = {}
+        for sensor in all_sensors:
+            sensor_name = sensor["name"]
+            enabled_stats = stats_config.get_enabled_stats_for_sensor(sensor_name)
+            stat_categories = [
+                stats_config.get_sensor_config(sensor_name).get_stat_category_name(stat)
+                for stat in enabled_stats
+            ]
+            
+            sensors_with_stats[sensor_name] = {
+                "sensor_type": sensor["type"],
+                "enabled_stats": [s.value for s in enabled_stats],
+                "stat_categories": stat_categories,
+            }
+        
+        return jsonify({
+            "status": "success",
+            "sensors": sensors_with_stats,
+            "all_stat_types": [s.value for s in StatType],
+        })
+    except Exception as e:
+        _Logger.error("Error getting feature stats config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/feature_stats/set")
+def set_feature_stat():
+    """
+    Enable or disable a specific statistic for a sensor.
+    
+    Request body:
+    {
+        "sensor_name": "outdoor_temp",
+        "stat_type": "avg_1h",
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Statistic 'avg_1h' for 'outdoor_temp' enabled",
+        "enabled_stats": ["avg_1h", "avg_6h", "avg_24h"]
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        sensor_name = data.get("sensor_name")
+        stat_type_str = data.get("stat_type")
+        enabled = data.get("enabled")
+        
+        if not sensor_name or not stat_type_str or enabled is None:
+            return jsonify({
+                "status": "error",
+                "message": "sensor_name, stat_type, and enabled are required",
+            }), 400
+        
+        # Validate stat_type
+        try:
+            stat_type = StatType(stat_type_str)
+        except ValueError:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid stat_type. Must be one of: {[s.value for s in StatType]}",
+            }), 400
+        
+        # Update configuration
+        config = get_feature_stats_config()
+        config.set_stat_enabled(sensor_name, stat_type, bool(enabled))
+        
+        # Save configuration
+        config.save()
+        
+        # Get updated stats for this sensor
+        enabled_stats = config.get_enabled_stats_for_sensor(sensor_name)
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Statistic '{stat_type.value}' for '{sensor_name}' {status}",
+            "enabled_stats": [s.value for s in enabled_stats],
+        })
+    except Exception as e:
+        _Logger.error("Error setting feature stat: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

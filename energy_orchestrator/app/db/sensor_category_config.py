@@ -326,8 +326,6 @@ class SensorCategoryConfiguration:
             self.sensors[category_name].unit = unit
             return True
         return False
-            return True
-        return False
     
     def enable_sensor(self, category_name: str) -> bool:
         """

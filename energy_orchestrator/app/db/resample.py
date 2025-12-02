@@ -37,21 +37,15 @@ DEFAULT_SAMPLE_RATE = 5
 CONFIG_FILE_PATH = Path(os.environ.get("DATA_DIR", "/data")) / "resample_config.json"
 
 
-def _get_config_file_path() -> Path:
-    """Get the configuration file path. Allows overriding for tests."""
-    return CONFIG_FILE_PATH
-
-
 def _load_sample_rate_config() -> int:
     """Load sample rate from persistent configuration file.
     
     Returns:
         Sample rate in minutes, defaults to 5 if not configured or invalid.
     """
-    config_path = _get_config_file_path()
     try:
-        if config_path.exists():
-            with open(config_path, "r") as f:
+        if CONFIG_FILE_PATH.exists():
+            with open(CONFIG_FILE_PATH, "r") as f:
                 config = json.load(f)
                 rate = config.get("sample_rate_minutes", DEFAULT_SAMPLE_RATE)
                 if isinstance(rate, int) and rate in VALID_SAMPLE_RATES:
@@ -80,16 +74,15 @@ def _save_sample_rate_config(rate: int) -> bool:
         _Logger.error("Cannot save invalid sample rate %d. Valid rates are %s", rate, VALID_SAMPLE_RATES)
         return False
     
-    config_path = _get_config_file_path()
     try:
         # Ensure parent directory exists
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        CONFIG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
         
         # Load existing config or create new
         config = {}
-        if config_path.exists():
+        if CONFIG_FILE_PATH.exists():
             try:
-                with open(config_path, "r") as f:
+                with open(CONFIG_FILE_PATH, "r") as f:
                     config = json.load(f)
             except (json.JSONDecodeError, OSError):
                 pass
@@ -98,7 +91,7 @@ def _save_sample_rate_config(rate: int) -> bool:
         config["sample_rate_minutes"] = rate
         
         # Save config
-        with open(config_path, "w") as f:
+        with open(CONFIG_FILE_PATH, "w") as f:
             json.dump(config, f, indent=2)
         
         _Logger.info("Sample rate saved to config: %d minutes", rate)

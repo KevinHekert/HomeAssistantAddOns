@@ -2,6 +2,17 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.65] - 2025-12-02
+
+- **Removed UI Sections**: Removed the following UI sections from the Model Training tab:
+  - "🔮 Single Slot Prediction" - removed card and functionality
+  - "📅 Full Day Prediction (24h)" - removed card and functionality
+- **Removed API Endpoints**:
+  - `GET /api/examples/single_slot` - no longer available
+  - `GET /api/examples/full_day` - no longer available
+- **Note**: The `/api/predictions/heating_demand_profile` endpoint is still available for external use
+- Removed related tests (6 tests removed)
+
 ## [0.0.0.64] - 2025-12-02
 
 - **Preserve Actual Sensor Timestamps**: Sample timestamps now reflect the actual timestamps from Home Assistant

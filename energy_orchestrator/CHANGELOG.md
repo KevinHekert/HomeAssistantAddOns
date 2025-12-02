@@ -4,6 +4,13 @@ All notable changes to this add-on will be documented in this file.
 
 ## [0.0.0.71] - 2025-12-02
 
+- **Incremental Resampling**: When resampling without flush, the system now starts from the latest resampled slot minus 2x the sample rate, instead of reprocessing all historical data
+  - Example: With 5-minute sample rate and latest resampled slot at 12:55, resampling starts from 12:45 (12:55 - 2*5)
+  - This significantly improves performance for regular resample operations
+  - Existing values that differ will be replaced (idempotent behavior)
+  - Use `flush=True` to force full reprocessing from the beginning
+- **New Function**: Added `get_latest_resampled_slot_start()` to retrieve the most recent resampled slot timestamp
+- **Tests**: Added 9 new tests for incremental resampling behavior
 - **Training Data Range Units from Source**: Unit information is now extracted from the actual samples table instead of using hardcoded values
   - `TrainingDataRange` dataclass now includes a `unit` field
   - Units are extracted from the first sample of each category in the resampled data

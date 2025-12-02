@@ -130,51 +130,72 @@ The resampled data is stored in `resampled_samples`:
 
 The model uses only **exogenous variables** (external factors) as input features. Heat pump outputs like flow temperature and power are explicitly excluded to prevent data leakage.
 
-#### Input Feature Categories
+All features are derived from **5-minute averaged samples**:
+- 1 hour  = last **12** samples
+- 6 hours = last **72** samples
+- 24 hours = last **288** samples
 
-| Category | Description | Used As |
-|----------|-------------|---------|
-| `outdoor_temp` | Outdoor temperature | Input feature |
-| `wind` | Wind speed | Input feature |
-| `humidity` | Relative humidity | Input feature |
-| `pressure` | Barometric pressure | Input feature |
-| `indoor_temp` | Indoor temperature | Input feature |
-| `target_temp` | Thermostat setpoint | Input feature |
-| `hp_kwh_total` | Heat pump kWh counter | Target computation only |
-| `dhw_active` | Hot water active flag | Filtering only |
+#### Core Baseline Features (13 features)
 
-#### Historical Aggregation Features
+The model uses **exactly 13 core baseline features** by default. These features are always active and cannot be disabled. They represent the key physical drivers of heating energy consumption.
 
-The model computes rolling statistics to capture thermal dynamics:
+| # | Feature | Category | Description | Unit | Window |
+|---|---------|----------|-------------|------|--------|
+| 1 | `outdoor_temp` | Weather | Latest 5-minute outdoor temperature | °C | - |
+| 2 | `outdoor_temp_avg_24h` | Weather | 24-hour outdoor temp average (last 288 samples) | °C | 24h |
+| 3 | `wind` | Weather | Latest 5-minute wind speed or intensity | m/s | - |
+| 4 | `humidity` | Weather | Latest 5-minute outdoor relative humidity | % | - |
+| 5 | `indoor_temp` | Indoor | Latest 5-minute indoor temperature | °C | - |
+| 6 | `indoor_temp_avg_24h` | Indoor | 24-hour average indoor temp (building mass/thermal history) | °C | 24h |
+| 7 | `target_temp` | Control | Latest 5-minute heating target setpoint | °C | - |
+| 8 | `target_temp_avg_6h` | Control | 6-hour average heating target setpoint | °C | 6h |
+| 9 | `heating_kwh_last_1h` | Usage | Heating energy in last 1 hour | kWh | 1h |
+| 10 | `heating_kwh_last_6h` | Usage | Heating energy in last 6 hours | kWh | 6h |
+| 11 | `heating_kwh_last_24h` | Usage | Heating energy in last 24 hours | kWh | 24h |
+| 12 | `hour_of_day` | Time | Local hour (0-23), using configured timezone | hour | - |
+| 13 | `delta_target_indoor` | Control | Difference: target_temp - indoor_temp | °C | - |
 
-| Feature | Window | Description |
-|---------|--------|-------------|
-| `outdoor_temp_avg_1h` | 1 hour | Average outdoor temp (last 12 slots) |
-| `outdoor_temp_avg_6h` | 6 hours | Average outdoor temp (last 72 slots) |
-| `outdoor_temp_avg_24h` | 24 hours | Average outdoor temp (last 288 slots) |
-| `outdoor_temp_avg_7d` | 7 days | Average outdoor temp (last 2016 slots)* |
-| `indoor_temp_avg_6h` | 6 hours | Average indoor temp |
-| `indoor_temp_avg_24h` | 24 hours | Average indoor temp |
-| `target_temp_avg_6h` | 6 hours | Average setpoint |
-| `target_temp_avg_24h` | 24 hours | Average setpoint |
-| `heating_degree_hours_24h` | 24 hours | Sum of (target - outdoor)⁺ × (5/60) |
-| `heating_degree_hours_7d` | 7 days | Sum of heating degree hours* |
-| `heating_kwh_last_6h` | 6 hours | Sum of kWh consumption |
-| `heating_kwh_last_24h` | 24 hours | Sum of kWh consumption |
-| `heating_kwh_last_7d` | 7 days | Sum of kWh consumption* |
+> **Note:** The baseline feature set is designed to be small, strictly defined, and physically meaningful. It focuses on the key drivers of energy usage, reduces overfitting on small datasets, and remains easy to extend with optional features.
 
-\* 7-day features are only included when at least 7 days (168 hours / 2016 five-minute slots) of history is available.
+#### Experimental Features (Optional)
 
-> **Note:** Historical aggregations can also be computed from user-provided temperature forecasts for upcoming days. Use the `/api/predictions/enrich_scenario` endpoint to derive these features from your scenario data.
+The following features are **experimental** and disabled by default. They can be enabled/disabled via the UI without breaking the training or prediction pipelines.
 
-#### Time Features
+| Feature | Category | Description | Unit | Window |
+|---------|----------|-------------|------|--------|
+| `pressure` | Weather | Latest 5-minute barometric pressure | hPa | - |
+| `outdoor_temp_avg_1h` | Weather | 1-hour outdoor temp average | °C | 1h |
+| `outdoor_temp_avg_6h` | Weather | 6-hour outdoor temp average | °C | 6h |
+| `outdoor_temp_avg_7d` | Weather | 7-day outdoor temp average* | °C | 7d |
+| `indoor_temp_avg_6h` | Indoor | 6-hour average indoor temp | °C | 6h |
+| `target_temp_avg_24h` | Control | 24-hour average heating setpoint | °C | 24h |
+| `heating_kwh_last_7d` | Usage | Heating energy in last 7 days* | kWh | 7d |
+| `heating_degree_hours_24h` | Usage | Heating degree hours over 24h | °C·h | 24h |
+| `heating_degree_hours_7d` | Usage | Heating degree hours over 7 days* | °C·h | 7d |
+| `day_of_week` | Time | Day of week (0=Monday, 6=Sunday) | day | - |
+| `is_weekend` | Time | 1 if Saturday/Sunday, else 0 | boolean | - |
+| `is_night` | Time | 1 if hour is 23:00-06:59, else 0 | boolean | - |
 
-| Feature | Description |
-|---------|-------------|
-| `hour_of_day` | Hour (0-23) |
-| `day_of_week` | Day (0=Monday, 6=Sunday) |
-| `is_weekend` | 1 if Saturday/Sunday, else 0 |
-| `is_night` | 1 if hour is 23:00-06:59, else 0 |
+\* 7-day features require at least 7 days (168 hours / 2016 five-minute slots) of history.
+
+#### Time Zone Configuration
+
+- All raw timestamps are stored in **UTC**.
+- For `hour_of_day`, timestamps are converted to a **configurable IANA timezone**.
+- Default timezone: `Europe/Amsterdam` (with correct daylight saving handling).
+- Configure the timezone via the UI or API.
+
+#### Feature Metadata
+
+All features (baseline + experimental) have associated metadata:
+- `name`: Feature name
+- `category`: weather | indoor | control | usage | time
+- `description`: Human-readable description
+- `unit`: Unit of measurement (°C, kWh, %, m/s, etc.)
+- `time_window`: none | 1h | 6h | 24h | 7d
+- `is_core`: True for baseline features
+
+Use the `/api/features/metadata` endpoint to retrieve this information.
 
 ### Making Predictions
 
@@ -701,6 +722,130 @@ POST /api/predictions/validate_start_time
   "valid": true,
   "message": "Valid prediction start time: 2024-01-15 14:00:00",
   "next_valid_hour": "2024-01-15T14:00:00"
+}
+```
+
+---
+
+### Get Feature Configuration
+
+Get the current feature configuration, including all core and experimental features.
+
+```http
+GET /api/features/config
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "config": {
+    "timezone": "Europe/Amsterdam",
+    "core_feature_count": 13,
+    "active_feature_count": 13,
+    "experimental_enabled": {
+      "pressure": false,
+      "day_of_week": false,
+      ...
+    }
+  },
+  "features": {
+    "weather": [...],
+    "indoor": [...],
+    "control": [...],
+    "usage": [...],
+    "time": [...]
+  },
+  "active_feature_names": ["outdoor_temp", "wind", "humidity", ...]
+}
+```
+
+---
+
+### Toggle Experimental Feature
+
+Enable or disable an experimental feature. Core features cannot be toggled.
+
+```http
+POST /api/features/toggle
+```
+
+**Request body:**
+
+```json
+{
+  "feature_name": "pressure",
+  "enabled": true
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "message": "Feature 'pressure' is now enabled",
+  "active_features": ["outdoor_temp", "wind", "humidity", "pressure", ...]
+}
+```
+
+---
+
+### Set Timezone
+
+Set the timezone for time-based features (hour_of_day).
+
+```http
+POST /api/features/timezone
+```
+
+**Request body:**
+
+```json
+{
+  "timezone": "Europe/Amsterdam"
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "message": "Timezone set to Europe/Amsterdam",
+  "timezone": "Europe/Amsterdam"
+}
+```
+
+---
+
+### Get Feature Metadata
+
+Get metadata for all features. This is the single source of truth for feature documentation.
+
+```http
+GET /api/features/metadata
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "features": [
+    {
+      "name": "outdoor_temp",
+      "category": "weather",
+      "description": "Latest 5-minute outdoor temperature",
+      "unit": "°C",
+      "time_window": "none",
+      "is_core": true,
+      "enabled": true
+    },
+    ...
+  ],
+  "core_count": 13
 }
 ```
 

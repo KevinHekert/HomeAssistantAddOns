@@ -234,7 +234,7 @@ class TestAddTimeFeatures:
     """Test the _add_time_features function."""
     
     def test_adds_time_features(self):
-        """Time features are added correctly."""
+        """Time features are added correctly (without timezone conversion)."""
         # Monday at 14:00
         start = datetime(2024, 1, 1, 14, 0, 0)  # Monday
         slots = [start + timedelta(minutes=5 * i) for i in range(3)]
@@ -244,7 +244,8 @@ class TestAddTimeFeatures:
             index=pd.DatetimeIndex(slots),
         )
         
-        result = _add_time_features(df)
+        # Use use_configured_timezone=False for deterministic test
+        result = _add_time_features(df, use_configured_timezone=False)
         
         assert "hour_of_day" in result.columns
         assert "day_of_week" in result.columns
@@ -266,9 +267,27 @@ class TestAddTimeFeatures:
             index=pd.DatetimeIndex(slots),
         )
         
-        result = _add_time_features(df)
+        # Use use_configured_timezone=False for deterministic test
+        result = _add_time_features(df, use_configured_timezone=False)
         
         assert result.iloc[0]["is_night"] == 1
+    
+    def test_with_timezone_conversion(self):
+        """Test that timezone conversion works correctly."""
+        # Create a UTC timestamp (winter time - CET is UTC+1)
+        start = datetime(2024, 1, 1, 13, 0, 0)  # 13:00 UTC = 14:00 CET
+        slots = [start + timedelta(minutes=5 * i) for i in range(3)]
+        
+        df = pd.DataFrame(
+            {"value": [1, 2, 3]},
+            index=pd.DatetimeIndex(slots),
+        )
+        
+        # Default timezone is Europe/Amsterdam (CET = UTC+1 in winter)
+        result = _add_time_features(df, use_configured_timezone=True)
+        
+        # 13:00 UTC = 14:00 in Amsterdam during winter
+        assert result.iloc[0]["hour_of_day"] == 14
 
 
 class TestBuildHeatingFeatureDataset:

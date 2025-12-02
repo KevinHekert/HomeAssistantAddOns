@@ -230,6 +230,10 @@ def _compute_historical_aggregations(
         kwh_delta = kwh_delta.clip(lower=0, upper=1.0)
         
         # Sum over historical windows (heating only - DHW filtering done later)
+        # 1 hour = 12 slots (CORE BASELINE FEATURE)
+        df["heating_kwh_last_1h"] = kwh_delta.rolling(
+            window=slots_1h, min_periods=1
+        ).sum()
         df["heating_kwh_last_6h"] = kwh_delta.rolling(
             window=slots_6h, min_periods=slots_1h
         ).sum()
@@ -241,6 +245,10 @@ def _compute_historical_aggregations(
             df["heating_kwh_last_7d"] = kwh_delta.rolling(
                 window=slots_7d, min_periods=slots_24h
             ).sum()
+    
+    # Derived domain feature: delta between target and indoor temperature (CORE BASELINE)
+    if "target_temp" in df.columns and "indoor_temp" in df.columns:
+        df["delta_target_indoor"] = df["target_temp"] - df["indoor_temp"]
     
     return df
 
@@ -300,12 +308,14 @@ def _compute_target(
     return df
 
 
-def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
+def _add_time_features(df: pd.DataFrame, use_configured_timezone: bool = True) -> pd.DataFrame:
     """
     Add time-related features.
     
     Args:
-        df: DataFrame with DatetimeIndex
+        df: DataFrame with DatetimeIndex (assumed UTC)
+        use_configured_timezone: If True, convert UTC to configured local timezone
+            for hour_of_day. Default is True.
         
     Returns:
         DataFrame with time features added
@@ -321,10 +331,36 @@ def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     else:
         dt_index = pd.DatetimeIndex(df.index)
     
-    df["hour_of_day"] = dt_index.hour
+    # Convert to local timezone for hour_of_day if configured
+    if use_configured_timezone:
+        from ml.feature_config import get_feature_config
+        config = get_feature_config()
+        tz = config.get_timezone_info()
+        
+        try:
+            # If index is timezone-naive, assume UTC
+            if dt_index.tz is None:
+                from datetime import timezone
+                dt_index_utc = dt_index.tz_localize(timezone.utc)
+            else:
+                dt_index_utc = dt_index
+            
+            # Convert to local timezone
+            dt_local = dt_index_utc.tz_convert(tz)
+            df["hour_of_day"] = dt_local.hour
+        except Exception as e:
+            _Logger.warning("Error converting timezone, using UTC hours: %s", e)
+            df["hour_of_day"] = dt_index.hour
+    else:
+        df["hour_of_day"] = dt_index.hour
+    
+    # These features use UTC day of week (consistent with historical data)
     df["day_of_week"] = dt_index.dayofweek
     df["is_weekend"] = (dt_index.dayofweek >= 5).astype(int)
-    df["is_night"] = ((dt_index.hour >= 23) | (dt_index.hour < 7)).astype(int)
+    
+    # is_night uses local hour (same as hour_of_day)
+    local_hours = df["hour_of_day"]
+    df["is_night"] = ((local_hours >= 23) | (local_hours < 7)).astype(int)
     
     return df
 
@@ -437,6 +473,11 @@ def compute_scenario_historical_features(
             df["heating_degree_hours_24h"] = degree_diff.rolling(
                 window=min(24, n_slots), min_periods=1
             ).sum()
+    
+    # Delta between target and indoor temperature (CORE BASELINE FEATURE)
+    if "target_temp" in df.columns and "indoor_temp" in df.columns:
+        if "delta_target_indoor" not in df.columns:
+            df["delta_target_indoor"] = df["target_temp"] - df["indoor_temp"]
     
     # Convert back to list of dicts
     return df.to_dict(orient="records")
@@ -675,40 +716,24 @@ def build_heating_feature_dataset(
             # Step 5: Add time features
             df = _add_time_features(df)
             
-            # Step 6: Select features for the model
-            # Input features (exogenous only)
-            base_features = [c for c in INPUT_CATEGORIES if c in df.columns]
+            # Step 6: Select features for the model using feature configuration
+            from ml.feature_config import get_feature_config
+            config = get_feature_config()
             
-            # Historical aggregation features
-            agg_features = [
-                "outdoor_temp_avg_1h",
-                "outdoor_temp_avg_6h",
-                "outdoor_temp_avg_24h",
-                "indoor_temp_avg_6h",
-                "indoor_temp_avg_24h",
-                "target_temp_avg_6h",
-                "target_temp_avg_24h",
-                "heating_degree_hours_24h",
-                "heating_kwh_last_6h",
-                "heating_kwh_last_24h",
-            ]
+            # Get active feature names from configuration
+            active_feature_names = config.get_active_feature_names()
             
-            # 7-day features if available
-            features_7d = [
-                "outdoor_temp_avg_7d",
-                "heating_degree_hours_7d",
-                "heating_kwh_last_7d",
-            ]
+            # Filter to features that are actually available in the data
+            available_features = [f for f in active_feature_names if f in df.columns]
             
+            # 7-day features are only available if we have enough history
+            features_7d = ["outdoor_temp_avg_7d", "heating_degree_hours_7d", "heating_kwh_last_7d"]
             if available_hours >= 168:
-                agg_features.extend(features_7d)
                 stats.has_7d_features = True
+            else:
+                # Remove 7d features if not enough history
+                available_features = [f for f in available_features if f not in features_7d]
             
-            # Time features
-            time_features = ["hour_of_day", "day_of_week", "is_weekend", "is_night"]
-            
-            # Combine all features
-            all_features = base_features + [f for f in agg_features if f in df.columns] + time_features
             target_col = "target_heating_kwh_1h"
             
             # Filter to rows with valid target
@@ -721,12 +746,14 @@ def build_heating_feature_dataset(
                 return None, stats
             
             # Filter to rows with all required features
-            available_features = [f for f in all_features if f in df_valid.columns]
             before_feature_filter = len(df_valid)
             
             # Check which features have enough non-null values
             final_features = []
             for feat in available_features:
+                if feat not in df_valid.columns:
+                    _Logger.debug("Feature %s not in data columns, skipping", feat)
+                    continue
                 null_ratio = df_valid[feat].isna().mean()
                 if null_ratio < 0.5:  # Keep features with <50% missing
                     final_features.append(feat)

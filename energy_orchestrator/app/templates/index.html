@@ -561,23 +561,17 @@
         <div class="card">
             <h3>⚙️ Feature Configuration</h3>
             <p class="example-description">
-                Configure which features are used for model training and prediction. This shows all available sensors 
-                (raw sensors, virtual/derived sensors, and their time-based statistics like avg_1h, avg_6h, avg_24h).
-                Core features are always active. Experimental features can be enabled/disabled.
+                Configure which features are used for model training and prediction. Features are organized into special cards for Time/Date and Usage, 
+                plus sensor cards showing aggregation features. Core features are labeled 'CORE' but can be disabled. 
+                Experimental features are labeled 'EXPERIMENTAL' and disabled by default.
             </p>
             <p class="example-description" style="margin-top: 0.5rem;">
-                <strong>📝 Note:</strong> To configure individual sensors and their statistics, use the 
-                <strong>📡 Sensor Configuration</strong> tab where you can manage raw sensors, virtual sensors, 
-                and their time-based averages.
+                <strong>📝 Note:</strong> Configuration loads automatically. To manage raw sensors and configure which statistics to calculate, 
+                use the <strong>📡 Sensor Configuration</strong> tab.
             </p>
             
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
-                <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Features</button>
-                <button class="action-btn secondary" id="loadSensorsWithStatsBtn" onclick="loadSensorsWithStats()">Show Sensors & Statistics</button>
-            </div>
             <div id="featureConfigStatus" class="status-message"></div>
             <div id="featureConfigContent"></div>
-            <div id="sensorsWithStatsContent" style="margin-top: 1rem;"></div>
         </div>
 
         <div class="card">
@@ -850,6 +844,11 @@
             
             // Activate clicked tab button
             event.target.classList.add('active');
+            
+            // Auto-load data for Configuration tab
+            if (tabName === 'configuration') {
+                loadFeatureConfigAuto();
+            }
         }
         
         // Load available days and sample rate on page load
@@ -860,6 +859,8 @@
             loadSyncConfig();
             loadTwoStepPredictionStatus();
             loadWeatherConfig();
+            // Auto-load features for Configuration tab (default active tab)
+            loadFeatureConfigAuto();
         });
         
         async function loadSampleRate() {
@@ -1960,6 +1961,164 @@
             }
         }
 
+        async function loadFeatureConfigAuto() {
+            const statusDiv = document.getElementById('featureConfigStatus');
+            const contentDiv = document.getElementById('featureConfigContent');
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading feature configuration...';
+            
+            try {
+                // Load special cards and sensor cards in parallel
+                const [specialResponse, sensorResponse, configResponse] = await Promise.all([
+                    fetch('api/features/special_cards'),
+                    fetch('api/features/sensor_cards'),
+                    fetch('api/features/config')
+                ]);
+                
+                const specialData = await specialResponse.json();
+                const sensorData = await sensorResponse.json();
+                const configData = await configResponse.json();
+                
+                if (specialResponse.ok && sensorResponse.ok && configResponse.ok) {
+                    // Count features
+                    const coreCount = configData.config.core_feature_count;
+                    const activeCount = configData.config.active_feature_count;
+                    const experimentalCount = activeCount - coreCount;
+                    
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Configuration loaded: ${activeCount} active features (${coreCount} core + ${experimentalCount} experimental)`;
+                    
+                    // Build UI
+                    let html = '';
+                    
+                    // Feature stats
+                    html += '<div class="feature-stats">';
+                    html += `<div class="feature-stat"><div class="feature-stat-value">${coreCount}</div><div class="feature-stat-label">Core Features</div></div>`;
+                    html += `<div class="feature-stat"><div class="feature-stat-value">${activeCount}</div><div class="feature-stat-label">Active Features</div></div>`;
+                    html += '</div>';
+                    
+                    // Timezone configuration
+                    html += '<div class="timezone-config">';
+                    html += '<label for="timezoneSelect">🕐 Timezone for hour_of_day:</label>';
+                    html += `<select id="timezoneSelect" onchange="updateTimezone(this.value)">`;
+                    const commonTimezones = [
+                        'Europe/Amsterdam', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+                        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+                        'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney', 'UTC'
+                    ];
+                    commonTimezones.forEach(tz => {
+                        const selected = tz === configData.config.timezone ? 'selected' : '';
+                        html += `<option value="${tz}" ${selected}>${tz}</option>`;
+                    });
+                    html += '</select>';
+                    html += '</div>';
+                    
+                    // Special Cards (Time/Date and Usage)
+                    specialData.cards.forEach(card => {
+                        html += '<div class="feature-category">';
+                        html += `<div class="feature-category-title">${card.name}</div>`;
+                        html += `<p class="example-description" style="margin: 0.5rem 0;">${card.description}</p>`;
+                        html += '<div class="feature-list">';
+                        
+                        card.features.forEach(f => {
+                            const itemClass = f.is_core ? 'core' : (f.enabled ? 'experimental' : 'experimental disabled');
+                            const badgeClass = f.is_core ? 'core' : 'experimental';
+                            const badgeText = f.is_core ? 'CORE' : 'EXPERIMENTAL';
+                            const checked = f.enabled ? 'checked' : '';
+                            
+                            const safeName = f.name.replace(/[^a-zA-Z0-9_]/g, '');
+                            const safeDesc = f.description.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            const safeUnit = f.unit.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            
+                            html += `<div class="feature-item ${itemClass}">`;
+                            html += `<div class="feature-toggle"><input type="checkbox" ${checked} data-feature="${safeName}" onchange="toggleFeatureAuto(this.dataset.feature, this.checked)"></div>`;
+                            html += `<div class="feature-info">`;
+                            html += `<div class="feature-name">${safeName} <span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                            html += `<div class="feature-description">${safeDesc}</div>`;
+                            html += `<div class="feature-meta">Unit: ${safeUnit}</div>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div>';
+                        html += '</div>';
+                    });
+                    
+                    // Sensor Cards
+                    sensorData.sensor_cards.forEach(sensor => {
+                        html += '<div class="feature-category">';
+                        html += `<div class="feature-category-title">🌡️ ${sensor.display_name}</div>`;
+                        html += '<div class="feature-list">';
+                        
+                        sensor.features.forEach(f => {
+                            const itemClass = f.is_core ? 'core' : (f.enabled ? 'experimental' : 'experimental disabled');
+                            const badgeClass = f.is_core ? 'core' : 'experimental';
+                            const badgeText = f.is_core ? 'CORE' : 'EXPERIMENTAL';
+                            const checked = f.enabled ? 'checked' : '';
+                            
+                            const safeName = f.name.replace(/[^a-zA-Z0-9_]/g, '');
+                            const safeDesc = f.description.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            const safeUnit = f.unit.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            
+                            html += `<div class="feature-item ${itemClass}">`;
+                            html += `<div class="feature-toggle"><input type="checkbox" ${checked} data-feature="${safeName}" onchange="toggleFeatureAuto(this.dataset.feature, this.checked)"></div>`;
+                            html += `<div class="feature-info">`;
+                            html += `<div class="feature-name">${safeName} <span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                            html += `<div class="feature-description">${safeDesc}</div>`;
+                            html += `<div class="feature-meta">Unit: ${safeUnit}${f.time_window !== 'none' ? ' | Window: ' + f.time_window : ''}</div>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div>';
+                        html += '</div>';
+                    });
+                    
+                    contentDiv.innerHTML = html;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error loading configuration';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+        
+        async function toggleFeatureAuto(featureName, enabled) {
+            const statusDiv = document.getElementById('featureConfigStatus');
+            
+            try {
+                const response = await fetch('api/features/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        feature_name: featureName,
+                        enabled: enabled
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload to update stats
+                    setTimeout(() => loadFeatureConfigAuto(), 500);
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    // Reload to restore checkbox state
+                    setTimeout(() => loadFeatureConfigAuto(), 500);
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                setTimeout(() => loadFeatureConfigAuto(), 500);
+            }
+        }
+
         async function loadFeatureConfig() {
             const btn = document.getElementById('loadFeaturesBtn');
             const statusDiv = document.getElementById('featureConfigStatus');
@@ -2111,12 +2270,12 @@
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ ' + data.message;
-                    loadFeatureConfig();
+                    loadFeatureConfigAuto();
                 }
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
-                loadFeatureConfig();
+                loadFeatureConfigAuto();
             }
         }
 

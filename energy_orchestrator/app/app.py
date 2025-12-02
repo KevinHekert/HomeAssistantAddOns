@@ -112,7 +112,7 @@ def trigger_resample():
         if sample_rate is not None:
             stats = resample_all_categories(sample_rate, flush=flush)
         else:
-            stats = resample_all_categories_to_5min()
+            stats = resample_all_categories_to_5min(flush=flush)
         
         return jsonify({
             "status": "success",

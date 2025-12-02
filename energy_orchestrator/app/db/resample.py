@@ -481,7 +481,7 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
         raise
 
 
-def resample_all_categories_to_5min() -> ResampleStats:
+def resample_all_categories_to_5min(flush: bool = False) -> ResampleStats:
     """
     Resample raw sensor samples into time slots for all configured categories.
     
@@ -490,13 +490,18 @@ def resample_all_categories_to_5min() -> ResampleStats:
 
     This function:
     1. Ensures DB schema exists (creates tables if missing).
-    2. Fetches category-to-entity mappings.
-    3. Computes the global time range where all categories have data.
-    4. Iterates over time slots and computes time-weighted averages.
-    5. Only writes complete slots (all categories have values).
-    6. Ensures idempotence by deleting existing rows before inserting.
+    2. Optionally flushes the resampled_samples table (for sample rate changes).
+    3. Fetches category-to-entity mappings.
+    4. Computes the global time range where all categories have data.
+    5. Iterates over time slots and computes time-weighted averages.
+    6. Only writes complete slots (all categories have values).
+    7. Ensures idempotence by deleting existing rows before inserting.
+    
+    Args:
+        flush: If True, flush (delete all) existing resampled data before
+            resampling. This should be used when the sample rate changes.
 
     Returns:
         ResampleStats with statistics about the resampling operation.
     """
-    return resample_all_categories()
+    return resample_all_categories(flush=flush)

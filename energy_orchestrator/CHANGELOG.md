@@ -2,6 +2,22 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.84] - 2025-12-02
+
+- **Fix "Show Sensors & Statistics" button error**
+  - Fixed AttributeError: 'SensorConfig' object has no attribute 'display_name'
+  - The `/api/features/sensors_with_stats` endpoint now correctly retrieves display_name from SensorDefinition
+  - Fixed by calling `get_sensor_definition()` to access the display_name attribute
+
+- **Fix feature_statistics table staying empty**
+  - Feature statistics (time-span averages) are now automatically calculated after resampling
+  - The `/resample` endpoint now calls `calculate_feature_statistics()` automatically after successful resampling
+  - When flush=true is used during resampling, feature statistics are also flushed and recalculated
+  - Feature statistics include: avg_1h, avg_6h, avg_24h, avg_7d for all enabled sensors
+  - Fixes issue where feature_statistics table remained empty despite resampling completing successfully
+
+- Resolves KevinHekert/HomeAssistantAddOns issue with "Show Sensors & Statistics" button
+
 ## [0.0.0.83] - 2025-12-02
 
 - **Sensor Configuration UI Reorganization and Data Lineage Improvements**

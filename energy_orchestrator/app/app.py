@@ -44,6 +44,10 @@ from db.feature_stats import (
     get_feature_stats_config,
     StatType,
 )
+from db.calculate_feature_stats import (
+    calculate_feature_statistics,
+    flush_feature_statistics,
+)
 from db.prediction_storage import (
     store_prediction,
     get_stored_predictions,
@@ -161,6 +165,9 @@ def trigger_resample():
     
     When the sample rate changes, the flush parameter should be set to true
     to clear existing resampled data that was computed with a different interval.
+    
+    After resampling completes, feature statistics (time-span averages) are
+    automatically calculated from the resampled data.
     """
     try:
         # Check if parameters were provided in the request
@@ -181,10 +188,30 @@ def trigger_resample():
         
         _Logger.info("Resample triggered via UI with sample_rate=%s, flush=%s", sample_rate or "default", flush)
         
-        # Always use resample_all_categories - it uses configured rate when sample_rate is None
+        # Step 1: Always use resample_all_categories - it uses configured rate when sample_rate is None
         stats = resample_all_categories(sample_rate, flush=flush)
         
-        return jsonify({
+        # Step 2: Automatically calculate feature statistics after successful resampling
+        feature_stats_result = None
+        try:
+            _Logger.info("Calculating feature statistics after resampling...")
+            # If we flushed resampled data, also flush feature statistics
+            if flush:
+                flush_feature_statistics()
+                _Logger.info("Flushed feature statistics due to flush=True")
+            
+            feature_stats_result = calculate_feature_statistics()
+            _Logger.info(
+                "Feature statistics calculated: %d stats saved for %d sensors",
+                feature_stats_result.stats_saved,
+                feature_stats_result.sensors_processed,
+            )
+        except Exception as e:
+            # Log error but don't fail the entire request
+            # Resampling was successful, feature stats calculation is secondary
+            _Logger.error("Error calculating feature statistics: %s", e, exc_info=True)
+        
+        response = {
             "status": "success",
             "message": "Resampling completed successfully",
             "stats": {
@@ -197,7 +224,18 @@ def trigger_resample():
                 "sample_rate_minutes": stats.sample_rate_minutes,
                 "table_flushed": stats.table_flushed,
             },
-        })
+        }
+        
+        # Add feature statistics info to response if calculation succeeded
+        if feature_stats_result:
+            response["feature_stats"] = {
+                "stats_calculated": feature_stats_result.stats_calculated,
+                "stats_saved": feature_stats_result.stats_saved,
+                "sensors_processed": feature_stats_result.sensors_processed,
+                "stat_types": feature_stats_result.stat_types_processed,
+            }
+        
+        return jsonify(response)
     except Exception as e:
         _Logger.error("Error during resampling: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1819,6 +1857,10 @@ def get_sensors_with_statistics():
         
         # Add raw sensors
         for sensor_config in sensor_category_config.get_enabled_sensors():
+            # Get the sensor definition to access display_name
+            sensor_def = get_sensor_definition(sensor_config.category_name)
+            display_name = sensor_def.display_name if sensor_def else sensor_config.category_name
+            
             enabled_stats = feature_stats_config.get_enabled_stats_for_sensor(sensor_config.category_name)
             stat_features = [
                 {
@@ -1830,7 +1872,7 @@ def get_sensors_with_statistics():
             
             sensors_list.append({
                 "name": sensor_config.category_name,
-                "display_name": sensor_config.display_name,
+                "display_name": display_name,
                 "type": "raw",
                 "enabled": sensor_config.enabled,
                 "enabled_stats": [s.value for s in enabled_stats],

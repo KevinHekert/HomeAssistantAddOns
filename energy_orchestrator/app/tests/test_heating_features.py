@@ -1200,3 +1200,25 @@ class TestGetHistoricalDayHourlyData:
         
         # Delta should be 111 - 100 = 11
         assert data[0]["actual_heating_kwh"] == 11.0
+
+
+class TestTrainingDataRange:
+    """Test the TrainingDataRange dataclass."""
+
+    def test_training_data_range_with_values(self):
+        """TrainingDataRange stores first and last values correctly."""
+        data_range = TrainingDataRange(first=45.0, last=50.0)
+        assert data_range.first == 45.0
+        assert data_range.last == 50.0
+
+    def test_training_data_range_default_none(self):
+        """TrainingDataRange defaults to None values."""
+        data_range = TrainingDataRange()
+        assert data_range.first is None
+        assert data_range.last is None
+
+    def test_training_data_range_partial_values(self):
+        """TrainingDataRange can have partial values."""
+        data_range = TrainingDataRange(first=100.0)
+        assert data_range.first == 100.0
+        assert data_range.last is None

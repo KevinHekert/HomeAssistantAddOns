@@ -2,6 +2,18 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.71] - 2025-12-02
+
+- **Training Data Range Units from Source**: Unit information is now extracted from the actual samples table instead of using hardcoded values
+  - `TrainingDataRange` dataclass now includes a `unit` field
+  - Units are extracted from the first sample of each category in the resampled data
+  - Removed hardcoded `SENSOR_UNITS` dictionary from `app.py`
+  - Training data response now displays the actual unit stored with each sensor's data
+  - This ensures unit accuracy even for sensors with non-standard units
+- Updated `_load_resampled_data()` to include the `unit` column from the database
+- Added test for unit extraction from source data
+- Updated existing tests to use realistic units in test data
+
 ## [0.0.0.70] - 2025-12-02
 
 - **Weather API Integration**: Added integration with weerlive.nl API for weather forecast data

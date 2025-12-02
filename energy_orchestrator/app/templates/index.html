@@ -199,6 +199,126 @@
             color: #9ca3af;
             margin-bottom: 0.5rem;
         }
+        .feature-category {
+            margin-bottom: 1.5rem;
+        }
+        .feature-category-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #60a5fa;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid #374151;
+        }
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 0.5rem;
+        }
+        .feature-item {
+            background: #111827;
+            border-radius: 6px;
+            padding: 0.75rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+        .feature-item.core {
+            border-left: 3px solid #22c55e;
+        }
+        .feature-item.experimental {
+            border-left: 3px solid #f59e0b;
+        }
+        .feature-item.experimental.disabled {
+            opacity: 0.6;
+        }
+        .feature-toggle {
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .feature-toggle input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .feature-toggle input[type="checkbox"]:disabled {
+            cursor: not-allowed;
+        }
+        .feature-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .feature-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #e5e7eb;
+        }
+        .feature-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+            margin-left: 0.5rem;
+            font-weight: 500;
+        }
+        .feature-badge.core {
+            background: #166534;
+            color: #86efac;
+        }
+        .feature-badge.experimental {
+            background: #78350f;
+            color: #fcd34d;
+        }
+        .feature-description {
+            font-size: 0.75rem;
+            color: #9ca3af;
+            margin-top: 0.25rem;
+        }
+        .feature-meta {
+            font-size: 0.7rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+        .timezone-config {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: #111827;
+            border-radius: 8px;
+        }
+        .timezone-config label {
+            font-weight: 500;
+        }
+        .timezone-config select {
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            color: #e5e7eb;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+        .feature-stats {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: #111827;
+            border-radius: 8px;
+        }
+        .feature-stat {
+            text-align: center;
+        }
+        .feature-stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+        .feature-stat-label {
+            font-size: 0.75rem;
+            color: #9ca3af;
+        }
     </style>
 </head>
 <body>
@@ -262,6 +382,14 @@
         <textarea id="fullDayInput" placeholder='{"timeslots": [...], "scenario_features": [...], "update_historical": true}'></textarea>
         <div id="fullDayStatus" class="status-message"></div>
         <div id="fullDayResult"></div>
+    </div>
+
+    <div class="card">
+        <h3>⚙️ Feature Configuration</h3>
+        <p class="example-description">Configure which features are used for model training and prediction. Core features (13) are always active. Experimental features can be enabled/disabled.</p>
+        <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Configuration</button>
+        <div id="featureConfigStatus" class="status-message"></div>
+        <div id="featureConfigContent"></div>
     </div>
 
     <div class="card">
@@ -905,6 +1033,166 @@
                 statusDiv.textContent = '✗ Error: ' + error.message;
             } finally {
                 btn.disabled = false;
+            }
+        }
+
+        async function loadFeatureConfig() {
+            const btn = document.getElementById('loadFeaturesBtn');
+            const statusDiv = document.getElementById('featureConfigStatus');
+            const contentDiv = document.getElementById('featureConfigContent');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading feature configuration...';
+            
+            try {
+                const response = await fetch('api/features/config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Configuration loaded: ${data.config.active_feature_count} active features (${data.config.core_feature_count} core + ${data.config.active_feature_count - data.config.core_feature_count} experimental)`;
+                    
+                    // Build UI
+                    let html = '';
+                    
+                    // Feature stats
+                    html += '<div class="feature-stats">';
+                    html += `<div class="feature-stat"><div class="feature-stat-value">${data.config.core_feature_count}</div><div class="feature-stat-label">Core Features</div></div>`;
+                    html += `<div class="feature-stat"><div class="feature-stat-value">${data.config.active_feature_count}</div><div class="feature-stat-label">Active Features</div></div>`;
+                    html += '</div>';
+                    
+                    // Timezone configuration
+                    html += '<div class="timezone-config">';
+                    html += '<label for="timezoneSelect">🕐 Timezone for hour_of_day:</label>';
+                    html += `<select id="timezoneSelect" onchange="updateTimezone(this.value)">`;
+                    const commonTimezones = [
+                        'Europe/Amsterdam', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+                        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+                        'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney', 'UTC'
+                    ];
+                    commonTimezones.forEach(tz => {
+                        const selected = tz === data.config.timezone ? 'selected' : '';
+                        html += `<option value="${tz}" ${selected}>${tz}</option>`;
+                    });
+                    html += '</select>';
+                    html += '</div>';
+                    
+                    // Category order
+                    const categoryOrder = ['weather', 'indoor', 'control', 'usage', 'time'];
+                    const categoryIcons = {
+                        'weather': '🌤️',
+                        'indoor': '🏠',
+                        'control': '🎛️',
+                        'usage': '⚡',
+                        'time': '🕐'
+                    };
+                    
+                    // Features by category
+                    categoryOrder.forEach(category => {
+                        const features = data.features[category] || [];
+                        if (features.length === 0) return;
+                        
+                        html += '<div class="feature-category">';
+                        html += `<div class="feature-category-title">${categoryIcons[category] || '📌'} ${category.charAt(0).toUpperCase() + category.slice(1)}</div>`;
+                        html += '<div class="feature-list">';
+                        
+                        features.forEach(f => {
+                            const itemClass = f.is_core ? 'core' : (f.enabled ? 'experimental' : 'experimental disabled');
+                            const badgeClass = f.is_core ? 'core' : 'experimental';
+                            const badgeText = f.is_core ? 'CORE' : 'EXPERIMENTAL';
+                            const checked = f.enabled ? 'checked' : '';
+                            const disabled = f.is_core ? 'disabled' : '';
+                            
+                            // Escape feature name for safety (feature names are alphanumeric with underscores)
+                            const safeName = f.name.replace(/[^a-zA-Z0-9_]/g, '');
+                            const safeDesc = f.description.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            const safeUnit = f.unit.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            
+                            html += `<div class="feature-item ${itemClass}">`;
+                            html += `<div class="feature-toggle"><input type="checkbox" ${checked} ${disabled} data-feature="${safeName}" onchange="toggleFeature(this.dataset.feature, this.checked)"></div>`;
+                            html += `<div class="feature-info">`;
+                            html += `<div class="feature-name">${safeName}<span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                            html += `<div class="feature-description">${safeDesc}</div>`;
+                            html += `<div class="feature-meta">Unit: ${safeUnit}${f.time_window !== 'none' ? ' | Window: ' + f.time_window : ''}</div>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div>';
+                        html += '</div>';
+                    });
+                    
+                    contentDiv.innerHTML = html;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error: ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function toggleFeature(featureName, enabled) {
+            const statusDiv = document.getElementById('featureConfigStatus');
+            
+            try {
+                const response = await fetch('api/features/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        feature_name: featureName,
+                        enabled: enabled
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload to update stats
+                    loadFeatureConfig();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    // Reload to restore checkbox state
+                    loadFeatureConfig();
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                loadFeatureConfig();
+            }
+        }
+
+        async function updateTimezone(timezone) {
+            const statusDiv = document.getElementById('featureConfigStatus');
+            
+            try {
+                const response = await fetch('api/features/timezone', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ timezone: timezone })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    loadFeatureConfig();
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                loadFeatureConfig();
             }
         }
     </script>

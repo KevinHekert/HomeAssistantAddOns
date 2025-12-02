@@ -27,6 +27,13 @@ from ml.heating_demand_model import (
     train_heating_demand_model,
     predict_scenario,
 )
+from ml.feature_config import (
+    get_feature_config,
+    reload_feature_config,
+    get_feature_metadata_dict,
+    get_core_feature_count,
+    FeatureCategory,
+)
 
 
 app = Flask(__name__)
@@ -1028,6 +1035,221 @@ def get_historical_day_example(date_str: str):
         
     except Exception as e:
         _Logger.error("Error getting historical day data: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/features/config")
+def get_features_config():
+    """
+    Get the current feature configuration.
+    
+    Returns all features (core + experimental) with their metadata and current status.
+    
+    Response:
+    {
+        "status": "success",
+        "config": {
+            "timezone": "Europe/Amsterdam",
+            "core_feature_count": 13,
+            "active_feature_count": 13,
+            "experimental_enabled": {"pressure": false, ...}
+        },
+        "features": {
+            "weather": [...],
+            "indoor": [...],
+            "control": [...],
+            "usage": [...],
+            "time": [...]
+        }
+    }
+    """
+    try:
+        config = get_feature_config()
+        grouped = config.get_features_by_category()
+        
+        # Convert features to serializable format
+        features_by_category = {}
+        for category, features in grouped.items():
+            features_by_category[category] = [f.to_dict() for f in features]
+        
+        return jsonify({
+            "status": "success",
+            "config": {
+                "timezone": config.timezone,
+                "core_feature_count": get_core_feature_count(),
+                "active_feature_count": len(config.get_active_feature_names()),
+                "experimental_enabled": config.experimental_enabled,
+            },
+            "features": features_by_category,
+            "active_feature_names": config.get_active_feature_names(),
+        })
+    except Exception as e:
+        _Logger.error("Error getting feature config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/features/toggle")
+def toggle_experimental_feature():
+    """
+    Enable or disable an experimental feature.
+    
+    Core features cannot be toggled (they are always enabled).
+    
+    Request body:
+    {
+        "feature_name": "pressure",
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Feature 'pressure' is now enabled",
+        "active_features": [...]
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        feature_name = data.get("feature_name")
+        enabled = data.get("enabled")
+        
+        if not feature_name:
+            return jsonify({
+                "status": "error",
+                "message": "feature_name is required",
+            }), 400
+        
+        if enabled is None:
+            return jsonify({
+                "status": "error",
+                "message": "enabled is required (true or false)",
+            }), 400
+        
+        config = get_feature_config()
+        
+        if enabled:
+            result = config.enable_experimental_feature(feature_name)
+        else:
+            result = config.disable_experimental_feature(feature_name)
+        
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"Feature '{feature_name}' is not an experimental feature (cannot toggle core features)",
+            }), 400
+        
+        # Save configuration
+        config.save()
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Feature '{feature_name}' is now {status}",
+            "active_features": config.get_active_feature_names(),
+        })
+    except Exception as e:
+        _Logger.error("Error toggling feature: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/features/timezone")
+def set_feature_timezone():
+    """
+    Set the timezone for time-based features.
+    
+    Request body:
+    {
+        "timezone": "Europe/Amsterdam"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Timezone set to Europe/Amsterdam",
+        "timezone": "Europe/Amsterdam"
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        timezone = data.get("timezone")
+        
+        if not timezone:
+            return jsonify({
+                "status": "error",
+                "message": "timezone is required (IANA identifier, e.g., 'Europe/Amsterdam')",
+            }), 400
+        
+        config = get_feature_config()
+        result = config.set_timezone(timezone)
+        
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid timezone: '{timezone}'. Use IANA timezone identifiers.",
+            }), 400
+        
+        # Save configuration
+        config.save()
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Timezone set to {timezone}",
+            "timezone": config.timezone,
+        })
+    except Exception as e:
+        _Logger.error("Error setting timezone: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/features/metadata")
+def get_features_metadata():
+    """
+    Get metadata for all features.
+    
+    This is the single source of truth for feature documentation.
+    
+    Response:
+    {
+        "status": "success",
+        "features": [
+            {
+                "name": "outdoor_temp",
+                "category": "weather",
+                "description": "Latest 5-minute outdoor temperature",
+                "unit": "°C",
+                "time_window": "none",
+                "is_core": true,
+                "enabled": true
+            },
+            ...
+        ],
+        "core_count": 13
+    }
+    """
+    try:
+        metadata = get_feature_metadata_dict()
+        
+        return jsonify({
+            "status": "success",
+            "features": metadata,
+            "core_count": get_core_feature_count(),
+        })
+    except Exception as e:
+        _Logger.error("Error getting feature metadata: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

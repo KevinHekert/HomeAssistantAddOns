@@ -2,6 +2,41 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.57] - 2025-12-02
+
+- **Feature Set Configuration**: Complete overhaul of the heat pump consumption model feature set
+  - Defined **13 core baseline features** that are always active and cannot be disabled
+  - Moved optional features to **experimental status** (disabled by default, toggleable via UI)
+  - All features now have complete metadata (name, category, description, unit, time_window, is_core)
+  
+- **New Core Baseline Features**:
+  - `heating_kwh_last_1h`: 1-hour heating energy consumption (was missing)
+  - `delta_target_indoor`: Derived feature showing difference between target and indoor temperature
+  - `wind` and `humidity` now explicitly in baseline (always required)
+  
+- **Timezone Configuration**:
+  - `hour_of_day` feature now uses configurable IANA timezone (default: Europe/Amsterdam)
+  - All timestamps stored in UTC and converted to local time for hour_of_day
+  - UI allows timezone selection from common timezones
+  
+- **Feature Configuration UI**:
+  - New "Feature Configuration" section showing all features grouped by category
+  - Core features (green badges) are always active with disabled checkboxes
+  - Experimental features (orange badges) can be toggled on/off
+  - Timezone selector for hour_of_day feature
+  - Feature stats showing core count and active feature count
+  
+- **New API Endpoints**:
+  - `GET /api/features/config`: Get current feature configuration
+  - `POST /api/features/toggle`: Enable/disable experimental features
+  - `POST /api/features/timezone`: Set timezone for time features
+  - `GET /api/features/metadata`: Get feature metadata for documentation
+  
+- **Tests**: Added 38 new tests for feature configuration module
+- **Documentation**: Updated README with new feature engineering documentation
+
+![Feature Configuration UI](https://github.com/user-attachments/assets/8bf955e4-cee7-4b84-9a7d-47fdf464c354)
+
 ## [0.0.0.56] - 2025-12-01
 
 - **Version Bump**: Preparing for feature set refactoring of heat pump consumption model

@@ -2,6 +2,37 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.70] - 2025-12-02
+
+- **Weather API Integration**: Added integration with weerlive.nl API for weather forecast data
+  - New "Weather API Settings" card in Configuration tab for API key and location configuration
+  - API credentials are validated before saving to ensure they work
+  - Get your free API key at: https://weerlive.nl/delen.php
+- **Load Weather Forecast**: Added "🌤️ Load Weather (24h)" button in Scenario-Based Prediction section
+  - Fetches upcoming 24-hour weather forecast from weerlive.nl API
+  - Automatically populates scenario prediction input with weather data
+  - Configurable target temperature for predictions
+- **Prediction Storage and Comparison**:
+  - Added "💾 Store Prediction" button to save predictions for later comparison
+  - New "📊 Stored Predictions" section in Model Training tab
+  - Compare stored predictions with actual sensor data when it becomes available
+  - View comparison metrics: MAE, MAPE, total predicted vs actual kWh
+  - Delete stored predictions when no longer needed
+- **New API Endpoints**:
+  - `GET /api/weather/config`: Get weather API configuration
+  - `POST /api/weather/config`: Save and validate weather API credentials
+  - `POST /api/weather/validate`: Validate API credentials without saving
+  - `GET /api/weather/forecast`: Fetch weather forecast for next 24 hours
+  - `POST /api/predictions/store`: Store a prediction for later comparison
+  - `GET /api/predictions/stored`: List all stored predictions
+  - `GET /api/predictions/stored/<id>`: Get specific stored prediction
+  - `DELETE /api/predictions/stored/<id>`: Delete stored prediction
+  - `POST /api/predictions/stored/<id>/compare`: Compare prediction with actual data
+- **New Modules**:
+  - `ha/weather_api.py`: Weather API integration with weerlive.nl
+  - `db/prediction_storage.py`: Prediction storage and comparison functionality
+- **Tests**: Added 50 new tests for weather API and prediction storage functionality
+
 ## [0.0.0.69] - 2025-12-02
 
 - **Scenario Prediction Uses Two-Step When Enabled**: The simplified scenario prediction endpoint now automatically uses the two-step model when enabled

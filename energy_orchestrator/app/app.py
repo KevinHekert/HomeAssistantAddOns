@@ -3,6 +3,13 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, jsonify, request
 import pandas as pd
 from ha.ha_api import get_entity_state
+from ha.weather_api import (
+    get_weather_config,
+    set_weather_config,
+    validate_weather_api,
+    fetch_weather_forecast,
+    convert_forecast_to_scenario_timeslots,
+)
 from workers import start_sensor_logging_worker
 from db.resample import resample_all_categories, get_sample_rate_minutes, set_sample_rate_minutes, VALID_SAMPLE_RATES, flush_resampled_samples
 from db.core import init_db_schema
@@ -17,6 +24,14 @@ from db.sync_config import (
     MAX_SYNC_WINDOW_DAYS,
     MIN_SYNC_INTERVAL,
     MAX_SYNC_INTERVAL,
+)
+from db.prediction_storage import (
+    store_prediction,
+    get_stored_predictions,
+    get_prediction_by_id,
+    delete_prediction,
+    compare_prediction_with_actual,
+    get_prediction_list_summary,
 )
 from ml.heating_features import (
     build_heating_feature_dataset,
@@ -1926,6 +1941,535 @@ def predict_two_step_heating_demand_scenario():
             "status": "error",
             "message": str(e),
         }), 500
+
+
+# =============================================================================
+# WEATHER API ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/weather/config")
+def get_weather_config_api():
+    """Get the current weather API configuration.
+    
+    Response:
+    {
+        "status": "success",
+        "config": {
+            "api_key": "***" (masked for security),
+            "location": "Amsterdam",
+            "has_api_key": true
+        }
+    }
+    """
+    try:
+        config = get_weather_config()
+        return jsonify({
+            "status": "success",
+            "config": {
+                "api_key": "***" if config.api_key else "",
+                "location": config.location,
+                "has_api_key": bool(config.api_key),
+            },
+        })
+    except Exception as e:
+        _Logger.error("Error getting weather config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/weather/config")
+def update_weather_config():
+    """Update weather API configuration.
+    
+    Also validates the API key and location before saving.
+    
+    Request body:
+    {
+        "api_key": "your_api_key",
+        "location": "Amsterdam"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Weather configuration saved",
+        "location_name": "Amsterdam"
+    }
+    """
+    try:
+        if not request.is_json:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "API key and location are required",
+            }), 400
+        
+        api_key = data.get("api_key", "").strip()
+        location = data.get("location", "").strip()
+        
+        if not api_key:
+            return jsonify({
+                "status": "error",
+                "message": "API key is required",
+            }), 400
+        
+        if not location:
+            return jsonify({
+                "status": "error",
+                "message": "Location is required",
+            }), 400
+        
+        # Validate the API credentials before saving
+        is_valid, error_msg, location_name = validate_weather_api(api_key, location)
+        
+        if not is_valid:
+            return jsonify({
+                "status": "error",
+                "message": f"Validation failed: {error_msg}",
+            }), 400
+        
+        # Save configuration
+        success, save_error = set_weather_config(api_key=api_key, location=location)
+        
+        if not success:
+            return jsonify({
+                "status": "error",
+                "message": save_error or "Failed to save configuration",
+            }), 500
+        
+        _Logger.info("Weather config saved for location: %s (%s)", location, location_name)
+        
+        return jsonify({
+            "status": "success",
+            "message": "Weather configuration saved",
+            "location_name": location_name,
+        })
+        
+    except Exception as e:
+        _Logger.error("Error updating weather config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/weather/validate")
+def validate_weather_api_endpoint():
+    """Validate weather API credentials without saving.
+    
+    Request body:
+    {
+        "api_key": "your_api_key",
+        "location": "Amsterdam"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "valid": true,
+        "location_name": "Amsterdam"
+    }
+    """
+    try:
+        if not request.is_json:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        data = request.get_json()
+        api_key = data.get("api_key", "").strip()
+        location = data.get("location", "").strip()
+        
+        is_valid, error_msg, location_name = validate_weather_api(api_key, location)
+        
+        if is_valid:
+            return jsonify({
+                "status": "success",
+                "valid": True,
+                "location_name": location_name,
+            })
+        else:
+            return jsonify({
+                "status": "success",
+                "valid": False,
+                "message": error_msg,
+            })
+        
+    except Exception as e:
+        _Logger.error("Error validating weather API: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/weather/forecast")
+def get_weather_forecast():
+    """Fetch weather forecast for the next 24 hours.
+    
+    Uses stored API configuration. Returns forecast data ready for
+    use in scenario predictions.
+    
+    Optional query parameter:
+        target_temperature: Target/setpoint temperature (default: 20.0)
+    
+    Response:
+    {
+        "status": "success",
+        "location_name": "Amsterdam",
+        "current_temp": 12.5,
+        "hourly_forecasts": [...],
+        "scenario_timeslots": [...],
+        "forecast_count": 24
+    }
+    """
+    try:
+        target_temp = request.args.get("target_temperature", type=float, default=20.0)
+        
+        result = fetch_weather_forecast()
+        
+        if not result.success:
+            return jsonify({
+                "status": "error",
+                "message": result.error_message or "Failed to fetch weather forecast",
+            }), 400
+        
+        # Convert forecasts to JSON-serializable format
+        hourly_data = []
+        for forecast in result.hourly_forecasts:
+            hourly_data.append({
+                "timestamp": forecast.timestamp.isoformat(),
+                "temperature": round(forecast.temperature, 1),
+                "wind_speed": round(forecast.wind_speed, 1),
+                "humidity": round(forecast.humidity, 1),
+                "pressure": round(forecast.pressure, 1),
+                "precipitation": round(forecast.precipitation, 1),
+                "description": forecast.description,
+            })
+        
+        # Convert to scenario format
+        scenario_timeslots = convert_forecast_to_scenario_timeslots(
+            result.hourly_forecasts,
+            target_temperature=target_temp,
+        )
+        
+        return jsonify({
+            "status": "success",
+            "location_name": result.location_name,
+            "current_temp": result.current_temp,
+            "hourly_forecasts": hourly_data,
+            "scenario_timeslots": scenario_timeslots,
+            "forecast_count": len(result.hourly_forecasts),
+        })
+        
+    except Exception as e:
+        _Logger.error("Error fetching weather forecast: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =============================================================================
+# PREDICTION STORAGE ENDPOINTS
+# =============================================================================
+
+
+@app.post("/api/predictions/store")
+def store_prediction_endpoint():
+    """Store a prediction for later comparison with actual data.
+    
+    Request body:
+    {
+        "timeslots": [...],
+        "predictions": [...],
+        "total_kwh": 24.5,
+        "source": "weerlive",
+        "location": "Amsterdam",
+        "model_type": "single_step"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "prediction_id": "20241202_143000_123456",
+        "message": "Prediction stored successfully"
+    }
+    """
+    try:
+        if not request.is_json:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        timeslots = data.get("timeslots", [])
+        predictions = data.get("predictions", [])
+        total_kwh = data.get("total_kwh", 0.0)
+        source = data.get("source", "manual")
+        location = data.get("location", "")
+        model_type = data.get("model_type", "single_step")
+        
+        if not predictions:
+            return jsonify({
+                "status": "error",
+                "message": "predictions array is required",
+            }), 400
+        
+        success, error_msg, prediction_id = store_prediction(
+            timeslots=timeslots,
+            predictions=predictions,
+            total_kwh=total_kwh,
+            source=source,
+            location=location,
+            model_type=model_type,
+        )
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "prediction_id": prediction_id,
+                "message": "Prediction stored successfully",
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": error_msg or "Failed to store prediction",
+            }), 500
+        
+    except Exception as e:
+        _Logger.error("Error storing prediction: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/predictions/stored")
+def get_stored_predictions_endpoint():
+    """Get list of stored predictions.
+    
+    Response:
+    {
+        "status": "success",
+        "predictions": [
+            {
+                "id": "20241202_143000_123456",
+                "created_at": "2024-12-02T14:30:00",
+                "source": "weerlive",
+                "location": "Amsterdam",
+                "total_kwh": 24.5,
+                "slots_count": 24,
+                "model_type": "single_step"
+            },
+            ...
+        ],
+        "count": 5
+    }
+    """
+    try:
+        summaries = get_prediction_list_summary()
+        return jsonify({
+            "status": "success",
+            "predictions": summaries,
+            "count": len(summaries),
+        })
+    except Exception as e:
+        _Logger.error("Error getting stored predictions: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/predictions/stored/<prediction_id>")
+def get_stored_prediction_endpoint(prediction_id: str):
+    """Get a specific stored prediction.
+    
+    Response:
+    {
+        "status": "success",
+        "prediction": {
+            "id": "20241202_143000_123456",
+            "created_at": "2024-12-02T14:30:00",
+            "source": "weerlive",
+            "location": "Amsterdam",
+            "timeslots": [...],
+            "predictions": [...],
+            "total_kwh": 24.5,
+            "model_type": "single_step"
+        }
+    }
+    """
+    try:
+        prediction = get_prediction_by_id(prediction_id)
+        if not prediction:
+            return jsonify({
+                "status": "error",
+                "message": f"Prediction not found: {prediction_id}",
+            }), 404
+        
+        return jsonify({
+            "status": "success",
+            "prediction": {
+                "id": prediction.id,
+                "created_at": prediction.created_at,
+                "source": prediction.source,
+                "location": prediction.location,
+                "timeslots": prediction.timeslots,
+                "predictions": prediction.predictions,
+                "total_kwh": prediction.total_kwh,
+                "model_type": prediction.model_type,
+            },
+        })
+    except Exception as e:
+        _Logger.error("Error getting stored prediction: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.delete("/api/predictions/stored/<prediction_id>")
+def delete_stored_prediction_endpoint(prediction_id: str):
+    """Delete a stored prediction.
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Prediction deleted"
+    }
+    """
+    try:
+        if delete_prediction(prediction_id):
+            return jsonify({
+                "status": "success",
+                "message": "Prediction deleted",
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": f"Prediction not found: {prediction_id}",
+            }), 404
+    except Exception as e:
+        _Logger.error("Error deleting prediction: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/predictions/stored/<prediction_id>/compare")
+def compare_stored_prediction_endpoint(prediction_id: str):
+    """Compare a stored prediction with actual sensor data.
+    
+    This endpoint retrieves actual heating kWh data for the prediction
+    time range and compares it with the stored predictions.
+    
+    Response:
+    {
+        "status": "success",
+        "comparison": [
+            {
+                "timestamp": "2024-12-02T14:00:00",
+                "predicted_kwh": 1.25,
+                "actual_kwh": 1.18,
+                "delta_kwh": 0.07,
+                "delta_pct": 5.9,
+                "has_actual": true
+            },
+            ...
+        ],
+        "summary": {
+            "total_predicted_kwh": 24.5,
+            "total_actual_kwh": 23.8,
+            "slots_compared": 20,
+            "slots_missing_actual": 4,
+            "mae_kwh": 0.15,
+            "mape_pct": 6.2
+        }
+    }
+    """
+    try:
+        prediction = get_prediction_by_id(prediction_id)
+        if not prediction:
+            return jsonify({
+                "status": "error",
+                "message": f"Prediction not found: {prediction_id}",
+            }), 404
+        
+        # Get actual data for comparison
+        # We need to get actual heating kWh for each hour in the prediction
+        comparison_results = []
+        total_predicted = 0.0
+        total_actual = 0.0
+        compared_count = 0
+        abs_errors = []
+        
+        for pred_data in prediction.predictions:
+            timestamp = pred_data.get("timestamp", "")
+            predicted_kwh = pred_data.get("predicted_kwh", 0.0)
+            total_predicted += predicted_kwh
+            
+            # Try to get actual data for this timestamp
+            actual_kwh = None
+            delta_kwh = None
+            delta_pct = None
+            has_actual = False
+            
+            try:
+                if timestamp:
+                    # Parse timestamp and get hourly data
+                    ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                    start = ts
+                    end = ts + timedelta(hours=1)
+                    
+                    # Use get_actual_vs_predicted_data to get actual values
+                    actual_df, error = get_actual_vs_predicted_data(
+                        start, end, slot_duration_minutes=60
+                    )
+                    
+                    if actual_df is not None and len(actual_df) > 0:
+                        first_row = actual_df.iloc[0]
+                        actual_kwh = first_row.get("actual_heating_kwh")
+                        if actual_kwh is not None and not pd.isna(actual_kwh):
+                            has_actual = True
+                            delta_kwh = predicted_kwh - actual_kwh
+                            if actual_kwh > 0.01:
+                                delta_pct = (delta_kwh / actual_kwh) * 100
+                            total_actual += actual_kwh
+                            compared_count += 1
+                            abs_errors.append(abs(delta_kwh))
+            except Exception as e:
+                _Logger.debug("Could not get actual data for %s: %s", timestamp, e)
+            
+            comparison_results.append({
+                "timestamp": timestamp,
+                "predicted_kwh": round(predicted_kwh, 4),
+                "actual_kwh": round(actual_kwh, 4) if actual_kwh is not None else None,
+                "delta_kwh": round(delta_kwh, 4) if delta_kwh is not None else None,
+                "delta_pct": round(delta_pct, 1) if delta_pct is not None else None,
+                "has_actual": has_actual,
+            })
+        
+        # Compute summary
+        mae = sum(abs_errors) / len(abs_errors) if abs_errors else None
+        mape = None
+        if abs_errors and total_actual > 0:
+            mape = (sum(abs_errors) / total_actual) * 100
+        
+        summary = {
+            "total_predicted_kwh": round(total_predicted, 4),
+            "total_actual_kwh": round(total_actual, 4) if compared_count > 0 else None,
+            "slots_compared": compared_count,
+            "slots_missing_actual": len(comparison_results) - compared_count,
+            "mae_kwh": round(mae, 4) if mae is not None else None,
+            "mape_pct": round(mape, 1) if mape is not None else None,
+        }
+        
+        return jsonify({
+            "status": "success",
+            "prediction_id": prediction_id,
+            "comparison": comparison_results,
+            "summary": summary,
+        })
+        
+    except Exception as e:
+        _Logger.error("Error comparing prediction: %s", e, exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 if __name__ == "__main__":

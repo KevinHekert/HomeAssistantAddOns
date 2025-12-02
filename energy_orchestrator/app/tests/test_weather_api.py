@@ -241,6 +241,60 @@ class TestFetchWeatherForecast:
             assert result.current_temp == 12.5
             assert len(result.hourly_forecasts) == 2
 
+    def test_successful_forecast_weerlive_v2_format(self, weather_imports):
+        """Successful forecast with actual Weerlive API v2 format (uur_verw at root level)."""
+        with patch("ha.weather_api.request.urlopen") as mock_urlopen:
+            mock_response = MagicMock()
+            # Actual API format: uur_verw at root level, windkmh for wind speed
+            mock_response.read.return_value = json.dumps({
+                "liveweer": [{
+                    "plaats": "Amsterdam",
+                    "temp": 8.9,
+                    "lv": 75,
+                    "luchtd": 1007.2,
+                }],
+                "wk_verw": [
+                    {"dag": "02-12-2025", "max_temp": 9, "min_temp": 7}
+                ],
+                "uur_verw": [
+                    {
+                        "uur": "02-12-2025 14:00",
+                        "timestamp": 1764680400,
+                        "temp": 7,
+                        "windkmh": 14,
+                        "windms": 4,
+                        "neersl": 0,
+                        "image": "bewolkt"
+                    },
+                    {
+                        "uur": "02-12-2025 15:00",
+                        "timestamp": 1764684000,
+                        "temp": 8,
+                        "windkmh": 18,
+                        "windms": 5,
+                        "neersl": 0.5,
+                        "image": "regen"
+                    },
+                ]
+            }).encode()
+            mock_response.__enter__ = MagicMock(return_value=mock_response)
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
+            
+            weather_imports._invalidate_cache()
+            weather_imports.set_weather_config(api_key="key", location="Amsterdam")
+            result = weather_imports.fetch_weather_forecast()
+            
+            assert result.success is True
+            assert result.location_name == "Amsterdam"
+            assert result.current_temp == 8.9
+            assert len(result.hourly_forecasts) == 2
+            # Verify wind speed conversion: 14 km/h ≈ 3.89 m/s
+            assert abs(result.hourly_forecasts[0].wind_speed - (14 / 3.6)) < 0.01
+            assert result.hourly_forecasts[0].temperature == 7.0
+            assert result.hourly_forecasts[0].humidity == 75.0
+            assert result.hourly_forecasts[1].precipitation == 0.5
+
 
 class TestParseHourlyForecasts:
     """Test _parse_hourly_forecasts function."""
@@ -274,6 +328,78 @@ class TestParseHourlyForecasts:
         """Returns empty list when uur_verw is missing."""
         forecasts = weather_imports._parse_hourly_forecasts({})
         assert forecasts == []
+
+    def test_parses_weerlive_v2_format(self, weather_imports):
+        """Parses the actual Weerlive API v2 format with uur_verw at root level."""
+        # This is the actual format returned by the Weerlive API
+        api_response = {
+            "liveweer": [{
+                "plaats": "Amsterdam",
+                "temp": 8.9,
+                "lv": 75,
+                "luchtd": 1007.2,
+            }],
+            "uur_verw": [
+                {
+                    "uur": "02-12-2025 14:00",
+                    "timestamp": 1764680400,
+                    "temp": 7,
+                    "windkmh": 14,
+                    "windms": 4,
+                    "neersl": 0,
+                    "image": "bewolkt"
+                },
+                {
+                    "uur": "02-12-2025 15:00",
+                    "timestamp": 1764684000,
+                    "temp": 7,
+                    "windkmh": 14,
+                    "windms": 4,
+                    "neersl": 0,
+                    "image": "bewolkt"
+                },
+            ]
+        }
+        
+        live_data = api_response["liveweer"][0]
+        forecasts = weather_imports._parse_hourly_forecasts(api_response, live_data)
+        
+        assert len(forecasts) == 2
+        assert forecasts[0].temperature == 7.0
+        # windkmh=14 should be converted to m/s: 14 / 3.6 ≈ 3.89
+        assert abs(forecasts[0].wind_speed - (14 / 3.6)) < 0.01
+        assert forecasts[0].humidity == 75.0
+        assert forecasts[0].pressure == 1007.2
+        assert forecasts[0].description == "bewolkt"
+
+    def test_parses_windms_field(self, weather_imports):
+        """Parses wind speed from windms field (m/s) when windkmh is not present."""
+        api_response = {
+            "uur_verw": [
+                {"uur": "10:00", "temp": "8", "windms": "4", "neersl": "0"},
+            ]
+        }
+        
+        forecasts = weather_imports._parse_hourly_forecasts(api_response)
+        
+        assert len(forecasts) == 1
+        assert forecasts[0].wind_speed == 4.0
+
+    def test_parses_datetime_format_with_date(self, weather_imports):
+        """Parses datetime in DD-MM-YYYY HH:00 format."""
+        api_response = {
+            "uur_verw": [
+                {"uur": "02-12-2025 14:00", "temp": "8", "windkmh": "10", "neersl": "0"},
+            ]
+        }
+        
+        forecasts = weather_imports._parse_hourly_forecasts(api_response)
+        
+        assert len(forecasts) == 1
+        assert forecasts[0].timestamp.year == 2025
+        assert forecasts[0].timestamp.month == 12
+        assert forecasts[0].timestamp.day == 2
+        assert forecasts[0].timestamp.hour == 14
 
 
 class TestSafeFloat:

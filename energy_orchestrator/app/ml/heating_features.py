@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from db import ResampledSample
 from db.core import engine
+from db.resample import get_sample_rate_minutes
 from ml.feature_config import get_feature_config
 
 _Logger = logging.getLogger(__name__)
@@ -89,7 +90,24 @@ FILTER_CATEGORIES = [
 
 # Prediction horizon in minutes
 PREDICTION_HORIZON_MINUTES = 60
-SLOTS_PER_HOUR = 12  # 5-minute slots
+
+# Default sample rate in minutes (used when not specified)
+DEFAULT_SAMPLE_RATE_MINUTES = 5
+
+
+def _get_slots_per_hour(sample_rate_minutes: int = DEFAULT_SAMPLE_RATE_MINUTES) -> int:
+    """
+    Calculate the number of slots per hour based on sample rate.
+    
+    Args:
+        sample_rate_minutes: The sample rate in minutes (e.g., 5, 15, 60)
+        
+    Returns:
+        Number of slots per hour
+    """
+    if sample_rate_minutes <= 0:
+        sample_rate_minutes = DEFAULT_SAMPLE_RATE_MINUTES
+    return 60 // sample_rate_minutes
 
 
 @dataclass
@@ -113,6 +131,7 @@ class FeatureDatasetStats:
     data_start_time: Optional[datetime] = None
     data_end_time: Optional[datetime] = None
     available_history_hours: Optional[float] = None
+    sample_rate_minutes: int = DEFAULT_SAMPLE_RATE_MINUTES
     # All sensor category ranges (key: category name, value: TrainingDataRange)
     sensor_ranges: dict[str, TrainingDataRange] = field(default_factory=dict)
     # hp_kwh_delta shows the energy consumed during the training period (not raw cumulative values)
@@ -167,6 +186,7 @@ def _pivot_data(df: pd.DataFrame) -> pd.DataFrame:
 def _compute_historical_aggregations(
     pivot_df: pd.DataFrame,
     available_history_hours: float,
+    sample_rate_minutes: int = DEFAULT_SAMPLE_RATE_MINUTES,
 ) -> pd.DataFrame:
     """
     Compute historical aggregation features.
@@ -174,17 +194,25 @@ def _compute_historical_aggregations(
     Args:
         pivot_df: Pivoted DataFrame with slot_start as index
         available_history_hours: Hours of data available
+        sample_rate_minutes: The sample rate in minutes (e.g., 5, 15, 60)
         
     Returns:
         DataFrame with aggregation features added
     """
     df = pivot_df.copy()
     
-    # Historical window sizes in number of 5-minute slots
-    slots_1h = 12
-    slots_6h = 72
-    slots_24h = 288
-    slots_7d = 2016
+    # Calculate slot window sizes dynamically based on sample rate
+    slots_per_hour = _get_slots_per_hour(sample_rate_minutes)
+    slots_1h = slots_per_hour
+    slots_6h = slots_per_hour * 6
+    slots_24h = slots_per_hour * 24
+    slots_7d = slots_per_hour * 24 * 7
+    
+    # Calculate the fraction of an hour per slot for degree-hour calculations
+    hours_per_slot = sample_rate_minutes / 60
+    
+    # Maximum plausible kWh per slot for a 10 kW heat pump
+    max_kwh_per_slot = 10 * hours_per_slot
     
     # Outdoor temperature history
     if "outdoor_temp" in df.columns:
@@ -224,31 +252,30 @@ def _compute_historical_aggregations(
     
     # Heating degree hours
     if "target_temp" in df.columns and "outdoor_temp" in df.columns:
-        # Degree difference per slot (5 min = 1/12 hour)
+        # Degree difference per slot
         degree_diff = (df["target_temp"] - df["outdoor_temp"]).clip(lower=0)
         
-        # Sum over 24 hours (288 slots * 5 min / 60 = 24 hours)
-        # Each slot contributes (degree_diff * 5/60) degree-hours
+        # Sum over 24 hours
+        # Each slot contributes (degree_diff * hours_per_slot) degree-hours
         df["heating_degree_hours_24h"] = degree_diff.rolling(
             window=slots_24h, min_periods=slots_6h
-        ).sum() * (5 / 60)
+        ).sum() * hours_per_slot
         
         if available_history_hours >= 168:
             df["heating_degree_hours_7d"] = degree_diff.rolling(
                 window=slots_7d, min_periods=slots_24h
-            ).sum() * (5 / 60)
+            ).sum() * hours_per_slot
     
     # Historical heating kWh (from hp_kwh_total differences)
     if "hp_kwh_total" in df.columns:
-        # Compute 5-minute deltas
+        # Compute deltas per slot
         kwh_delta = df["hp_kwh_total"].diff()
         
         # Filter out implausible deltas (negative or very large)
-        # Assuming max 10 kW heat pump: 10 kW * 5/60 h = 0.833 kWh per 5 min
-        kwh_delta = kwh_delta.clip(lower=0, upper=1.0)
+        # Use dynamic max based on sample rate
+        kwh_delta = kwh_delta.clip(lower=0, upper=max_kwh_per_slot)
         
         # Sum over historical windows (heating only - DHW filtering done later)
-        # 1 hour = 12 slots (CORE BASELINE FEATURE)
         df["heating_kwh_last_1h"] = kwh_delta.rolling(
             window=slots_1h, min_periods=1
         ).sum()
@@ -273,14 +300,17 @@ def _compute_historical_aggregations(
 
 def _compute_target(
     df: pd.DataFrame,
-    horizon_slots: int = SLOTS_PER_HOUR,
+    sample_rate_minutes: int = DEFAULT_SAMPLE_RATE_MINUTES,
 ) -> pd.DataFrame:
     """
     Compute the target: heating energy demand in kWh over prediction horizon.
     
+    The prediction horizon is always 1 hour (60 minutes), regardless of the sample rate.
+    The number of slots in the horizon is calculated dynamically based on sample rate.
+    
     Args:
         df: DataFrame with hp_kwh_total column
-        horizon_slots: Number of 5-min slots in prediction horizon
+        sample_rate_minutes: The sample rate in minutes (e.g., 5, 15, 60)
         
     Returns:
         DataFrame with target_heating_kwh_1h column added
@@ -289,6 +319,9 @@ def _compute_target(
         _Logger.warning("hp_kwh_total not available, cannot compute target")
         df["target_heating_kwh_1h"] = None
         return df
+    
+    # Calculate horizon slots dynamically - always 1 hour prediction horizon
+    horizon_slots = _get_slots_per_hour(sample_rate_minutes)
     
     # Compute forward-looking kWh delta
     # For each slot t, compute sum of kWh deltas from t to t+horizon
@@ -665,6 +698,9 @@ def build_heating_feature_dataset(
     5. Adds time features
     6. Returns a clean dataset ready for model training
     
+    The sample rate is automatically read from the configuration to ensure
+    historical aggregation windows are correctly sized.
+    
     Args:
         min_samples: Minimum number of valid samples required
         
@@ -672,6 +708,9 @@ def build_heating_feature_dataset(
         Tuple of (feature_dataframe, stats)
         feature_dataframe is None if insufficient data
     """
+    # Get the sample rate from configuration
+    sample_rate_minutes = get_sample_rate_minutes()
+    
     stats = FeatureDatasetStats(
         total_slots=0,
         valid_slots=0,
@@ -680,7 +719,10 @@ def build_heating_feature_dataset(
         dropped_insufficient_history=0,
         features_used=[],
         has_7d_features=False,
+        sample_rate_minutes=sample_rate_minutes,
     )
+    
+    _Logger.info("Building feature dataset with sample rate: %d minutes", sample_rate_minutes)
     
     try:
         with Session(engine) as session:
@@ -764,10 +806,12 @@ def build_heating_feature_dataset(
                     )
             
             # Step 3: Compute historical aggregations
-            df = _compute_historical_aggregations(pivot_df, available_hours)
+            df = _compute_historical_aggregations(
+                pivot_df, available_hours, sample_rate_minutes=sample_rate_minutes
+            )
             
             # Step 4: Compute target
-            df = _compute_target(df)
+            df = _compute_target(df, sample_rate_minutes=sample_rate_minutes)
             
             # Step 5: Add time features
             df = _add_time_features(df)

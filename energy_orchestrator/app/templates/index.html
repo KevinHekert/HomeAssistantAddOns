@@ -554,7 +554,7 @@
 
         <div class="card">
             <h3>⚙️ Feature Configuration</h3>
-            <p class="example-description">Configure which features are used for model training and prediction. Core features (13) are always active. Experimental features can be enabled/disabled.</p>
+            <p class="example-description">Configure which features are used for model training and prediction. Core features (15) are always active. Experimental features can be enabled/disabled.</p>
             
             <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Configuration</button>
             <div id="featureConfigStatus" class="status-message"></div>
@@ -1284,16 +1284,41 @@
                     const metrics = data.metrics || {};
                     const stats = data.dataset_stats || {};
                     const trainingData = data.training_data || {};
+                    const featureCategories = data.feature_categories || {};
+                    
                     let message = '✓ ' + data.message + '\n\n';
+                    
+                    // Dataset information (dynamic, not static)
+                    message += '--- Training Dataset ---\n';
+                    if (stats.data_start_time && stats.data_end_time) {
+                        message += 'Data range: ' + stats.data_start_time + ' to ' + stats.data_end_time + '\n';
+                    }
+                    if (stats.available_history_hours) {
+                        const days = (stats.available_history_hours / 24).toFixed(1);
+                        message += 'History: ' + stats.available_history_hours + ' hours (~' + days + ' days)\n';
+                    }
                     message += 'Training samples: ' + (metrics.train_samples || 0) + '\n';
                     message += 'Validation samples: ' + (metrics.val_samples || 0) + '\n';
+                    message += '\n';
+                    
+                    // Model performance
+                    message += '--- Model Performance ---\n';
                     message += 'Train MAE (kWh): ' + (metrics.train_mae_kwh || 'N/A') + '\n';
                     message += 'Val MAE (kWh): ' + (metrics.val_mae_kwh || 'N/A') + '\n';
                     message += 'Val MAPE (%): ' + (metrics.val_mape_pct || 'N/A') + '\n';
                     message += 'Val R²: ' + (metrics.val_r2 || 'N/A') + '\n';
+                    message += '\n';
+                    
+                    // Features used (dynamic - shows exactly what was used for training)
+                    message += '--- Features Used for Training ---\n';
+                    const featureCount = metrics.features ? metrics.features.length : 0;
+                    const rawCount = featureCategories.raw_sensor_features ? featureCategories.raw_sensor_features.length : 0;
+                    const calcCount = featureCategories.calculated_features ? featureCategories.calculated_features.length : 0;
+                    message += 'Total features: ' + featureCount + ' (' + rawCount + ' raw sensors + ' + calcCount + ' calculated)\n';
                     if (metrics.features && metrics.features.length > 0) {
-                        message += '\nFeatures: ' + metrics.features.join(', ');
+                        message += 'Features: ' + metrics.features.join(', ');
                     }
+                    
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = message;
                     

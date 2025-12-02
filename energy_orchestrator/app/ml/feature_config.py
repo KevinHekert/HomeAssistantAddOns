@@ -2,7 +2,7 @@
 Feature configuration for the heat pump consumption prediction model.
 
 This module defines:
-- The 13 core baseline features (always active, cannot be disabled)
+- The 15 core baseline features (always active, cannot be disabled)
 - Experimental/optional features (disabled by default, toggleable via UI)
 - Feature metadata (category, description, unit, time_window, is_core)
 - Time zone configuration for time-based features
@@ -99,17 +99,25 @@ class FeatureMetadata:
 
 
 # =============================================================================
-# CORE BASELINE FEATURES (13 features - always active, cannot be disabled)
+# CORE BASELINE FEATURES (15 features - always active, cannot be disabled)
 # =============================================================================
 
 CORE_FEATURES: list[FeatureMetadata] = [
-    # Weather / Outdoor (4 features)
+    # Weather / Outdoor (5 features)
     FeatureMetadata(
         name="outdoor_temp",
         category=FeatureCategory.WEATHER,
         description="Latest 5-minute outdoor temperature",
         unit="°C",
         time_window=TimeWindow.NONE,
+        is_core=True,
+    ),
+    FeatureMetadata(
+        name="outdoor_temp_avg_1h",
+        category=FeatureCategory.WEATHER,
+        description="1-hour outdoor temperature average (last 12 samples)",
+        unit="°C",
+        time_window=TimeWindow.HOUR_1,
         is_core=True,
     ),
     FeatureMetadata(
@@ -137,13 +145,21 @@ CORE_FEATURES: list[FeatureMetadata] = [
         is_core=True,
     ),
     
-    # Indoor Climate / Building Mass (2 features)
+    # Indoor Climate / Building Mass (3 features)
     FeatureMetadata(
         name="indoor_temp",
         category=FeatureCategory.INDOOR,
         description="Latest 5-minute indoor temperature",
         unit="°C",
         time_window=TimeWindow.NONE,
+        is_core=True,
+    ),
+    FeatureMetadata(
+        name="indoor_temp_avg_6h",
+        category=FeatureCategory.INDOOR,
+        description="6-hour average indoor temperature (last 72 samples)",
+        unit="°C",
+        time_window=TimeWindow.HOUR_6,
         is_core=True,
     ),
     FeatureMetadata(
@@ -237,15 +253,6 @@ EXPERIMENTAL_FEATURES: list[FeatureMetadata] = [
         enabled=False,
     ),
     FeatureMetadata(
-        name="outdoor_temp_avg_1h",
-        category=FeatureCategory.WEATHER,
-        description="1-hour outdoor temperature average (last 12 samples)",
-        unit="°C",
-        time_window=TimeWindow.HOUR_1,
-        is_core=False,
-        enabled=False,
-    ),
-    FeatureMetadata(
         name="outdoor_temp_avg_6h",
         category=FeatureCategory.WEATHER,
         description="6-hour outdoor temperature average (last 72 samples)",
@@ -260,17 +267,6 @@ EXPERIMENTAL_FEATURES: list[FeatureMetadata] = [
         description="7-day outdoor temperature average (last 2016 samples)",
         unit="°C",
         time_window=TimeWindow.DAY_7,
-        is_core=False,
-        enabled=False,
-    ),
-    
-    # Indoor - additional aggregation
-    FeatureMetadata(
-        name="indoor_temp_avg_6h",
-        category=FeatureCategory.INDOOR,
-        description="6-hour average indoor temperature (last 72 samples)",
-        unit="°C",
-        time_window=TimeWindow.HOUR_6,
         is_core=False,
         enabled=False,
     ),

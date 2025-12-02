@@ -95,17 +95,19 @@ class TestCoreFeatures:
     """Test the core baseline features definition."""
     
     def test_core_features_count(self):
-        """There should be exactly 13 core baseline features."""
-        assert len(CORE_FEATURES) == 13
+        """There should be exactly 15 core baseline features."""
+        assert len(CORE_FEATURES) == 15
     
     def test_core_feature_names(self):
         """Core features should have the expected names."""
         expected_names = {
             "outdoor_temp",
+            "outdoor_temp_avg_1h",
             "outdoor_temp_avg_24h",
             "wind",
             "humidity",
             "indoor_temp",
+            "indoor_temp_avg_6h",
             "indoor_temp_avg_24h",
             "target_temp",
             "target_temp_avg_6h",
@@ -145,6 +147,16 @@ class TestCoreFeatures:
         names = {f.name for f in CORE_FEATURES}
         assert "wind" in names
         assert "humidity" in names
+    
+    def test_indoor_temp_avg_6h_is_core(self):
+        """indoor_temp_avg_6h should be a core feature."""
+        names = {f.name for f in CORE_FEATURES}
+        assert "indoor_temp_avg_6h" in names
+    
+    def test_outdoor_temp_avg_1h_is_core(self):
+        """outdoor_temp_avg_1h should be a core feature."""
+        names = {f.name for f in CORE_FEATURES}
+        assert "outdoor_temp_avg_1h" in names
 
 
 class TestExperimentalFeatures:
@@ -398,8 +410,8 @@ class TestFeatureMetadataHelpers:
         assert "is_core" in first
     
     def test_get_core_feature_count(self):
-        """get_core_feature_count returns 13."""
-        assert get_core_feature_count() == 13
+        """get_core_feature_count returns 15."""
+        assert get_core_feature_count() == 15
     
     def test_validate_feature_set_complete(self):
         """Complete feature set is valid."""

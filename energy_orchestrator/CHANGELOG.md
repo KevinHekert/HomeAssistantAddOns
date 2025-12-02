@@ -2,6 +2,24 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.75] - 2025-12-02
+
+- **Fixed Sample Rate Handling in Model Training**: Historical aggregation windows now dynamically adjust based on the configured sample rate
+  - Previously, window sizes were hardcoded assuming 5-minute slots (e.g., 12 slots for 1 hour)
+  - When using different sample rates (e.g., 15 minutes), the windows were incorrect (12 slots = 3 hours instead of 1 hour)
+  - This fix ensures correct historical feature computation for any configured sample rate
+- **Dynamic Window Calculations**:
+  - Added `_get_slots_per_hour()` helper function to calculate slots based on sample rate
+  - `_compute_historical_aggregations()` now accepts `sample_rate_minutes` parameter
+  - `_compute_target()` now accepts `sample_rate_minutes` parameter
+  - Maximum kWh delta clipping now adjusts based on slot duration (10 kW * hours_per_slot)
+  - Heating degree hours calculation uses dynamic hours_per_slot multiplier
+- **FeatureDatasetStats Enhancement**: Added `sample_rate_minutes` field to track the sample rate used during training
+- **Tests**: Added 2 new tests for verifying correct behavior with different sample rates
+  - `test_different_sample_rates` for `_compute_historical_aggregations()`
+  - `test_different_sample_rates` for `_compute_target()`
+- **Issue Fixed**: Using different resample rates (e.g., 15 minutes) no longer results in weird prediction behavior
+
 ## [0.0.0.74] - 2025-12-02
 
 - **Core Feature Expansion**: Moved two features from experimental to core baseline (15 core features total, was 13)

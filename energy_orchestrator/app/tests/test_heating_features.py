@@ -191,6 +191,33 @@ class TestComputeHistoricalAggregations:
         result = _compute_historical_aggregations(df, available_history_hours=170.0)
         
         assert "outdoor_temp_avg_7d" in result.columns
+    
+    def test_different_sample_rates(self):
+        """Historical aggregations work correctly with different sample rates."""
+        start = datetime(2024, 1, 1, 12, 0, 0)
+        
+        # Create 8 slots with 15-minute intervals (2 hours of data)
+        num_slots = 8
+        slots = [start + timedelta(minutes=15 * i) for i in range(num_slots)]
+        
+        # 4 slots per hour at 15-minute intervals
+        df = pd.DataFrame(
+            {"outdoor_temp": [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]},
+            index=pd.DatetimeIndex(slots),
+        )
+        
+        result = _compute_historical_aggregations(
+            df, available_history_hours=2.0, sample_rate_minutes=15
+        )
+        
+        assert "outdoor_temp_avg_1h" in result.columns
+        
+        # At slot 4 (1 hour into data), the 1h average should be the mean of slots 1-4
+        # (slots 1, 2, 3, 4 = 11, 12, 13, 14 -> avg = 12.5)
+        # Note: rolling uses window of 4 (slots per hour at 15-min rate)
+        expected_avg = (10.0 + 11.0 + 12.0 + 13.0) / 4  # = 11.5
+        actual_avg = result.iloc[3]["outdoor_temp_avg_1h"]
+        assert abs(actual_avg - expected_avg) < 0.001
 
 
 class TestComputeTarget:
@@ -199,7 +226,7 @@ class TestComputeTarget:
     def test_computes_target_correctly(self):
         """Target is computed as forward kWh delta."""
         start = datetime(2024, 1, 1, 12, 0, 0)
-        # Create slots for 2 hours
+        # Create slots for 2 hours with 5-minute intervals (24 slots)
         num_slots = 24
         slots = [start + timedelta(minutes=5 * i) for i in range(num_slots)]
         
@@ -209,7 +236,8 @@ class TestComputeTarget:
             index=pd.DatetimeIndex(slots),
         )
         
-        result = _compute_target(df, horizon_slots=12)
+        # Use 5-minute sample rate (default), which means 12 slots per hour
+        result = _compute_target(df, sample_rate_minutes=5)
         
         assert "target_heating_kwh_1h" in result.columns
         # First slot should have target = 12 * 0.1 = 1.2 kWh
@@ -230,10 +258,32 @@ class TestComputeTarget:
             "dhw_active": dhw_active,
         }, index=pd.DatetimeIndex(slots))
         
-        result = _compute_target(df, horizon_slots=12)
+        # Use 5-minute sample rate (default), which means 12 slots per hour
+        result = _compute_target(df, sample_rate_minutes=5)
         
         # Slot 0's horizon includes DHW at slot 5, so target should be None
         assert pd.isna(result.iloc[0]["target_heating_kwh_1h"])
+    
+    def test_different_sample_rates(self):
+        """Target computation works with different sample rates."""
+        start = datetime(2024, 1, 1, 12, 0, 0)
+        
+        # Create 8 slots with 15-minute intervals (2 hours of data)
+        num_slots = 8
+        slots = [start + timedelta(minutes=15 * i) for i in range(num_slots)]
+        
+        # Linear increase: 0.3 kWh per slot (15-min intervals)
+        df = pd.DataFrame(
+            {"hp_kwh_total": [100.0 + i * 0.3 for i in range(num_slots)]},
+            index=pd.DatetimeIndex(slots),
+        )
+        
+        # Use 15-minute sample rate, which means 4 slots per hour
+        result = _compute_target(df, sample_rate_minutes=15)
+        
+        assert "target_heating_kwh_1h" in result.columns
+        # First slot should have target = 4 * 0.3 = 1.2 kWh
+        assert abs(result.iloc[0]["target_heating_kwh_1h"] - 1.2) < 0.001
 
 
 class TestAddTimeFeatures:

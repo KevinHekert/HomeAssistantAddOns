@@ -1,7 +1,7 @@
 """
 Tests for the samples module.
 
-Tests timestamp alignment to 5-second boundaries and upsert logic.
+Tests timestamp normalization and upsert logic.
 """
 
 import pytest
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from db import Base, Sample
 from db.samples import (
-    _align_timestamp_to_5s,
+    _normalize_timestamp,
     get_latest_sample_timestamp,
     log_sample,
     sample_exists,
@@ -35,38 +35,27 @@ def patch_engine(test_engine, monkeypatch):
     return test_engine
 
 
-class TestAlignTimestampTo5s:
-    """Test the _align_timestamp_to_5s function."""
+class TestNormalizeTimestamp:
+    """Test the _normalize_timestamp function."""
 
-    def test_already_aligned(self):
-        """Timestamp already on 5-second boundary stays the same."""
+    def test_preserves_seconds(self):
+        """Timestamp seconds are preserved (not rounded)."""
         dt = datetime(2024, 1, 1, 12, 0, 0)
-        assert _align_timestamp_to_5s(dt) == datetime(2024, 1, 1, 12, 0, 0)
-
-        dt = datetime(2024, 1, 1, 12, 0, 5)
-        assert _align_timestamp_to_5s(dt) == datetime(2024, 1, 1, 12, 0, 5)
-
-        dt = datetime(2024, 1, 1, 12, 0, 55)
-        assert _align_timestamp_to_5s(dt) == datetime(2024, 1, 1, 12, 0, 55)
-
-    def test_rounds_down(self):
-        """Timestamp not on boundary rounds down to nearest 5 seconds."""
-        dt = datetime(2024, 1, 1, 12, 0, 2)
-        assert _align_timestamp_to_5s(dt) == datetime(2024, 1, 1, 12, 0, 0)
+        assert _normalize_timestamp(dt) == datetime(2024, 1, 1, 12, 0, 0)
 
         dt = datetime(2024, 1, 1, 12, 0, 7)
-        assert _align_timestamp_to_5s(dt) == datetime(2024, 1, 1, 12, 0, 5)
+        assert _normalize_timestamp(dt) == datetime(2024, 1, 1, 12, 0, 7)
 
         dt = datetime(2024, 1, 1, 12, 0, 59)
-        assert _align_timestamp_to_5s(dt) == datetime(2024, 1, 1, 12, 0, 55)
+        assert _normalize_timestamp(dt) == datetime(2024, 1, 1, 12, 0, 59)
 
     def test_strips_microseconds(self):
         """Microseconds are stripped."""
         dt = datetime(2024, 1, 1, 12, 0, 0, 123456)
-        assert _align_timestamp_to_5s(dt) == datetime(2024, 1, 1, 12, 0, 0, 0)
+        assert _normalize_timestamp(dt) == datetime(2024, 1, 1, 12, 0, 0, 0)
 
         dt = datetime(2024, 1, 1, 12, 0, 3, 999999)
-        assert _align_timestamp_to_5s(dt) == datetime(2024, 1, 1, 12, 0, 0, 0)
+        assert _normalize_timestamp(dt) == datetime(2024, 1, 1, 12, 0, 3, 0)
 
 
 class TestLogSample:
@@ -89,11 +78,11 @@ class TestLogSample:
             assert samples[0].value == 10.0
             assert samples[0].unit == "m/s"
 
-    def test_timestamp_aligned_on_insert(self, patch_engine):
-        """Timestamp is aligned to 5-second boundary on insert."""
+    def test_timestamp_microseconds_stripped_on_insert(self, patch_engine):
+        """Timestamp microseconds are stripped on insert, but seconds preserved."""
         log_sample(
             "sensor.test",
-            datetime(2024, 1, 1, 12, 0, 3),  # Not aligned
+            datetime(2024, 1, 1, 12, 0, 3, 123456),  # With microseconds
             10.0,
             "m/s",
         )
@@ -101,7 +90,7 @@ class TestLogSample:
         with Session(patch_engine) as session:
             samples = session.query(Sample).all()
             assert len(samples) == 1
-            assert samples[0].timestamp == datetime(2024, 1, 1, 12, 0, 0)  # Aligned
+            assert samples[0].timestamp == datetime(2024, 1, 1, 12, 0, 3)  # Microseconds stripped, seconds preserved
 
     def test_upsert_updates_existing(self, patch_engine):
         """If sample exists, update instead of creating duplicate."""
@@ -128,20 +117,20 @@ class TestLogSample:
             # Value should be updated
             assert samples[0].value == 20.0
 
-    def test_upsert_with_aligned_timestamps(self, patch_engine):
-        """Different raw timestamps that align to same boundary result in one record."""
-        # Insert sample at 12:00:02
+    def test_upsert_with_same_timestamps(self, patch_engine):
+        """Different raw timestamps with same normalized timestamp (only microseconds differ) result in one record."""
+        # Insert sample at 12:00:02.000
         log_sample(
             "sensor.test",
-            datetime(2024, 1, 1, 12, 0, 2),
+            datetime(2024, 1, 1, 12, 0, 2, 0),
             10.0,
             "m/s",
         )
 
-        # Insert sample at 12:00:03 - aligns to same boundary (12:00:00)
+        # Insert sample at 12:00:02.500 - normalizes to same (12:00:02)
         log_sample(
             "sensor.test",
-            datetime(2024, 1, 1, 12, 0, 3),
+            datetime(2024, 1, 1, 12, 0, 2, 500000),
             20.0,
             "m/s",
         )
@@ -150,10 +139,37 @@ class TestLogSample:
             samples = session.query(Sample).all()
             # Should only have 1 sample
             assert len(samples) == 1
-            # Both aligned to 12:00:00
-            assert samples[0].timestamp == datetime(2024, 1, 1, 12, 0, 0)
+            # Normalized to 12:00:02
+            assert samples[0].timestamp == datetime(2024, 1, 1, 12, 0, 2)
             # Value should be the latest (20.0)
             assert samples[0].value == 20.0
+
+    def test_different_timestamps_not_merged(self, patch_engine):
+        """Different timestamps (even 1 second apart) are stored separately."""
+        # Insert sample at 12:00:02
+        log_sample(
+            "sensor.test",
+            datetime(2024, 1, 1, 12, 0, 2),
+            10.0,
+            "m/s",
+        )
+
+        # Insert sample at 12:00:03 - different second, stored separately
+        log_sample(
+            "sensor.test",
+            datetime(2024, 1, 1, 12, 0, 3),
+            20.0,
+            "m/s",
+        )
+
+        with Session(patch_engine) as session:
+            samples = session.query(Sample).order_by(Sample.timestamp).all()
+            # Should have 2 separate samples
+            assert len(samples) == 2
+            assert samples[0].timestamp == datetime(2024, 1, 1, 12, 0, 2)
+            assert samples[0].value == 10.0
+            assert samples[1].timestamp == datetime(2024, 1, 1, 12, 0, 3)
+            assert samples[1].value == 20.0
 
     def test_different_entities_not_merged(self, patch_engine):
         """Different entities at same timestamp are not merged."""
@@ -207,17 +223,29 @@ class TestSampleExists:
 
         assert sample_exists("sensor.test", datetime(2024, 1, 1, 12, 0, 0)) is True
 
-    def test_sample_exists_with_aligned_timestamp(self, patch_engine):
-        """Works with timestamps that align to same boundary."""
+    def test_sample_exists_with_normalized_timestamp(self, patch_engine):
+        """Works with timestamps that normalize to same (microseconds stripped)."""
         log_sample(
             "sensor.test",
-            datetime(2024, 1, 1, 12, 0, 0),
+            datetime(2024, 1, 1, 12, 0, 2),
             10.0,
             "m/s",
         )
 
-        # Check with unaligned timestamp that aligns to 12:00:00
-        assert sample_exists("sensor.test", datetime(2024, 1, 1, 12, 0, 2)) is True
+        # Check with timestamp that has microseconds (normalizes to 12:00:02)
+        assert sample_exists("sensor.test", datetime(2024, 1, 1, 12, 0, 2, 123456)) is True
+        
+    def test_sample_exists_different_seconds(self, patch_engine):
+        """Different seconds return False."""
+        log_sample(
+            "sensor.test",
+            datetime(2024, 1, 1, 12, 0, 2),
+            10.0,
+            "m/s",
+        )
+
+        # Check with different second (should not exist)
+        assert sample_exists("sensor.test", datetime(2024, 1, 1, 12, 0, 3)) is False
 
 
 class TestGetLatestSampleTimestamp:
@@ -263,3 +291,50 @@ class TestGetLatestSampleTimestamp:
 
         result = get_latest_sample_timestamp("sensor.test")
         assert result == datetime(2024, 1, 1, 13, 0, 0)
+
+
+class TestGetSensorInfo:
+    """Test the get_sensor_info function."""
+
+    def test_no_samples(self, patch_engine):
+        """Returns empty list when no samples exist."""
+        from db.samples import get_sensor_info
+        result = get_sensor_info()
+        assert result == []
+
+    def test_single_sensor(self, patch_engine):
+        """Returns info for single sensor."""
+        from db.samples import get_sensor_info
+        
+        log_sample("sensor.test", datetime(2024, 1, 1, 12, 0, 0), 10.0, "m/s")
+        log_sample("sensor.test", datetime(2024, 1, 1, 13, 0, 0), 15.0, "m/s")
+        
+        result = get_sensor_info()
+        assert len(result) == 1
+        assert result[0]["entity_id"] == "sensor.test"
+        assert result[0]["first_timestamp"] == "2024-01-01T12:00:00"
+        assert result[0]["last_timestamp"] == "2024-01-01T13:00:00"
+        assert result[0]["sample_count"] == 2
+
+    def test_multiple_sensors(self, patch_engine):
+        """Returns info for multiple sensors."""
+        from db.samples import get_sensor_info
+        
+        log_sample("sensor.a", datetime(2024, 1, 1, 10, 0, 0), 1.0, "°C")
+        log_sample("sensor.a", datetime(2024, 1, 1, 12, 0, 0), 2.0, "°C")
+        log_sample("sensor.b", datetime(2024, 1, 1, 11, 0, 0), 3.0, "m/s")
+        
+        result = get_sensor_info()
+        assert len(result) == 2
+        
+        # Results should be ordered by entity_id
+        sensor_a = next(s for s in result if s["entity_id"] == "sensor.a")
+        sensor_b = next(s for s in result if s["entity_id"] == "sensor.b")
+        
+        assert sensor_a["sample_count"] == 2
+        assert sensor_a["first_timestamp"] == "2024-01-01T10:00:00"
+        assert sensor_a["last_timestamp"] == "2024-01-01T12:00:00"
+        
+        assert sensor_b["sample_count"] == 1
+        assert sensor_b["first_timestamp"] == "2024-01-01T11:00:00"
+        assert sensor_b["last_timestamp"] == "2024-01-01T11:00:00"

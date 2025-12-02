@@ -1,0 +1,413 @@
+# Changelog
+
+All notable changes to this add-on will be documented in this file.
+
+## [0.0.0.72] - 2025-12-02
+
+- **Fixed Two-Step Model Training Feedback**: The two-step model training API response now includes top-level `classifier_metrics` and `regressor_metrics` fields for UI compatibility
+  - Previously, metrics were only available under `step1_classifier.metrics` and `step2_regressor.metrics`, causing the UI to display "N/A" for all metric values
+  - The UI now correctly displays: Accuracy, Precision, Recall, F1 Score for the classifier
+  - The UI now correctly displays: Training samples, Validation samples, Train MAE, Val MAE, Val MAPE, Val R² for the regressor
+  - The detailed `step1_classifier` and `step2_regressor` objects remain available for advanced API consumers
+- **Tests**: Added 2 new tests for the two-step training endpoint API response structure
+
+## [0.0.0.71] - 2025-12-02
+
+- **Feature Verification for Training Models**: Added verification that features displayed are actually used during training
+  - Training response now includes `feature_verification` object with:
+    - `verified`: Boolean indicating if all features were found in the training dataset
+    - `verified_features`: List of features confirmed to be used
+    - `missing_in_dataset`: List of features expected but not found in data
+  - Training response now includes `feature_categories` showing:
+    - `raw_sensor_features`: Features directly from sensors (outdoor_temp, wind, humidity, etc.)
+    - `calculated_features`: Derived/aggregated features (outdoor_temp_avg_24h, heating_kwh_last_6h, delta_target_indoor, etc.)
+  - Training response now includes `feature_details` with metadata for each feature (category, description, unit, is_calculated)
+- **Two-Step Model Step Explanations**: Added clear explanations of what each step does in the two-step model
+  - `step1_classifier`: Explains that Step 1 predicts whether heating will be active (on) or inactive (off) for each hour
+  - `step2_regressor`: Explains that Step 2 predicts kWh consumption for active hours only (inactive hours = 0 kWh)
+  - Each step includes: description, purpose, features_used, feature_count, training_samples, and metrics
+- **New Functions in feature_config.py**:
+  - `categorize_features()`: Categorizes features as raw sensor vs calculated
+  - `get_feature_details()`: Returns detailed metadata for each feature
+  - `verify_model_features()`: Verifies model features match dataset features
+- **Tests**: Added 7 new tests for feature verification functionality
+- **Fixed Weerlive API Parsing**: Fixed parsing of the actual Weerlive API v2 response format
+  - The API provides hourly forecast data (`uur_verw`) at the root level of the JSON response, not inside `liveweer[0]`
+  - Added support for the actual Weerlive API v2 field names:
+    - `windkmh`: Wind speed in km/h (automatically converted to m/s for internal use)
+    - `windms`: Wind speed in m/s (alternative field)
+    - `timestamp`: Unix timestamp for each hourly forecast
+  - Added support for the actual datetime format: "DD-MM-YYYY HH:00" (e.g., "02-12-2025 14:00")
+  - Maintains backwards compatibility with older format (uur_verw inside liveweer, winds field, HH:MM format)
+- **New Test Cases**: Added 4 new tests for Weerlive API v2 format parsing
+  - Test for parsing uur_verw at root level with windkmh field
+  - Test for windms field parsing
+  - Test for DD-MM-YYYY HH:00 datetime format parsing
+  - Integration test for fetch_weather_forecast with full API v2 response
+- **Incremental Resampling**: When resampling without flush, the system now starts from the latest resampled slot minus 2x the sample rate, instead of reprocessing all historical data
+  - Example: With 5-minute sample rate and latest resampled slot at 12:55, resampling starts from 12:45 (12:55 - 2*5)
+  - This significantly improves performance for regular resample operations
+  - Existing values that differ will be replaced (idempotent behavior)
+  - Use `flush=True` to force full reprocessing from the beginning
+- **New Function**: Added `get_latest_resampled_slot_start()` to retrieve the most recent resampled slot timestamp
+- **Tests**: Added 9 new tests for incremental resampling behavior
+- **Training Data Range Units from Source**: Unit information is now extracted from the actual samples table instead of using hardcoded values
+  - `TrainingDataRange` dataclass now includes a `unit` field
+  - Units are extracted from the first sample of each category in the resampled data
+  - Removed hardcoded `SENSOR_UNITS` dictionary from `app.py`
+  - Training data response now displays the actual unit stored with each sensor's data
+  - This ensures unit accuracy even for sensors with non-standard units
+- Updated `_load_resampled_data()` to include the `unit` column from the database
+- Added test for unit extraction from source data
+- Updated existing tests to use realistic units in test data
+
+## [0.0.0.70] - 2025-12-02
+
+- **Weather API Integration**: Added integration with weerlive.nl API for weather forecast data
+  - New "Weather API Settings" card in Configuration tab for API key and location configuration
+  - API credentials are validated before saving to ensure they work
+  - Get your free API key at: https://weerlive.nl/delen.php
+- **Load Weather Forecast**: Added "🌤️ Load Weather (24h)" button in Scenario-Based Prediction section
+  - Fetches upcoming 24-hour weather forecast from weerlive.nl API
+  - Automatically populates scenario prediction input with weather data
+  - Configurable target temperature for predictions
+- **Prediction Storage and Comparison**:
+  - Added "💾 Store Prediction" button to save predictions for later comparison
+  - New "📊 Stored Predictions" section in Model Training tab
+  - Compare stored predictions with actual sensor data when it becomes available
+  - View comparison metrics: MAE, MAPE, total predicted vs actual kWh
+  - Delete stored predictions when no longer needed
+- **New API Endpoints**:
+  - `GET /api/weather/config`: Get weather API configuration
+  - `POST /api/weather/config`: Save and validate weather API credentials
+  - `POST /api/weather/validate`: Validate API credentials without saving
+  - `GET /api/weather/forecast`: Fetch weather forecast for next 24 hours
+  - `POST /api/predictions/store`: Store a prediction for later comparison
+  - `GET /api/predictions/stored`: List all stored predictions
+  - `GET /api/predictions/stored/<id>`: Get specific stored prediction
+  - `DELETE /api/predictions/stored/<id>`: Delete stored prediction
+  - `POST /api/predictions/stored/<id>/compare`: Compare prediction with actual data
+- **New Modules**:
+  - `ha/weather_api.py`: Weather API integration with weerlive.nl
+  - `db/prediction_storage.py`: Prediction storage and comparison functionality
+- **Tests**: Added 50 new tests for weather API and prediction storage functionality
+
+## [0.0.0.69] - 2025-12-02
+
+- **Scenario Prediction Uses Two-Step When Enabled**: The simplified scenario prediction endpoint now automatically uses the two-step model when enabled
+  - When two-step prediction is enabled in Feature Configuration and the two-step model is trained, `/api/predictions/scenario` will use the two-step approach
+  - Response includes `is_active` and `activity_probability` for each timeslot when using two-step
+  - Response includes summary with active/inactive hour counts
+  - UI displays active/inactive status with 🔥/❄️ icons for each hour
+  - Falls back to single-step model if two-step is not available
+- **UI Improvements for Two-Step Scenario Predictions**:
+  - Status message indicates "(using two-step prediction)" when enabled
+  - Results table shows "Active" column with status icons (🔥 Active / ❄️ Inactive)
+  - Results table shows "Activity Prob." column with classifier probability
+  - Summary box shows count of active vs inactive hours
+- Added 4 new tests for two-step scenario prediction functionality
+
+## [0.0.0.68] - 2025-12-02
+
+- **Two-Step Prediction UI Improvements**: Redesigned the two-step prediction feature for better visibility and clarity
+  - Moved two-step prediction toggle to its own dedicated card in the Configuration tab
+  - Card styled as an experimental feature similar to other experimental options
+  - Added detailed description explaining the two-step approach (classifier + regressor)
+  - Shows current model status (available/not trained) and activity threshold
+- **Two-Step Model Training Section**: Added dedicated training section in Model Training tab
+  - New "Two-Step Model Training" card with experimental badge
+  - Displays training statistics: activity threshold, active samples, inactive samples, classifier accuracy
+  - Shows detailed classifier metrics (accuracy, precision, recall, F1 score)
+  - Shows detailed regressor metrics (MAE, MAPE, R²) for active hours only
+  - Clear feedback showing how many hours were classified as active vs inactive
+  - Training data range table showing sensor values used
+- **Improved Training Feedback**: When training the two-step model, users now clearly see:
+  - The computed activity threshold (minimum kWh to consider heating "active")
+  - Number of active vs inactive samples in the training data
+  - Classifier performance metrics
+  - Regressor performance on active hours only
+
+## [0.0.0.67] - 2025-12-02
+
+- **Historical Day Prediction Timestamps**: When loading historical data for scenario predictions, timestamps are now adjusted to be 2 days after today (day after tomorrow)
+  - The `scenario_format` in `/api/examples/historical_day/<date>` now contains future timestamps for prediction
+  - Original historical timestamps are preserved in `hourly_data` for comparison purposes
+  - This allows comparing predictions with actual historical data while using valid future timestamps for the prediction API
+- Added test for timestamp adjustment in historical day scenario format
+
+## [0.0.0.66] - 2025-12-02
+
+- **Sync Configuration UI**: Added UI controls to configure sensor sync settings
+  - New "Sync Configuration" card in the Configuration tab
+  - Backfill Days: How many days to look back when no samples exist (1-365, default: 14)
+  - Sync Window Size: Size of each sync window in days (1-30, default: 1)
+  - Sensor Sync Interval: Wait time in seconds between syncing sensors (1-3600, default: 1)
+  - Loop Interval: Wait time in seconds between sync loop iterations (1-3600, default: 1)
+  - Configuration is persisted to `/data/sync_config.json`
+- **Two-Step Prediction Toggle in UI**: Added checkbox in Feature Configuration to enable/disable two-step prediction
+  - Visual toggle with description of the two-step approach
+  - Status is loaded on page load
+- **New API Endpoints**:
+  - `GET /api/sync_config`: Get current sync configuration with limits
+  - `POST /api/sync_config`: Update sync configuration (partial updates supported)
+- **New Module**: `db/sync_config.py` for persistent sync configuration storage
+  - `SyncConfig` dataclass with all sync settings
+  - `get_sync_config()`, `set_sync_config()` for full configuration access
+  - Individual getters: `get_backfill_days()`, `get_sync_window_days()`, `get_sensor_sync_interval()`, `get_sensor_loop_interval()`
+- **Code Changes**:
+  - `ha_api.py`: Now uses `get_backfill_days()` and `get_sync_window_days()` from sync_config module
+  - `sensors.py`: Now uses `get_sensor_sync_interval()` and `get_sensor_loop_interval()` from sync_config module
+- **Tests**: Added 23 new tests for sync configuration module
+
+## [0.0.0.65] - 2025-12-02
+
+- **Removed UI Sections**: Removed the following UI sections from the Model Training tab:
+  - "🔮 Single Slot Prediction" - removed card and functionality
+  - "📅 Full Day Prediction (24h)" - removed card and functionality
+- **Removed API Endpoints**:
+  - `GET /api/examples/single_slot` - no longer available
+  - `GET /api/examples/full_day` - no longer available
+- **Note**: The `/api/predictions/heating_demand_profile` endpoint is still available for external use
+- Removed related tests (6 tests removed)
+
+## [0.0.0.64] - 2025-12-02
+
+- **Preserve Actual Sensor Timestamps**: Sample timestamps now reflect the actual timestamps from Home Assistant
+  - Removed 5-second alignment that rounded all timestamps to nearest 5-second boundary
+  - Timestamps like `2025-11-21 06:52:27` are now stored as-is instead of being rounded to `06:52:25`
+  - Only microseconds are stripped (for storage efficiency), seconds are preserved
+  - This provides accurate time information for debugging and data analysis
+- **Breaking Change**: New samples will have actual timestamps, but existing samples remain with rounded timestamps
+  - To get consistent timestamps, users may want to re-sync historical data after updating
+- Updated tests to reflect new timestamp preservation behavior
+
+## [0.0.0.63] - 2025-12-02
+
+- **Two-Step Heat Pump Prediction (Experimental)**: Added new two-step prediction approach for better accuracy
+  - Step 1: Classifier predicts whether heating will be active or inactive in a given hour
+  - Step 2: Regressor predicts kWh consumption only for active hours (inactive = 0 kWh)
+  - Solves overestimation when pump is off and underestimation during heavy heating
+- **Automatic Threshold Detection**: Activity threshold is automatically computed from training data
+  - Uses 5th percentile of positive kWh values as threshold
+  - Minimum threshold of 0.01 kWh to filter noise
+  - Threshold is stored with model and reused for predictions
+  - No manual configuration required by end users
+- **New API Endpoints**:
+  - `GET /api/features/two_step_prediction`: Get two-step prediction configuration status
+  - `POST /api/features/two_step_prediction`: Enable/disable two-step prediction mode
+  - `POST /api/train/two_step_heating_demand`: Train the two-step model (classifier + regressor)
+  - `GET /api/model/two_step_status`: Get two-step model status and threshold info
+  - `POST /api/predictions/two_step_scenario`: Make predictions using two-step approach
+- **New Module**: `ml/two_step_model.py` with complete implementation
+  - `TwoStepHeatingDemandModel` class with classifier and regressor
+  - `TwoStepPrediction` dataclass with is_active, predicted_kwh, activity_probability
+  - `train_two_step_heating_demand_model()` for training both models
+  - `predict_two_step_scenario()` for scenario-based predictions
+- **Feature Configuration Updates**:
+  - Added `two_step_prediction_enabled` flag to FeatureConfiguration
+  - New methods: `enable_two_step_prediction()`, `disable_two_step_prediction()`, `is_two_step_prediction_enabled()`
+  - Configuration persists across restarts
+- **Tests**: Added 27 new tests for two-step prediction functionality
+  - Threshold computation tests
+  - Classifier and regressor training tests
+  - Prediction tests for active/inactive hours
+  - Model persistence tests
+  - Feature configuration tests
+
+## [0.0.0.62] - 2025-12-02
+
+- **Resampling Interval UI Configuration**: Moved sample rate configuration from config.yaml to UI
+  - Sample rate can now be changed directly from the Configuration tab in the UI
+  - New dropdown selector for sample rate (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60 minutes)
+  - Sample rate is persisted to `/data/resample_config.json` for persistence across restarts
+  - When sample rate is changed, the "Flush existing data" checkbox is automatically checked
+- **API Changes**:
+  - Added `POST /api/sample_rate` endpoint to update sample rate from UI
+  - Added `set_sample_rate_minutes()` function to persist sample rate configuration
+  - Sample rate is now read from persistent JSON config instead of environment variable
+- **Config Changes**:
+  - Removed `sample_rate_minutes` from add-on configuration options
+  - Removed `SAMPLE_RATE_MINUTES` environment variable from run.sh
+- Added tests for new sample rate persistence functionality
+
+## [0.0.0.61] - 2025-12-02
+
+- **Improved Training Data Table**: Enhanced training data display with all sensor categories
+  - Now shows all sensor categories (outdoor_temp, wind, humidity, pressure, indoor_temp, target_temp, dhw_temp, hp_kwh_total, dhw_active) instead of just dhw_temp and hp_kwh_total
+  - For hp_kwh_total, displays the delta (energy consumed during training) instead of raw cumulative values
+  - Added Delta column showing the difference between first and last values for all sensors
+  - hp_kwh_delta is highlighted in green to emphasize the actual energy consumption
+  - Units are now displayed for each sensor value
+- **API Changes**:
+  - `/api/train/heating_demand` now returns `training_data` with all sensor categories
+  - Each sensor category includes `first`, `last`, and `unit` fields
+  - hp_kwh_total additionally includes `delta` field showing energy consumed during training
+  - Added `sensor_ranges` dict to `FeatureDatasetStats` for tracking all sensor categories
+  - Added `hp_kwh_delta` field to `FeatureDatasetStats` for energy consumption delta
+  - Legacy fields `dhw_temp_range` and `hp_kwh_total_range` maintained for backward compatibility
+- Added 4 new tests for sensor ranges and hp_kwh_delta functionality
+
+## [0.0.0.60] - 2025-12-02
+
+- **Dark/Light Mode Toggle**: Added theme toggle button in header
+  - Uses CSS variables for consistent theming across light and dark modes
+  - Theme preference is saved to localStorage
+  - Defaults to dark mode
+- **Tabbed Interface**: Reorganized UI into three tabs
+  - Configuration tab: Data resampling and feature configuration
+  - Model Training tab: Model training, predictions, and scenario testing
+  - Sensor Information tab: Sensor data overview
+- **Training Data Table**: Added table showing first/last values when training model
+  - Displays dhw_temp and hp_kwh_total ranges
+  - API endpoint updated to return `training_data` with first/last values
+  - New `TrainingDataRange` dataclass for capturing sensor ranges
+- **Removed Wind Card**: Removed test wind speed card from UI
+
+## [0.0.0.59] - 2025-12-02
+
+- **Flush Resample Table on Sample Rate Change**: Added ability to flush existing resampled data before resampling
+  - New `flush_resampled_samples()` function to clear the resampled_samples table
+  - `/resample` endpoint now accepts optional `flush` parameter in request body
+  - When sample rate changes, existing data (computed with different interval) should be flushed
+  - `ResampleStats` now includes `table_flushed` field to indicate if flush was performed
+  - UI now shows a "Flush existing data" checkbox in the Data Resampling section
+- **Dynamic Sample Rate Display in UI**: UI now shows configured sample rate instead of hardcoded "5-minute"
+  - Sample rate is loaded from `/api/sample_rate` endpoint on page load
+  - Resampling status message includes the sample rate used
+- Added tests for flush functionality
+
+## [0.0.0.58] - 2025-12-02
+
+- **Configurable Sample Rate**: Added ability to configure the sample rate for data resampling
+  - New `sample_rate_minutes` configuration option (1-60 minutes, default: 5)
+  - Allows training models with different time granularity for different use cases
+  - kWh usage is correctly calculated for the configured timeframe
+  - `/resample` endpoint now accepts optional `sample_rate_minutes` in request body
+  - New `/api/sample_rate` endpoint to get current sample rate configuration
+  - `ResampleStats` now includes `sample_rate_minutes` field
+  - Added 17 new tests for configurable sample rate functionality
+
+## [0.0.0.57] - 2025-12-02
+
+- **Feature Set Configuration**: Complete overhaul of the heat pump consumption model feature set
+  - Defined **13 core baseline features** that are always active and cannot be disabled
+  - Moved optional features to **experimental status** (disabled by default, toggleable via UI)
+  - All features now have complete metadata (name, category, description, unit, time_window, is_core)
+  
+- **New Core Baseline Features**:
+  - `heating_kwh_last_1h`: 1-hour heating energy consumption (was missing)
+  - `delta_target_indoor`: Derived feature showing difference between target and indoor temperature
+  - `wind` and `humidity` now explicitly in baseline (always required)
+  
+- **Timezone Configuration**:
+  - `hour_of_day` feature now uses configurable IANA timezone (default: Europe/Amsterdam)
+  - All timestamps stored in UTC and converted to local time for hour_of_day
+  - UI allows timezone selection from common timezones
+  
+- **Feature Configuration UI**:
+  - New "Feature Configuration" section showing all features grouped by category
+  - Core features (green badges) are always active with disabled checkboxes
+  - Experimental features (orange badges) can be toggled on/off
+  - Timezone selector for hour_of_day feature
+  - Feature stats showing core count and active feature count
+  
+- **New API Endpoints**:
+  - `GET /api/features/config`: Get current feature configuration
+  - `POST /api/features/toggle`: Enable/disable experimental features
+  - `POST /api/features/timezone`: Set timezone for time features
+  - `GET /api/features/metadata`: Get feature metadata for documentation
+  
+- **Tests**: Added 38 new tests for feature configuration module
+- **Documentation**: Updated README with new feature engineering documentation
+
+![Feature Configuration UI](https://github.com/user-attachments/assets/8bf955e4-cee7-4b84-9a7d-47fdf464c354)
+
+## [0.0.0.56] - 2025-12-01
+
+- **Version Bump**: Preparing for feature set refactoring of heat pump consumption model
+
+## [0.0.0.55] - 2025-12-01
+
+- **Load Historical Day Examples**: Added ability to load historical days from 5-minute resampled data as scenario examples
+  - New `/api/examples/available_days` endpoint returns list of available days (excluding first and last day)
+  - New `/api/examples/historical_day/<date>` endpoint returns hourly averaged data for a specific day
+  - UI dropdown to select historical day in the Scenario-Based Prediction section
+- **Compare Predictions with Actual Data**: When a historical day is selected, the prediction table shows comparison
+  - Added second column with actual kWh values from historical data
+  - Added delta (difference) and percentage columns
+  - Bar chart shows predicted vs actual values side by side
+  - Summary shows Mean Absolute Error (MAE) and Mean Absolute Percentage Error (MAPE)
+- Added 19 new tests for historical day functionality
+- Internal: Added `get_available_historical_days()` function to query available days
+- Internal: Added `get_historical_day_hourly_data()` function to compute hourly averages
+
+## [0.0.0.54] - 2025-12-01
+
+- **Simplified Scenario API**: Added new `/api/predictions/scenario` endpoint that accepts human-readable inputs
+  - Users can now send simple weather forecast data (outdoor_temperature, wind_speed, humidity, pressure) and setpoint schedule (target_temperature)
+  - All low-level model features (time features, historical aggregations) are computed internally
+  - Timestamps must be in the future; past timestamps are rejected with clear validation errors
+- Added `/api/examples/scenario` endpoint to get pre-filled 24-hour scenario example
+- Added new UI section "Scenario-Based Prediction (Simplified)" with bar chart and table visualization
+- Internal: Added validation functions for simplified scenario input
+- Internal: Added conversion function to translate simplified inputs to model features
+- Added 29 new tests for new simplified scenario functionality
+- Updated documentation with new simplified API endpoints
+
+## [0.0.0.53] - 2025-12-01
+
+- **Enhanced model training**: Model now uses ALL available historical data for training (no artificial limit)
+- Added function to compute historical aggregations from user-provided scenario features
+- Added API endpoint `/api/predictions/enrich_scenario` to help users prepare prediction requests
+- Added API endpoint `/api/predictions/compare_actual` to compare predictions with actual historical data
+- Added API endpoint `/api/predictions/validate_start_time` to validate prediction start times
+- Added time range information to dataset statistics (data_start_time, data_end_time, available_history_hours)
+- Predictions must start at next/coming hour for accurate historical feature computation
+- Test data can be compared using 5-minute average records to see delta between model and actual values
+- Added 25 new tests for new functionality
+- Updated documentation with new API endpoints and enhanced feature descriptions
+
+## [0.0.0.52] - 2025-12-01
+
+- Added pre-filled example fields in UI for single slot and full day heat pump usage calculation
+- Added sensor information section in UI showing first and last datetime per sensor
+- Added API endpoints: /api/examples/single_slot, /api/examples/full_day, /api/sensors/info
+- Added results display with table and bar chart for predictions
+- Added 12 new tests for new API endpoints and get_sensor_info function
+- Improved UI with editable JSON input fields for predictions
+- Added comprehensive technical and functional documentation (README.md)
+- Documented all calculations: time-weighted averaging, historical aggregations, feature engineering
+- Documented model storage location (`/data/heating_demand_model.joblib`)
+- Added complete API reference with request/response examples
+- Added usage examples for Python and Home Assistant automations
+- Documented database schema and architecture
+
+## [0.0.0.51] - 2025-12-01
+
+- Fixed resampling to properly return statistics (ResampleStats) with slots_processed, slots_saved, slots_skipped
+- Added UI buttons for model training and status checking
+- Improved resample endpoint to show detailed statistics after completion
+- Updated UI to display resampling statistics (time range, categories, slot counts)
+- Added 4 new tests for ResampleStats return values
+
+## [0.0.0.50] - 2025-12-01
+
+- Fixed sensor import halting when data gaps exceed 24 hours
+- Sync now fast-forwards through gaps in historical data by checking subsequent 24-hour windows
+- Uses max(latest_sample_timestamp, sync_status.last_attempt) to ensure progress through data gaps
+- Added tests for DWH sensor scenarios with large gaps in history data
+
+## [0.0.0.49] - 2025-12-01
+
+- Added comprehensive unit tests for sync_state module
+- Added unit tests for Flask API endpoints (training, prediction, model status)
+- Created GitHub Actions workflow to run tests on push and pull requests
+- Improved test coverage from 102 to 120 tests
+
+## [0.0.0.48] - 2025-12-01
+
+- Added support for binary sensor states: map on/off and true/false to 1.0/0.0 for database storage
+
+## [0.0.0.47] - 2025-12-01
+
+- Reduced logging verbosity by changing sample save/update messages from INFO to DEBUG level

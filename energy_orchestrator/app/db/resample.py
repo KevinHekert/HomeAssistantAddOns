@@ -421,13 +421,18 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
     2. Optionally flushes the resampled_samples table (for sample rate changes).
     3. Fetches category-to-entity mappings.
     4. Computes the global time range where all categories have data.
-    5. Iterates over time slots and computes time-weighted averages.
-    6. Calculates virtual (derived) sensor values from raw sensor data.
-    7. Only writes complete slots (all categories have values).
-    8. Ensures idempotence by deleting existing rows before inserting.
+    5. Iterates over time slots and computes time-weighted averages for raw sensors.
+    6. Marks raw sensor samples as is_derived=False (sampled from raw sensor data).
+    7. Calculates virtual (derived) sensor values from resampled raw sensor data.
+    8. Marks virtual sensor samples as is_derived=True (calculated after resampling).
+    9. Only writes complete slots (all categories have values).
+    10. Ensures idempotence by deleting existing rows before inserting.
     
-    Virtual sensors are calculated after raw sensors for each time slot.
-    They are only calculated if both source sensors have values in that slot.
+    **Important**: Raw sensors are sampled first, then virtual sensors are calculated
+    from the resampled raw data. This ensures proper data lineage and allows
+    distinguishing between raw measurements and derived calculations.
+    
+    Virtual sensors are only calculated if both source sensors have values in that slot.
     Enabled virtual sensors are loaded from the configuration file.
     
     Args:
@@ -571,17 +576,20 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
                         ResampledSample.slot_start == slot_start
                     ).delete()
 
-                    # Insert new rows for each category
+                    # Step 5.1: Insert raw sensor samples first (is_derived=False)
+                    # These are direct time-weighted averages from raw sensor data
                     for category, (avg, unit) in slot_values.items():
                         resampled = ResampledSample(
                             slot_start=slot_start,
                             category=category,
                             value=avg,
                             unit=unit,
+                            is_derived=False,  # Raw sensor data
                         )
                         session.add(resampled)
                     
-                    # Step 5.5: Calculate and insert virtual sensor values
+                    # Step 5.2: Calculate and insert virtual sensor values (is_derived=True)
+                    # These are calculated from the resampled raw sensor data above
                     for virtual_sensor in enabled_virtual_sensors:
                         try:
                             # Get source sensor values from slot_values
@@ -599,7 +607,7 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
                             value1, _ = source1_data
                             value2, _ = source2_data
                             
-                            # Calculate virtual sensor value
+                            # Calculate virtual sensor value from resampled raw data
                             virtual_value = virtual_sensor.calculate(value1, value2)
                             
                             if virtual_value is not None:
@@ -608,6 +616,7 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
                                     category=virtual_sensor.name,
                                     value=virtual_value,
                                     unit=virtual_sensor.unit,
+                                    is_derived=True,  # Virtual/derived sensor data
                                 )
                                 session.add(resampled)
                                 _Logger.debug(

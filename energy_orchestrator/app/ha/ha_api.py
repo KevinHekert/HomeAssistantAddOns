@@ -11,8 +11,10 @@ from db.sync_state import update_sync_attempt
 _Logger = logging.getLogger(__name__)
 
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN")
-BACKFILL_IF_NO_SAMPLES_DAYS = 14
-MAX_WINDOW_DAYS = 1
+
+# Configurable sync parameters (can be set via environment variables)
+BACKFILL_IF_NO_SAMPLES_DAYS = int(os.environ.get("BACKFILL_DAYS", "14"))
+MAX_WINDOW_DAYS = int(os.environ.get("SYNC_WINDOW_DAYS", "1"))
 
 
 def parse_state_to_float(state: str | None) -> float | None:

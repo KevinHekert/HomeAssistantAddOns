@@ -89,6 +89,7 @@ from ml.feature_config import (
     get_feature_metadata_dict,
     get_core_feature_count,
     FeatureCategory,
+    FeatureMetadata,
     categorize_features,
     get_feature_details,
     verify_model_features,
@@ -2123,6 +2124,9 @@ def get_sensor_feature_cards():
         all_sensor_defs = get_all_sensor_definitions()
         virtual_sensors_conf = get_virtual_sensors_config()
         
+        # Get feature stats configuration to determine which time-based stats are enabled
+        feature_stats_conf = get_feature_stats_config()
+        
         # Build dynamic sensor metadata from configured sensors
         raw_sensors: dict[str, dict] = {}
         
@@ -2147,6 +2151,9 @@ def get_sensor_feature_cards():
                 "type": "virtual",  # Virtual sensors get their own type
             }
         
+        # Build a lookup map of feature names to feature objects
+        feature_map: dict[str, FeatureMetadata] = {f.name: f for f in all_features}
+        
         # Group features by base sensor name
         sensor_features: dict[str, list] = {}
         
@@ -2154,11 +2161,34 @@ def get_sensor_feature_cards():
         for sensor_name in raw_sensors.keys():
             sensor_features[sensor_name] = []
         
-        # Group features by their base sensor
-        for f in all_features:
-            # Check if this feature belongs to a raw sensor
-            for sensor_name in raw_sensors.keys():
-                if f.name == sensor_name or f.name.startswith(f"{sensor_name}_avg_"):
+        # For each sensor, add the base sensor feature and all configured time-based statistics
+        for sensor_name in raw_sensors.keys():
+            sensor_info = raw_sensors[sensor_name]
+            
+            # Add the base sensor feature (current value) if it exists
+            if sensor_name in feature_map:
+                f = feature_map[sensor_name]
+                sensor_features[sensor_name].append({
+                    "name": f.name,
+                    "display_name": _get_feature_display_name(f.name, sensor_name),
+                    "description": f.description,
+                    "unit": f.unit,
+                    "time_window": f.time_window.value,
+                    "is_core": f.is_core,
+                    "enabled": f.enabled,
+                })
+            
+            # Get enabled time-based statistics from feature stats configuration
+            enabled_stats = feature_stats_conf.get_enabled_stats_for_sensor(sensor_name)
+            
+            # Add features for each enabled statistic
+            for stat_type in enabled_stats:
+                stat_feature_name = f"{sensor_name}_{stat_type.value}"
+                
+                # Check if this feature exists in feature configuration
+                if stat_feature_name in feature_map:
+                    # Feature already exists in config, use its properties
+                    f = feature_map[stat_feature_name]
                     sensor_features[sensor_name].append({
                         "name": f.name,
                         "display_name": _get_feature_display_name(f.name, sensor_name),
@@ -2168,7 +2198,18 @@ def get_sensor_feature_cards():
                         "is_core": f.is_core,
                         "enabled": f.enabled,
                     })
-                    break
+                else:
+                    # Feature doesn't exist in feature config yet, create it as an experimental feature
+                    # This happens when a statistic is enabled in feature stats but not yet in feature config
+                    sensor_features[sensor_name].append({
+                        "name": stat_feature_name,
+                        "display_name": _get_feature_display_name(stat_feature_name, sensor_name),
+                        "description": f"Time-based statistic: {stat_type.value} for {sensor_name}",
+                        "unit": sensor_info["unit"],
+                        "time_window": _stat_type_to_time_window(stat_type),
+                        "is_core": False,
+                        "enabled": False,  # Not enabled in feature config yet
+                    })
         
         # Build sensor cards
         sensor_cards = []
@@ -2201,6 +2242,25 @@ def _get_feature_display_name(feature_name: str, sensor_name: str) -> str:
         return f"{window.upper()} Average"
     else:
         return feature_name.replace("_", " ").title()
+
+
+def _stat_type_to_time_window(stat_type: StatType) -> str:
+    """
+    Convert StatType to TimeWindow string value.
+    
+    Args:
+        stat_type: The StatType enum value
+        
+    Returns:
+        TimeWindow string value (e.g., "1h", "6h", "24h", "7d")
+    """
+    mapping = {
+        StatType.AVG_1H: "1h",
+        StatType.AVG_6H: "6h",
+        StatType.AVG_24H: "24h",
+        StatType.AVG_7D: "7d",
+    }
+    return mapping.get(stat_type, "none")
 
 
 # =============================================================================

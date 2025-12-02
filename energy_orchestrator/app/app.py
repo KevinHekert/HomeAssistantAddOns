@@ -33,6 +33,11 @@ from db.sensor_category_config import (
     CORE_SENSORS,
     EXPERIMENTAL_SENSORS,
 )
+from db.virtual_sensors import (
+    get_virtual_sensors_config,
+    VirtualSensorDefinition,
+    VirtualSensorOperation,
+)
 from db.prediction_storage import (
     store_prediction,
     get_stored_predictions,
@@ -3081,6 +3086,208 @@ def get_sensor_definitions_api():
         })
     except Exception as e:
         _Logger.error("Error getting sensor definitions: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =============================================================================
+# VIRTUAL SENSORS ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/virtual_sensors/list")
+def list_virtual_sensors():
+    """
+    Get list of all virtual sensors.
+    
+    Response:
+    {
+        "status": "success",
+        "sensors": [...],
+        "count": 5
+    }
+    """
+    try:
+        config = get_virtual_sensors_config()
+        sensors = config.get_all_sensors()
+        
+        return jsonify({
+            "status": "success",
+            "sensors": [s.to_dict() for s in sensors],
+            "count": len(sensors),
+        })
+    except Exception as e:
+        _Logger.error("Error listing virtual sensors: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/virtual_sensors/add")
+def add_virtual_sensor():
+    """
+    Add a new virtual sensor.
+    
+    Request body:
+    {
+        "name": "temp_delta",
+        "display_name": "Temperature Delta",
+        "description": "Difference between target and indoor temperature",
+        "source_sensor1": "target_temp",
+        "source_sensor2": "indoor_temp",
+        "operation": "subtract",
+        "unit": "°C"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Virtual sensor 'temp_delta' created",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        # Validate required fields
+        required_fields = ["name", "display_name", "description", "source_sensor1", "source_sensor2", "operation"]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "status": "error",
+                    "message": f"'{field}' is required",
+                }), 400
+        
+        # Validate operation
+        try:
+            operation = VirtualSensorOperation(data["operation"])
+        except ValueError:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid operation. Must be one of: {[op.value for op in VirtualSensorOperation]}",
+            }), 400
+        
+        # Create virtual sensor definition
+        sensor = VirtualSensorDefinition(
+            name=data["name"],
+            display_name=data["display_name"],
+            description=data["description"],
+            source_sensor1=data["source_sensor1"],
+            source_sensor2=data["source_sensor2"],
+            operation=operation,
+            unit=data.get("unit", ""),
+            enabled=data.get("enabled", True),
+        )
+        
+        # Add to configuration
+        config = get_virtual_sensors_config()
+        if not config.add_sensor(sensor):
+            return jsonify({
+                "status": "error",
+                "message": f"Virtual sensor '{sensor.name}' already exists",
+            }), 400
+        
+        # Save configuration
+        config.save()
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Virtual sensor '{sensor.name}' created",
+            "sensor": sensor.to_dict(),
+        })
+    except Exception as e:
+        _Logger.error("Error adding virtual sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.delete("/api/virtual_sensors/<name>")
+def delete_virtual_sensor(name: str):
+    """
+    Delete a virtual sensor.
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Virtual sensor deleted"
+    }
+    """
+    try:
+        config = get_virtual_sensors_config()
+        
+        if not config.remove_sensor(name):
+            return jsonify({
+                "status": "error",
+                "message": f"Virtual sensor '{name}' not found",
+            }), 404
+        
+        # Save configuration
+        config.save()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Virtual sensor deleted",
+        })
+    except Exception as e:
+        _Logger.error("Error deleting virtual sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/virtual_sensors/<name>/toggle")
+def toggle_virtual_sensor(name: str):
+    """
+    Enable or disable a virtual sensor.
+    
+    Request body:
+    {
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Virtual sensor enabled",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or "enabled" not in data:
+            return jsonify({
+                "status": "error",
+                "message": "enabled field is required",
+            }), 400
+        
+        config = get_virtual_sensors_config()
+        sensor = config.get_sensor(name)
+        
+        if sensor is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Virtual sensor '{name}' not found",
+            }), 404
+        
+        enabled = bool(data["enabled"])
+        
+        if enabled:
+            config.enable_sensor(name)
+        else:
+            config.disable_sensor(name)
+        
+        # Save configuration
+        config.save()
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Virtual sensor {status}",
+            "sensor": sensor.to_dict(),
+        })
+    except Exception as e:
+        _Logger.error("Error toggling virtual sensor: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

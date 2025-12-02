@@ -2,6 +2,40 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.80] - 2025-12-02
+
+- **Virtual Sensors Implementation**: Implemented Step 4 of sensor configuration feature - Virtual (Derived) Sensors
+  - **New Module**: `db/virtual_sensors.py` for virtual sensor management
+    - `VirtualSensorDefinition` dataclass for sensor definitions
+    - `VirtualSensorOperation` enum: subtract, add, multiply, divide, average
+    - `VirtualSensorsConfiguration` class for configuration management
+    - `calculate()` method to compute virtual sensor values from two source sensors
+    - Persistent JSON storage at `/data/virtual_sensors_config.json`
+  - **New API Endpoints**:
+    - `GET /api/virtual_sensors/list`: List all virtual sensors with their configurations
+    - `POST /api/virtual_sensors/add`: Create a new virtual sensor
+    - `DELETE /api/virtual_sensors/<name>`: Delete a virtual sensor
+    - `POST /api/virtual_sensors/<name>/toggle`: Enable/disable a virtual sensor
+  - **UI Enhancements**:
+    - Virtual Sensors section now fully functional
+    - Table display showing name, formula, unit, status
+    - "Add Virtual Sensor" dialog with prompts for all required fields
+    - Enable/Disable buttons for each virtual sensor
+    - Delete button with confirmation dialog
+    - Reload button to refresh the list
+    - Formula display with mathematical symbols (-, +, ×, ÷, avg)
+    - Enabled/Disabled status badges
+  - **Supported Operations**:
+    - `subtract`: sensor1 - sensor2 (e.g., temp_delta = target_temp - indoor_temp)
+    - `add`: sensor1 + sensor2 (e.g., total_power = device1 + device2)
+    - `multiply`: sensor1 × sensor2 (e.g., energy = power × time)
+    - `divide`: sensor1 ÷ sensor2 (with zero-division protection)
+    - `average`: (sensor1 + sensor2) / 2
+  - **Examples**:
+    - Create "temp_delta" = target_temp - indoor_temp (heating demand indicator)
+    - Create "outdoor_wind_factor" = wind × outdoor_temp (wind chill indicator)
+  - **Note**: Virtual sensor calculations will be integrated into resampling in Step 6
+
 ## [0.0.0.79] - 2025-12-02
 
 - **Unit Field Storage and Configuration**: Implemented Step 3 of sensor configuration feature

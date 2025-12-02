@@ -2853,10 +2853,55 @@
             statusDiv.textContent = 'Loading virtual sensors...';
             
             try {
-                // This will be implemented in Step 4
-                statusDiv.className = 'status-message';
-                statusDiv.textContent = 'Virtual sensors feature will be implemented in next step';
-                tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">No virtual sensors defined yet.</p>';
+                const response = await fetch('api/virtual_sensors/list');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Loaded ${data.count} virtual sensors`;
+                    
+                    if (data.count === 0) {
+                        tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">No virtual sensors defined yet. Click "+ Add Virtual Sensor" to create one.</p>';
+                    } else {
+                        // Build virtual sensors table
+                        let html = '<table class="data-table" style="margin-top: 20px;">';
+                        html += '<thead><tr>';
+                        html += '<th>Name</th><th>Formula</th><th>Unit</th><th>Status</th><th>Actions</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        for (const sensor of data.sensors) {
+                            const statusBadge = sensor.enabled
+                                ? '<span style="padding: 2px 8px; background: var(--success-color); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
+                                : '<span style="padding: 2px 8px; background: var(--text-muted); color: white; border-radius: 3px; font-size: 0.8em;">Disabled</span>';
+                            
+                            const operationSymbol = {
+                                'subtract': '-',
+                                'add': '+',
+                                'multiply': '×',
+                                'divide': '÷',
+                                'average': 'avg'
+                            }[sensor.operation] || sensor.operation;
+                            
+                            html += '<tr>';
+                            html += `<td><strong>${sensor.display_name}</strong><br><small style="color: var(--text-secondary);">${sensor.description}</small></td>`;
+                            html += `<td><code>${sensor.source_sensor1} ${operationSymbol} ${sensor.source_sensor2}</code></td>`;
+                            html += `<td>${sensor.unit || '-'}</td>`;
+                            html += `<td>${statusBadge}</td>`;
+                            html += `<td>`;
+                            html += `<button class="action-btn small" onclick="toggleVirtualSensor('${sensor.name}', ${!sensor.enabled})">${sensor.enabled ? 'Disable' : 'Enable'}</button>`;
+                            html += `<button class="action-btn small warning" onclick="deleteVirtualSensor('${sensor.name}')">Delete</button>`;
+                            html += `</td>`;
+                            html += '</tr>';
+                        }
+                        
+                        html += '</tbody></table>';
+                        tableDiv.innerHTML = html;
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    tableDiv.innerHTML = '';
+                }
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
@@ -2867,8 +2912,146 @@
         }
 
         // Show dialog to add a new virtual sensor
-        function showAddVirtualSensorDialog() {
-            alert('Add Virtual Sensor dialog will be implemented in Step 4');
+        async function showAddVirtualSensorDialog() {
+            // Get available sensors for dropdowns
+            const sensorsResponse = await fetch('api/sensors/category_config');
+            if (!sensorsResponse.ok) {
+                alert('Failed to load sensors list');
+                return;
+            }
+            const sensorsData = await sensorsResponse.json();
+            
+            // Build list of all available sensors
+            const allSensors = [];
+            for (const [type, sensors] of Object.entries(sensorsData.sensors_by_type)) {
+                for (const sensor of sensors) {
+                    if (sensor.enabled) {
+                        allSensors.push({
+                            value: sensor.category_name,
+                            label: `${sensor.display_name} (${sensor.category_name})`
+                        });
+                    }
+                }
+            }
+            
+            // Create dialog
+            const name = prompt('Enter virtual sensor name (e.g., temp_delta):');
+            if (!name) return;
+            
+            const displayName = prompt('Enter display name (e.g., Temperature Delta):');
+            if (!displayName) return;
+            
+            const description = prompt('Enter description:');
+            if (!description) return;
+            
+            const sensor1 = prompt(`Enter first sensor (available: ${allSensors.map(s => s.value).join(', ')}):`);
+            if (!sensor1) return;
+            
+            const sensor2 = prompt(`Enter second sensor (available: ${allSensors.map(s => s.value).join(', ')}):`);
+            if (!sensor2) return;
+            
+            const operation = prompt('Enter operation (subtract, add, multiply, divide, average):');
+            if (!operation) return;
+            
+            const unit = prompt('Enter unit (optional):') || '';
+            
+            // Create virtual sensor
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Creating virtual sensor...';
+            
+            try {
+                const response = await fetch('api/virtual_sensors/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        display_name: displayName,
+                        description: description,
+                        source_sensor1: sensor1,
+                        source_sensor2: sensor2,
+                        operation: operation,
+                        unit: unit
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload the list
+                    await loadVirtualSensors();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Toggle virtual sensor enabled/disabled
+        async function toggleVirtualSensor(name, enabled) {
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `${enabled ? 'Enabling' : 'Disabling'} virtual sensor...`;
+            
+            try {
+                const response = await fetch(`api/virtual_sensors/${name}/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: enabled })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload the list
+                    await loadVirtualSensors();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Delete virtual sensor
+        async function deleteVirtualSensor(name) {
+            if (!confirm(`Are you sure you want to delete virtual sensor '${name}'?`)) {
+                return;
+            }
+            
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Deleting virtual sensor...';
+            
+            try {
+                const response = await fetch(`api/virtual_sensors/${name}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload the list
+                    await loadVirtualSensors();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
         }
 
         // Load feature stats configuration

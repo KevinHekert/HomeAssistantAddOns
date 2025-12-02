@@ -2118,21 +2118,40 @@ def get_sensor_feature_cards():
         config = get_feature_config()
         all_features = config.get_all_features()
         
+        # Get sensor information from sensor_category_config
+        sensor_category_conf = get_sensor_category_config()
+        all_sensor_defs = get_all_sensor_definitions()
+        virtual_sensors_conf = get_virtual_sensors_config()
+        
+        # Build dynamic sensor metadata from configured sensors
+        raw_sensors: dict[str, dict] = {}
+        
+        # Add all configured raw sensors (both core and experimental, enabled or disabled)
+        # We show all sensors so users can see what's available and configure them
+        for sensor_def in all_sensor_defs:
+            sensor_config = sensor_category_conf.get_sensor_config(sensor_def.category_name)
+            # sensor_config should always exist since __post_init__ creates defaults,
+            # but we check to be safe in case of configuration corruption
+            if sensor_config:
+                raw_sensors[sensor_def.category_name] = {
+                    "display_name": sensor_def.display_name,
+                    "unit": sensor_config.unit if sensor_config.unit else sensor_def.unit,
+                    "type": sensor_def.sensor_type.value,
+                }
+        
+        # Add all virtual sensors (enabled or disabled)
+        for virtual_sensor in virtual_sensors_conf.sensors.values():
+            raw_sensors[virtual_sensor.name] = {
+                "display_name": virtual_sensor.display_name,
+                "unit": virtual_sensor.unit,
+                "type": "virtual",  # Virtual sensors get their own type
+            }
+        
         # Group features by base sensor name
         sensor_features: dict[str, list] = {}
         
-        # Raw sensor names that can have aggregations
-        raw_sensors = {
-            "outdoor_temp": {"display_name": "Outdoor Temperature", "unit": "°C", "type": "weather"},
-            "indoor_temp": {"display_name": "Indoor Temperature", "unit": "°C", "type": "indoor"},
-            "target_temp": {"display_name": "Target Temperature", "unit": "°C", "type": "control"},
-            "wind": {"display_name": "Wind Speed", "unit": "m/s", "type": "weather"},
-            "humidity": {"display_name": "Humidity", "unit": "%", "type": "weather"},
-            "pressure": {"display_name": "Pressure", "unit": "hPa", "type": "weather"},
-        }
-        
         # Initialize sensor groups
-        for sensor_name, info in raw_sensors.items():
+        for sensor_name in raw_sensors.keys():
             sensor_features[sensor_name] = []
         
         # Group features by their base sensor

@@ -1,5 +1,5 @@
 name: Energy Orchestrator
-version: "0.0.0.74"
+version: "0.0.0.75"
 slug: energy_orchestrator
 description: Flask UI voor toekomstige energie-optimisatie.
 arch:

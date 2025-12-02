@@ -559,35 +559,17 @@
         </div>
 
         <div class="card">
-            <h3>📡 Sensor Configuration</h3>
-            <p class="example-description">Configure which sensors are used for data collection. Core sensors are always required, experimental sensors can be enabled/disabled.</p>
-            
-            <button class="action-btn secondary" id="loadSensorsBtn" onclick="loadSensorConfig()">Load Configuration</button>
-            <div id="sensorConfigStatus" class="status-message"></div>
-            
-            <div id="sensorConfigSummary" style="margin-top: 1rem; display: none;">
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-label">Core Sensors</div>
-                        <div class="stat-value" id="coreSensorCount">-</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Experimental Sensors</div>
-                        <div class="stat-value" id="expSensorCount">-</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Enabled Total</div>
-                        <div class="stat-value" id="enabledSensorCount">-</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div id="sensorConfigContent" style="margin-top: 1rem;"></div>
-        </div>
-
-        <div class="card">
             <h3>⚙️ Feature Configuration</h3>
-            <p class="example-description">Configure which features are used for model training and prediction. Core features (15) are always active. Experimental features can be enabled/disabled.</p>
+            <p class="example-description">
+                Configure which features are used for model training and prediction. This shows all available sensors 
+                (raw sensors, virtual/derived sensors, and their time-based statistics like avg_1h, avg_6h, avg_24h).
+                Core features are always active. Experimental features can be enabled/disabled.
+            </p>
+            <p class="example-description" style="margin-top: 0.5rem;">
+                <strong>📝 Note:</strong> To configure individual sensors and their statistics, use the 
+                <strong>📡 Sensor Configuration</strong> tab where you can manage raw sensors, virtual sensors, 
+                and their time-based averages.
+            </p>
             
             <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Configuration</button>
             <div id="featureConfigStatus" class="status-message"></div>

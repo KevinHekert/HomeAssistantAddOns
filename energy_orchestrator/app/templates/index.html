@@ -660,6 +660,51 @@
         </div>
 
         <div class="card">
+            <h3>🔍 Settings Optimizer</h3>
+            <p class="example-description">
+                Automatically find the best model configuration by testing different feature combinations. 
+                The optimizer cycles through experimental features and trains both single-step and two-step models 
+                to find the configuration with the lowest validation MAPE (%).
+            </p>
+            <p class="example-description" style="margin-top: 0.5rem;">
+                <strong>⚠️ Note:</strong> This process may take several minutes as it trains multiple models.
+                Your current settings will be saved before starting and restored after completion.
+            </p>
+            
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                <button class="action-btn success" id="runOptimizerBtn" onclick="runOptimizer()">🔍 Start Optimization</button>
+                <button class="action-btn secondary" id="optimizerStatusBtn" onclick="getOptimizerStatus()">Check Status</button>
+                <button class="action-btn" id="applyOptimizerBtn" onclick="applyOptimizerResult()" style="display: none;">✓ Apply Best Settings</button>
+            </div>
+            
+            <div id="optimizerBestResult" style="display: none; margin-bottom: 1rem;">
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">Best Configuration</div>
+                        <div class="stat-value" id="optimizerBestConfig" style="font-size: 1rem;">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Best Model Type</div>
+                        <div class="stat-value" id="optimizerBestModel">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Best Val MAPE</div>
+                        <div class="stat-value" id="optimizerBestMape" style="color: var(--accent-green);">-</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="optimizerStatus" class="status-message"></div>
+            
+            <div id="optimizerLog" style="display: none; margin-top: 1rem;">
+                <h4 style="margin-bottom: 0.5rem;">📋 Optimization Log</h4>
+                <div id="optimizerLogContent" style="background: var(--bg-tertiary); border-radius: 8px; padding: 1rem; max-height: 300px; overflow-y: auto; font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; font-size: 0.8rem; white-space: pre-wrap;"></div>
+            </div>
+            
+            <div id="optimizerResults" style="display: none; margin-top: 1rem;"></div>
+        </div>
+
+        <div class="card">
             <h3>🌡️ Scenario-Based Prediction (Simplified)</h3>
             <p class="example-description">Predict heating demand using simple, human-readable inputs. No need to calculate model features - just provide weather forecast and setpoint schedule.</p>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem;">
@@ -2224,6 +2269,205 @@
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // =============================================================================
+        // SETTINGS OPTIMIZER FUNCTIONS
+        // =============================================================================
+
+        async function runOptimizer() {
+            const btn = document.getElementById('runOptimizerBtn');
+            const statusDiv = document.getElementById('optimizerStatus');
+            const logDiv = document.getElementById('optimizerLog');
+            const logContent = document.getElementById('optimizerLogContent');
+            const resultsDiv = document.getElementById('optimizerResults');
+            const bestResultDiv = document.getElementById('optimizerBestResult');
+            const applyBtn = document.getElementById('applyOptimizerBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Starting optimization... This may take several minutes.';
+            logDiv.style.display = 'block';
+            logContent.textContent = 'Initializing optimizer...\n';
+            resultsDiv.style.display = 'none';
+            bestResultDiv.style.display = 'none';
+            applyBtn.style.display = 'none';
+            
+            try {
+                const response = await fetch('api/optimizer/run', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Update log
+                    if (data.log && data.log.length > 0) {
+                        logContent.textContent = data.log.join('\n');
+                        logContent.scrollTop = logContent.scrollHeight;
+                    }
+                    
+                    // Show best result
+                    if (data.best_result) {
+                        bestResultDiv.style.display = 'block';
+                        document.getElementById('optimizerBestConfig').textContent = data.best_result.config_name;
+                        document.getElementById('optimizerBestModel').textContent = data.best_result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step';
+                        document.getElementById('optimizerBestMape').textContent = data.best_result.val_mape_pct !== null ? data.best_result.val_mape_pct + '%' : 'N/A';
+                        applyBtn.style.display = 'inline-block';
+                        
+                        statusDiv.className = 'status-message success';
+                        statusDiv.textContent = '✓ Optimization complete! Best Val MAPE: ' + 
+                            (data.best_result.val_mape_pct !== null ? data.best_result.val_mape_pct + '%' : 'N/A');
+                    } else {
+                        statusDiv.className = 'status-message info';
+                        statusDiv.textContent = 'ℹ️ Optimization complete but no valid results found.';
+                    }
+                    
+                    // Build results table
+                    if (data.results && data.results.length > 0) {
+                        let html = '<h4 style="margin-bottom: 0.5rem;">All Results</h4>';
+                        html += '<table class="results-table"><thead><tr>';
+                        html += '<th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        // Sort by Val MAPE ascending
+                        const sortedResults = [...data.results].sort((a, b) => {
+                            if (a.val_mape_pct === null) return 1;
+                            if (b.val_mape_pct === null) return -1;
+                            return a.val_mape_pct - b.val_mape_pct;
+                        });
+                        
+                        sortedResults.forEach((result, idx) => {
+                            const isBest = data.best_result && 
+                                result.config_name === data.best_result.config_name && 
+                                result.model_type === data.best_result.model_type;
+                            const rowStyle = isBest ? 'background: var(--accent-green-dark);' : '';
+                            
+                            html += `<tr style="${rowStyle}">`;
+                            html += `<td>${result.config_name}${isBest ? ' ⭐' : ''}</td>`;
+                            html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
+                            html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
+                            html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
+                            html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
+                            html += `<td>${result.success ? '✓' : '✗ ' + (result.error_message || 'Failed')}</td>`;
+                            html += '</tr>';
+                        });
+                        
+                        html += '</tbody></table>';
+                        resultsDiv.innerHTML = html;
+                        resultsDiv.style.display = 'block';
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + (data.message || 'Optimization failed');
+                    if (data.log) {
+                        logContent.textContent = data.log.join('\n');
+                    }
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function getOptimizerStatus() {
+            const statusDiv = document.getElementById('optimizerStatus');
+            const btn = document.getElementById('optimizerStatusBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Checking optimizer status...';
+            
+            try {
+                const response = await fetch('api/optimizer/status');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (data.progress) {
+                        const p = data.progress;
+                        let message = `Phase: ${p.phase}\n`;
+                        message += `Progress: ${p.completed_configurations}/${p.total_configurations} configurations\n`;
+                        if (p.current_configuration) {
+                            message += `Current: ${p.current_configuration} (${p.current_model_type})\n`;
+                        }
+                        if (p.best_result) {
+                            message += `\nBest so far: ${p.best_result.config_name} (${p.best_result.model_type})\n`;
+                            message += `Best Val MAPE: ${p.best_result.val_mape_pct}%`;
+                        }
+                        
+                        statusDiv.className = 'status-message ' + (data.running ? 'loading' : 'info');
+                        statusDiv.textContent = message;
+                        
+                        // Update log if available
+                        if (p.log && p.log.length > 0) {
+                            const logDiv = document.getElementById('optimizerLog');
+                            const logContent = document.getElementById('optimizerLogContent');
+                            logDiv.style.display = 'block';
+                            logContent.textContent = p.log.join('\n');
+                            logContent.scrollTop = logContent.scrollHeight;
+                        }
+                    } else {
+                        statusDiv.className = 'status-message info';
+                        statusDiv.textContent = 'ℹ️ ' + (data.message || 'No optimization has been run yet');
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function applyOptimizerResult() {
+            const statusDiv = document.getElementById('optimizerStatus');
+            const btn = document.getElementById('applyOptimizerBtn');
+            
+            if (!confirm('Apply the best configuration found by the optimizer? This will save the new settings.')) {
+                return;
+            }
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Applying best configuration...';
+            
+            try {
+                const response = await fetch('api/optimizer/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enable_two_step: true })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    let message = '✓ ' + data.message + '\n\n';
+                    message += 'Applied settings:\n';
+                    message += `- Configuration: ${data.applied_settings.config_name}\n`;
+                    message += `- Model type: ${data.applied_settings.model_type}\n`;
+                    message += `- Two-step enabled: ${data.applied_settings.two_step_enabled}\n`;
+                    message += `- Val MAPE: ${data.applied_settings.val_mape_pct}%`;
+                    statusDiv.textContent = message;
+                    
+                    // Reload feature config to reflect changes
+                    loadFeatureConfig();
+                    loadTwoStepPredictionStatus();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
             }
         }
     </script>

@@ -352,23 +352,33 @@ class FeatureConfiguration:
     - Feature metadata for UI display and documentation
     - Timezone settings for time-based features
     - Two-step prediction settings (experimental)
+    
+    Note: All features (core and experimental) can be enabled/disabled.
+    Core features are labeled as 'CORE' in UI but are not forced to be enabled.
     """
     timezone: str = DEFAULT_TIMEZONE
+    core_enabled: dict[str, bool] = field(default_factory=dict)
     experimental_enabled: dict[str, bool] = field(default_factory=dict)
     # Two-step prediction: first classify active/inactive, then regress for active hours only
     two_step_prediction_enabled: bool = False
     
     def __post_init__(self):
-        """Initialize experimental feature states from defaults if not provided."""
+        """Initialize feature states from defaults if not provided."""
+        # Initialize core feature states (default: enabled)
+        for feature in CORE_FEATURES:
+            if feature.name not in self.core_enabled:
+                self.core_enabled[feature.name] = True  # Core features enabled by default
+        
+        # Initialize experimental feature states (default: disabled)
         for feature in EXPERIMENTAL_FEATURES:
             if feature.name not in self.experimental_enabled:
-                self.experimental_enabled[feature.name] = feature.enabled
+                self.experimental_enabled[feature.name] = False
     
     def get_all_features(self) -> list[FeatureMetadata]:
         """Get all features (core + experimental) with current enabled state."""
         features = []
         
-        # Core features are always enabled
+        # Core features use configured state (but enabled by default)
         for f in CORE_FEATURES:
             features.append(FeatureMetadata(
                 name=f.name,
@@ -377,7 +387,7 @@ class FeatureConfiguration:
                 unit=f.unit,
                 time_window=f.time_window,
                 is_core=True,
-                enabled=True,
+                enabled=self.core_enabled.get(f.name, True),
             ))
         
         # Experimental features use configured state
@@ -451,6 +461,70 @@ class FeatureConfiguration:
                 return True
         return False
     
+    def enable_core_feature(self, feature_name: str) -> bool:
+        """
+        Enable a core feature.
+        
+        Args:
+            feature_name: Name of the feature to enable
+            
+        Returns:
+            True if feature was found and enabled, False otherwise
+        """
+        for f in CORE_FEATURES:
+            if f.name == feature_name:
+                self.core_enabled[feature_name] = True
+                return True
+        return False
+    
+    def disable_core_feature(self, feature_name: str) -> bool:
+        """
+        Disable a core feature.
+        
+        Args:
+            feature_name: Name of the feature to disable
+            
+        Returns:
+            True if feature was found and disabled, False otherwise
+        """
+        for f in CORE_FEATURES:
+            if f.name == feature_name:
+                self.core_enabled[feature_name] = False
+                return True
+        return False
+    
+    def enable_feature(self, feature_name: str) -> bool:
+        """
+        Enable any feature (core or experimental).
+        
+        Args:
+            feature_name: Name of the feature to enable
+            
+        Returns:
+            True if feature was found and enabled, False otherwise
+        """
+        if self.enable_core_feature(feature_name):
+            return True
+        if self.enable_experimental_feature(feature_name):
+            return True
+        return False
+    
+    def disable_feature(self, feature_name: str) -> bool:
+        """
+        Disable any feature (core or experimental).
+        
+        Args:
+            feature_name: Name of the feature to disable
+            
+        Returns:
+            True if feature was found and disabled, False otherwise
+        """
+        if self.disable_core_feature(feature_name):
+            return True
+        if self.disable_experimental_feature(feature_name):
+            return True
+        return False
+    
     def set_timezone(self, timezone: str) -> bool:
         """
         Set the timezone for time-based features.
@@ -497,6 +571,7 @@ class FeatureConfiguration:
         """Convert to dictionary for JSON serialization."""
         return {
             "timezone": self.timezone,
+            "core_enabled": self.core_enabled,
             "experimental_enabled": self.experimental_enabled,
             "two_step_prediction_enabled": self.two_step_prediction_enabled,
         }
@@ -506,6 +581,7 @@ class FeatureConfiguration:
         """Create from dictionary."""
         return cls(
             timezone=data.get("timezone", DEFAULT_TIMEZONE),
+            core_enabled=data.get("core_enabled", {}),
             experimental_enabled=data.get("experimental_enabled", {}),
             two_step_prediction_enabled=data.get("two_step_prediction_enabled", False),
         )

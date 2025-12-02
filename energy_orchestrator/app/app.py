@@ -92,6 +92,8 @@ from ml.feature_config import (
     categorize_features,
     get_feature_details,
     verify_model_features,
+    CORE_FEATURES,
+    EXPERIMENTAL_FEATURES,
 )
 from ml.optimizer import (
     run_optimization,
@@ -1681,11 +1683,12 @@ def get_features_config():
 
 
 @app.post("/api/features/toggle")
-def toggle_experimental_feature():
+def toggle_feature():
     """
-    Enable or disable an experimental feature.
+    Enable or disable any feature (core or experimental).
     
-    Core features cannot be toggled (they are always enabled).
+    Both core and experimental features can be toggled.
+    Core features are labeled as 'CORE' in UI but can still be disabled.
     
     Request body:
     {
@@ -1697,7 +1700,8 @@ def toggle_experimental_feature():
     {
         "status": "success",
         "message": "Feature 'pressure' is now enabled",
-        "active_features": [...]
+        "active_features": [...],
+        "is_core": false
     }
     """
     try:
@@ -1726,25 +1730,34 @@ def toggle_experimental_feature():
         
         config = get_feature_config()
         
+        # Try to toggle the feature (works for both core and experimental)
         if enabled:
-            result = config.enable_experimental_feature(feature_name)
+            result = config.enable_feature(feature_name)
         else:
-            result = config.disable_experimental_feature(feature_name)
+            result = config.disable_feature(feature_name)
         
         if not result:
             return jsonify({
                 "status": "error",
-                "message": f"Feature '{feature_name}' is not an experimental feature (cannot toggle core features)",
-            }), 400
+                "message": f"Feature '{feature_name}' not found",
+            }), 404
+        
+        # Determine if it's a core feature
+        is_core = any(f.name == feature_name for f in CORE_FEATURES)
         
         # Save configuration
         config.save()
+        
+        # Sync feature stats configuration with updated ML feature config
+        from db.calculate_feature_stats import sync_stats_config_with_features
+        sync_stats_config_with_features()
         
         status = "enabled" if enabled else "disabled"
         return jsonify({
             "status": "success",
             "message": f"Feature '{feature_name}' is now {status}",
             "active_features": config.get_active_feature_names(),
+            "is_core": is_core,
         })
     except Exception as e:
         _Logger.error("Error toggling feature: %s", e)

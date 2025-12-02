@@ -307,6 +307,32 @@
             color: var(--text-secondary);
             font-weight: 600;
         }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .data-table th, .data-table td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .data-table th {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+        .data-table tr:hover {
+            background: var(--bg-tertiary);
+        }
+        .data-table input[type="text"], .data-table input[type="number"] {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            padding: 0.4rem;
+            font-size: 0.85rem;
+        }
         .total-kwh {
             font-size: 1.5rem;
             font-weight: 700;
@@ -2968,10 +2994,10 @@
                         
                         for (const sensor of sensors) {
                             const statusBadge = sensor.is_core 
-                                ? '<span style="padding: 2px 8px; background: var(--success-color); color: white; border-radius: 3px; font-size: 0.8em;">Core</span>'
+                                ? '<span style="padding: 2px 8px; background: var(--accent-green); color: white; border-radius: 3px; font-size: 0.8em;">Core</span>'
                                 : (sensor.enabled 
-                                    ? '<span style="padding: 2px 8px; background: var(--warning-color); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
-                                    : '<span style="padding: 2px 8px; background: var(--secondary-color); color: white; border-radius: 3px; font-size: 0.8em;">Disabled</span>');
+                                    ? '<span style="padding: 2px 8px; background: var(--accent-orange); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
+                                    : '<span style="padding: 2px 8px; background: var(--text-muted); color: white; border-radius: 3px; font-size: 0.8em;">Disabled</span>');
                             
                             html += '<tr>';
                             html += `<td><strong>${sensor.display_name}</strong><br><small style="color: var(--text-secondary);">${sensor.description}</small></td>`;
@@ -3097,7 +3123,7 @@
                         
                         for (const sensor of data.sensors) {
                             const statusBadge = sensor.enabled
-                                ? '<span style="padding: 2px 8px; background: var(--success-color); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
+                                ? '<span style="padding: 2px 8px; background: var(--accent-green); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
                                 : '<span style="padding: 2px 8px; background: var(--text-muted); color: white; border-radius: 3px; font-size: 0.8em;">Disabled</span>';
                             
                             const operationSymbol = {
@@ -3320,7 +3346,7 @@
                             
                             const typeBadge = sensorConfig.sensor_type === 'raw'
                                 ? '<span style="padding: 2px 8px; background: var(--accent-blue); color: white; border-radius: 3px; font-size: 0.8em;">Raw</span>'
-                                : '<span style="padding: 2px 8px; background: var(--warning-color); color: white; border-radius: 3px; font-size: 0.8em;">Virtual</span>';
+                                : '<span style="padding: 2px 8px; background: var(--accent-orange); color: white; border-radius: 3px; font-size: 0.8em;">Virtual</span>';
                             html += `<td>${typeBadge}</td>`;
                             
                             // Add checkbox for each stat type

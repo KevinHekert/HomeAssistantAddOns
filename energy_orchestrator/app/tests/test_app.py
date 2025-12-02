@@ -10,7 +10,7 @@ import pandas as pd
 
 from app import app
 from db.resample import ResampleStats
-from ml.heating_features import FeatureDatasetStats
+from ml.heating_features import FeatureDatasetStats, TrainingDataRange
 
 
 @pytest.fixture

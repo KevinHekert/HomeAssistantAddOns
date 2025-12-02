@@ -92,6 +92,8 @@ from ml.feature_config import (
     categorize_features,
     get_feature_details,
     verify_model_features,
+    CORE_FEATURES,
+    EXPERIMENTAL_FEATURES,
 )
 from ml.optimizer import (
     run_optimization,
@@ -1681,11 +1683,12 @@ def get_features_config():
 
 
 @app.post("/api/features/toggle")
-def toggle_experimental_feature():
+def toggle_feature():
     """
-    Enable or disable an experimental feature.
+    Enable or disable any feature (core or experimental).
     
-    Core features cannot be toggled (they are always enabled).
+    Both core and experimental features can be toggled.
+    Core features are labeled as 'CORE' in UI but can still be disabled.
     
     Request body:
     {
@@ -1697,7 +1700,8 @@ def toggle_experimental_feature():
     {
         "status": "success",
         "message": "Feature 'pressure' is now enabled",
-        "active_features": [...]
+        "active_features": [...],
+        "is_core": false
     }
     """
     try:
@@ -1726,25 +1730,34 @@ def toggle_experimental_feature():
         
         config = get_feature_config()
         
+        # Try to toggle the feature (works for both core and experimental)
         if enabled:
-            result = config.enable_experimental_feature(feature_name)
+            result = config.enable_feature(feature_name)
         else:
-            result = config.disable_experimental_feature(feature_name)
+            result = config.disable_feature(feature_name)
         
         if not result:
             return jsonify({
                 "status": "error",
-                "message": f"Feature '{feature_name}' is not an experimental feature (cannot toggle core features)",
-            }), 400
+                "message": f"Feature '{feature_name}' not found",
+            }), 404
+        
+        # Determine if it's a core feature
+        is_core = any(f.name == feature_name for f in CORE_FEATURES)
         
         # Save configuration
         config.save()
+        
+        # Sync feature stats configuration with updated ML feature config
+        from db.calculate_feature_stats import sync_stats_config_with_features
+        sync_stats_config_with_features()
         
         status = "enabled" if enabled else "disabled"
         return jsonify({
             "status": "success",
             "message": f"Feature '{feature_name}' is now {status}",
             "active_features": config.get_active_feature_names(),
+            "is_core": is_core,
         })
     except Exception as e:
         _Logger.error("Error toggling feature: %s", e)
@@ -1952,6 +1965,223 @@ def get_features_metadata():
     except Exception as e:
         _Logger.error("Error getting feature metadata: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/features/special_cards")
+def get_special_feature_cards():
+    """
+    Get special feature cards for Time/Date and Usage calculated features.
+    
+    These are system-generated cards that group calculated features which are
+    not directly tied to physical sensors.
+    
+    Response:
+    {
+        "status": "success",
+        "cards": [
+            {
+                "id": "time_date",
+                "name": "Time & Date Features",
+                "description": "Calendar and time-based features for temporal patterns",
+                "type": "calculated",
+                "features": [
+                    {
+                        "name": "hour_of_day",
+                        "display_name": "Hour of Day",
+                        "description": "Local hour (0-23) in configured timezone",
+                        "unit": "hour",
+                        "is_core": true,
+                        "enabled": true
+                    },
+                    ...
+                ]
+            },
+            {
+                "id": "usage_heating",
+                "name": "Heating Usage Features",
+                "description": "Historical heating consumption and demand metrics",
+                "type": "calculated",
+                "features": [...]
+            }
+        ]
+    }
+    """
+    try:
+        config = get_feature_config()
+        
+        # Time & Date Features
+        time_date_features = ["hour_of_day", "day_of_week", "is_weekend", "is_night"]
+        
+        # Usage/Heating Features
+        usage_features = [
+            "heating_kwh_last_1h",
+            "heating_kwh_last_6h", 
+            "heating_kwh_last_24h",
+            "heating_kwh_last_7d",
+            "heating_degree_hours_24h",
+            "heating_degree_hours_7d",
+        ]
+        
+        # Get all features with their metadata
+        all_features = config.get_all_features()
+        features_dict = {f.name: f for f in all_features}
+        
+        # Build Time/Date card
+        time_date_card = {
+            "id": "time_date",
+            "name": "Time & Date Features",
+            "description": "Calendar and time-based features for temporal patterns",
+            "type": "calculated",
+            "features": []
+        }
+        
+        for feature_name in time_date_features:
+            if feature_name in features_dict:
+                f = features_dict[feature_name]
+                time_date_card["features"].append({
+                    "name": f.name,
+                    "display_name": f.name.replace("_", " ").title(),
+                    "description": f.description,
+                    "unit": f.unit,
+                    "is_core": f.is_core,
+                    "enabled": f.enabled,
+                })
+        
+        # Build Usage card
+        usage_card = {
+            "id": "usage_heating",
+            "name": "Heating Usage Features",
+            "description": "Historical heating consumption and demand metrics",
+            "type": "calculated",
+            "features": []
+        }
+        
+        for feature_name in usage_features:
+            if feature_name in features_dict:
+                f = features_dict[feature_name]
+                usage_card["features"].append({
+                    "name": f.name,
+                    "display_name": f.name.replace("_", " ").title(),
+                    "description": f.description,
+                    "unit": f.unit,
+                    "is_core": f.is_core,
+                    "enabled": f.enabled,
+                })
+        
+        return jsonify({
+            "status": "success",
+            "cards": [time_date_card, usage_card]
+        })
+    except Exception as e:
+        _Logger.error("Error getting special feature cards: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/features/sensor_cards")
+def get_sensor_feature_cards():
+    """
+    Get feature cards for physical sensors with their aggregation features.
+    
+    Returns sensor cards showing which time-based aggregations (avg_1h, avg_6h, etc.)
+    are available as features for each sensor.
+    
+    Response:
+    {
+        "status": "success",
+        "sensor_cards": [
+            {
+                "sensor_name": "outdoor_temp",
+                "display_name": "Outdoor Temperature",
+                "unit": "°C",
+                "type": "weather",
+                "features": [
+                    {
+                        "name": "outdoor_temp",
+                        "display_name": "Current Value",
+                        "is_core": true,
+                        "enabled": true
+                    },
+                    {
+                        "name": "outdoor_temp_avg_1h",
+                        "display_name": "1-Hour Average",
+                        "is_core": true,
+                        "enabled": true
+                    },
+                    ...
+                ]
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        config = get_feature_config()
+        all_features = config.get_all_features()
+        
+        # Group features by base sensor name
+        sensor_features: dict[str, list] = {}
+        
+        # Raw sensor names that can have aggregations
+        raw_sensors = {
+            "outdoor_temp": {"display_name": "Outdoor Temperature", "unit": "°C", "type": "weather"},
+            "indoor_temp": {"display_name": "Indoor Temperature", "unit": "°C", "type": "indoor"},
+            "target_temp": {"display_name": "Target Temperature", "unit": "°C", "type": "control"},
+            "wind": {"display_name": "Wind Speed", "unit": "m/s", "type": "weather"},
+            "humidity": {"display_name": "Humidity", "unit": "%", "type": "weather"},
+            "pressure": {"display_name": "Pressure", "unit": "hPa", "type": "weather"},
+        }
+        
+        # Initialize sensor groups
+        for sensor_name, info in raw_sensors.items():
+            sensor_features[sensor_name] = []
+        
+        # Group features by their base sensor
+        for f in all_features:
+            # Check if this feature belongs to a raw sensor
+            for sensor_name in raw_sensors.keys():
+                if f.name == sensor_name or f.name.startswith(f"{sensor_name}_avg_"):
+                    sensor_features[sensor_name].append({
+                        "name": f.name,
+                        "display_name": _get_feature_display_name(f.name, sensor_name),
+                        "description": f.description,
+                        "unit": f.unit,
+                        "time_window": f.time_window.value,
+                        "is_core": f.is_core,
+                        "enabled": f.enabled,
+                    })
+                    break
+        
+        # Build sensor cards
+        sensor_cards = []
+        for sensor_name, features in sensor_features.items():
+            if features:  # Only include sensors that have features
+                info = raw_sensors[sensor_name]
+                sensor_cards.append({
+                    "sensor_name": sensor_name,
+                    "display_name": info["display_name"],
+                    "unit": info["unit"],
+                    "type": info["type"],
+                    "features": features,
+                })
+        
+        return jsonify({
+            "status": "success",
+            "sensor_cards": sensor_cards
+        })
+    except Exception as e:
+        _Logger.error("Error getting sensor feature cards: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _get_feature_display_name(feature_name: str, sensor_name: str) -> str:
+    """Helper to generate display names for features."""
+    if feature_name == sensor_name:
+        return "Current Value"
+    elif "_avg_" in feature_name:
+        window = feature_name.split("_avg_")[-1]
+        return f"{window.upper()} Average"
+    else:
+        return feature_name.replace("_", " ").title()
 
 
 # =============================================================================

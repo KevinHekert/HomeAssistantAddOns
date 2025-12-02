@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from db import FeatureStatistic, ResampledSample
 from db.core import engine, init_db_schema
-from db.feature_stats import StatType, get_feature_stats_config
+from db.feature_stats import StatType, get_feature_stats_config, sync_stats_config_with_features
 from db.sensor_category_config import get_sensor_category_config
 from db.virtual_sensors import get_virtual_sensors_config
 
@@ -136,26 +136,35 @@ def calculate_rolling_average(
 def calculate_feature_statistics(
     start_time: datetime | None = None,
     end_time: datetime | None = None,
+    sync_with_feature_config: bool = True,
 ) -> FeatureStatsCalculationResult:
     """
     Calculate time-span average statistics for all configured sensors.
     
     This function:
-    1. Gets all enabled sensors (raw + virtual)
-    2. For each sensor, checks which statistics are enabled in configuration
-    3. Calculates rolling averages from resampled_samples table
-    4. Stores results in feature_statistics table
-    5. Ensures idempotence by deleting existing stats before inserting
+    1. Optionally syncs feature stats config with ML feature config
+    2. Gets all enabled sensors (raw + virtual)
+    3. For each sensor, checks which statistics are enabled in configuration
+    4. Calculates rolling averages from resampled_samples table
+    5. Stores results in feature_statistics table
+    6. Ensures idempotence by deleting existing stats before inserting
     
     Args:
         start_time: Optional start time for calculation range. If None, uses earliest available.
         end_time: Optional end time for calculation range. If None, uses latest available.
+        sync_with_feature_config: If True, syncs feature stats config with ML feature config
+            before calculating. This ensures only needed statistics are calculated.
         
     Returns:
         FeatureStatsCalculationResult with statistics about the calculation.
     """
     # Ensure schema exists
     init_db_schema()
+    
+    # Sync configuration with ML features if requested
+    if sync_with_feature_config:
+        _Logger.info("Syncing feature stats configuration with ML feature configuration...")
+        sync_stats_config_with_features()
     
     # Get configuration
     stats_config = get_feature_stats_config()

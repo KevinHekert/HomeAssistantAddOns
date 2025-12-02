@@ -242,3 +242,95 @@ def reload_feature_stats_config() -> FeatureStatsConfiguration:
     global _config
     _config = FeatureStatsConfiguration.load()
     return _config
+
+
+def derive_stats_from_feature_config() -> dict[str, set[StatType]]:
+    """
+    Determine which statistics should be enabled based on ML feature configuration.
+    
+    This function analyzes the active features in feature_config and determines
+    which sensor statistics (avg_1h, avg_6h, etc.) need to be calculated.
+    
+    For example:
+    - If outdoor_temp_avg_1h is active, then outdoor_temp needs AVG_1H enabled
+    - If heating_kwh_last_24h is active, this is calculated in heating_features.py,
+      not in feature statistics
+    
+    Returns:
+        Dictionary mapping sensor names to sets of required StatTypes
+        
+    Example:
+        {
+            "outdoor_temp": {StatType.AVG_1H, StatType.AVG_24H},
+            "indoor_temp": {StatType.AVG_6H, StatType.AVG_24H},
+            ...
+        }
+    """
+    from ml.feature_config import get_feature_config
+    
+    config = get_feature_config()
+    active_features = config.get_active_feature_names()
+    
+    # Map feature names to (sensor_name, stat_type) pairs
+    # Features like "outdoor_temp_avg_1h" -> ("outdoor_temp", StatType.AVG_1H)
+    sensor_stats: dict[str, set[StatType]] = {}
+    
+    for feature_name in active_features:
+        # Check if this is an aggregation feature (contains avg_)
+        if "_avg_" in feature_name:
+            parts = feature_name.rsplit("_avg_", 1)
+            if len(parts) == 2:
+                sensor_name = parts[0]
+                time_window = parts[1]
+                
+                # Map time window to StatType
+                stat_type = None
+                if time_window == "1h":
+                    stat_type = StatType.AVG_1H
+                elif time_window == "6h":
+                    stat_type = StatType.AVG_6H
+                elif time_window == "24h":
+                    stat_type = StatType.AVG_24H
+                elif time_window == "7d":
+                    stat_type = StatType.AVG_7D
+                
+                if stat_type:
+                    if sensor_name not in sensor_stats:
+                        sensor_stats[sensor_name] = set()
+                    sensor_stats[sensor_name].add(stat_type)
+    
+    return sensor_stats
+
+
+def sync_stats_config_with_features() -> FeatureStatsConfiguration:
+    """
+    Synchronize feature statistics configuration with ML feature configuration.
+    
+    This ensures that only the statistics needed by active ML features are enabled.
+    
+    Returns:
+        Updated FeatureStatsConfiguration
+    """
+    stats_config = get_feature_stats_config()
+    required_stats = derive_stats_from_feature_config()
+    
+    _Logger.info(
+        "Syncing feature stats configuration with ML feature config: %d sensors require stats",
+        len(required_stats),
+    )
+    
+    # Update each sensor's configuration
+    for sensor_name, stat_types in required_stats.items():
+        sensor_config = stats_config.get_sensor_config(sensor_name)
+        sensor_config.enabled_stats = stat_types
+    
+    # Disable stats for sensors not in required_stats
+    for sensor_name in list(stats_config.sensor_configs.keys()):
+        if sensor_name not in required_stats:
+            sensor_config = stats_config.get_sensor_config(sensor_name)
+            sensor_config.enabled_stats = set()
+    
+    # Save updated configuration
+    stats_config.save()
+    
+    return stats_config

@@ -1022,3 +1022,277 @@ class TestResampleStats:
         assert stats.slots_saved == 2
         assert stats.slots_skipped == 0
         assert set(stats.categories) == {"WIND", "TEMP"}
+
+
+class TestConfigurableSampleRate:
+    """Test configurable sample rate functionality."""
+
+    def test_get_sample_rate_default(self, monkeypatch):
+        """Default sample rate is 5 minutes when not configured."""
+        from db.resample import get_sample_rate_minutes
+        monkeypatch.delenv("SAMPLE_RATE_MINUTES", raising=False)
+        assert get_sample_rate_minutes() == 5
+
+    def test_get_sample_rate_from_env(self, monkeypatch):
+        """Sample rate can be set via environment variable."""
+        from db.resample import get_sample_rate_minutes
+        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "10")
+        assert get_sample_rate_minutes() == 10
+
+    def test_get_sample_rate_invalid_not_divisor(self, monkeypatch):
+        """Sample rate that doesn't divide 60 defaults to 5."""
+        from db.resample import get_sample_rate_minutes
+        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "7")
+        assert get_sample_rate_minutes() == 5
+
+    def test_get_sample_rate_valid_divisors(self, monkeypatch):
+        """All valid divisors of 60 are accepted."""
+        from db.resample import get_sample_rate_minutes, VALID_SAMPLE_RATES
+        for rate in VALID_SAMPLE_RATES:
+            monkeypatch.setenv("SAMPLE_RATE_MINUTES", str(rate))
+            assert get_sample_rate_minutes() == rate
+
+    def test_get_sample_rate_invalid_string(self, monkeypatch):
+        """Invalid sample rate defaults to 5."""
+        from db.resample import get_sample_rate_minutes
+        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "invalid")
+        assert get_sample_rate_minutes() == 5
+
+
+class TestAlignToBoundary:
+    """Test the generic _align_to_boundary function."""
+
+    def test_align_to_5min_boundary(self):
+        """Align to 5-minute boundary."""
+        from db.resample import _align_to_boundary
+        dt = datetime(2024, 1, 1, 12, 7, 30)
+        assert _align_to_boundary(dt, 5) == datetime(2024, 1, 1, 12, 5, 0)
+
+    def test_align_to_10min_boundary(self):
+        """Align to 10-minute boundary."""
+        from db.resample import _align_to_boundary
+        dt = datetime(2024, 1, 1, 12, 7, 30)
+        assert _align_to_boundary(dt, 10) == datetime(2024, 1, 1, 12, 0, 0)
+        
+        dt2 = datetime(2024, 1, 1, 12, 15, 45)
+        assert _align_to_boundary(dt2, 10) == datetime(2024, 1, 1, 12, 10, 0)
+
+    def test_align_to_15min_boundary(self):
+        """Align to 15-minute boundary."""
+        from db.resample import _align_to_boundary
+        dt = datetime(2024, 1, 1, 12, 20, 30)
+        assert _align_to_boundary(dt, 15) == datetime(2024, 1, 1, 12, 15, 0)
+
+    def test_align_to_30min_boundary(self):
+        """Align to 30-minute boundary."""
+        from db.resample import _align_to_boundary
+        dt = datetime(2024, 1, 1, 12, 45, 30)
+        assert _align_to_boundary(dt, 30) == datetime(2024, 1, 1, 12, 30, 0)
+
+    def test_align_to_60min_boundary(self):
+        """Align to 60-minute (1 hour) boundary."""
+        from db.resample import _align_to_boundary
+        dt = datetime(2024, 1, 1, 12, 45, 30)
+        assert _align_to_boundary(dt, 60) == datetime(2024, 1, 1, 12, 0, 0)
+
+    def test_align_already_aligned(self):
+        """Datetime already on boundary stays the same."""
+        from db.resample import _align_to_boundary
+        dt = datetime(2024, 1, 1, 12, 10, 0)
+        assert _align_to_boundary(dt, 10) == datetime(2024, 1, 1, 12, 10, 0)
+
+    def test_align_invalid_rate_defaults_to_5(self):
+        """Invalid sample rate (0 or negative) defaults to 5."""
+        from db.resample import _align_to_boundary
+        dt = datetime(2024, 1, 1, 12, 7, 30)
+        assert _align_to_boundary(dt, 0) == datetime(2024, 1, 1, 12, 5, 0)
+        assert _align_to_boundary(dt, -5) == datetime(2024, 1, 1, 12, 5, 0)
+
+
+class TestResampleAllCategoriesWithConfigurableRate:
+    """Test resample_all_categories with custom sample rate."""
+
+    def test_resample_with_10min_rate(self, patch_engine):
+        """Resample with 10-minute sample rate produces correct slots."""
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 20, 0),
+                    value=15.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        stats = resample_all_categories(sample_rate_minutes=10)
+
+        # With 10-min rate: slots [12:00, 12:10) and [12:10, 12:20)
+        assert stats.slots_processed == 2
+        assert stats.slots_saved == 2
+        assert stats.sample_rate_minutes == 10
+
+        with Session(patch_engine) as session:
+            resampled = (
+                session.query(ResampledSample)
+                .order_by(ResampledSample.slot_start)
+                .all()
+            )
+            assert len(resampled) == 2
+            assert resampled[0].slot_start == datetime(2024, 1, 1, 12, 0, 0)
+            assert resampled[1].slot_start == datetime(2024, 1, 1, 12, 10, 0)
+
+    def test_resample_with_15min_rate(self, patch_engine):
+        """Resample with 15-minute sample rate produces correct slots."""
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 30, 0),
+                    value=15.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        stats = resample_all_categories(sample_rate_minutes=15)
+
+        # With 15-min rate: slots [12:00, 12:15) and [12:15, 12:30)
+        assert stats.slots_processed == 2
+        assert stats.slots_saved == 2
+        assert stats.sample_rate_minutes == 15
+
+    def test_resample_stats_includes_sample_rate(self, patch_engine):
+        """ResampleStats includes sample_rate_minutes field."""
+        from db.resample import resample_all_categories
+        
+        stats = resample_all_categories(sample_rate_minutes=10)
+        assert stats.sample_rate_minutes == 10
+
+    def test_resample_uses_env_when_no_arg(self, patch_engine, monkeypatch):
+        """When no sample_rate_minutes arg, uses environment variable."""
+        from db.resample import resample_all_categories
+        
+        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "15")
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 30, 0),
+                    value=15.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        stats = resample_all_categories()
+        assert stats.sample_rate_minutes == 15
+
+    def test_time_weighted_average_with_longer_window(self, patch_engine):
+        """Time-weighted average works correctly with 10-minute windows."""
+        from db.resample import resample_all_categories
+        
+        with Session(patch_engine) as session:
+            session.add(
+                SensorMapping(
+                    category="WIND",
+                    entity_id="sensor.wind",
+                    is_active=True,
+                    priority=1,
+                )
+            )
+            # Value 10 at 12:00, value 20 at 12:05
+            # For 10-minute window [12:00, 12:10):
+            # - 12:00 to 12:05 = 300 seconds at value 10
+            # - 12:05 to 12:10 = 300 seconds at value 20
+            # Average = (10*300 + 20*300) / 600 = 15
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 0, 0),
+                    value=10.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 5, 0),
+                    value=20.0,
+                    unit="m/s",
+                )
+            )
+            session.add(
+                Sample(
+                    entity_id="sensor.wind",
+                    timestamp=datetime(2024, 1, 1, 12, 10, 0),
+                    value=30.0,
+                    unit="m/s",
+                )
+            )
+            session.commit()
+
+        stats = resample_all_categories(sample_rate_minutes=10)
+
+        with Session(patch_engine) as session:
+            resampled = (
+                session.query(ResampledSample)
+                .filter(ResampledSample.slot_start == datetime(2024, 1, 1, 12, 0, 0))
+                .first()
+            )
+            # Average should be 15 (time-weighted)
+            assert resampled is not None
+            assert resampled.value == 15.0

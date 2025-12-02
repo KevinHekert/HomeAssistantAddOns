@@ -4,7 +4,7 @@ from flask import Flask, render_template, jsonify, request
 import pandas as pd
 from ha.ha_api import get_entity_state
 from workers import start_sensor_logging_worker
-from db.resample import resample_all_categories_to_5min
+from db.resample import resample_all_categories_to_5min, resample_all_categories, get_sample_rate_minutes, VALID_SAMPLE_RATES
 from db.core import init_db_schema
 from db.sensor_config import sync_sensor_mappings
 from db.samples import get_sensor_info
@@ -76,10 +76,36 @@ def index():
 
 @app.post("/resample")
 def trigger_resample():
-    """Trigger resampling of all categories to 5-minute slots."""
+    """Trigger resampling of all categories to configured time slots.
+    
+    Optionally accepts a JSON body with:
+    {
+        "sample_rate_minutes": 5  // Optional, overrides configured rate
+    }
+    
+    Valid sample rates are: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60
+    These are divisors of 60 that ensure proper hour boundary alignment.
+    """
     try:
-        _Logger.info("Resample triggered via UI")
-        stats = resample_all_categories_to_5min()
+        # Check if a sample rate was provided in the request
+        sample_rate = None
+        if request.is_json:
+            data = request.get_json()
+            if data and "sample_rate_minutes" in data:
+                sample_rate = int(data["sample_rate_minutes"])
+                if sample_rate not in VALID_SAMPLE_RATES:
+                    return jsonify({
+                        "status": "error",
+                        "message": f"sample_rate_minutes must be one of {VALID_SAMPLE_RATES}",
+                    }), 400
+        
+        _Logger.info("Resample triggered via UI with sample_rate=%s", sample_rate or "default")
+        
+        if sample_rate is not None:
+            stats = resample_all_categories(sample_rate)
+        else:
+            stats = resample_all_categories_to_5min()
+        
         return jsonify({
             "status": "success",
             "message": "Resampling completed successfully",
@@ -90,10 +116,27 @@ def trigger_resample():
                 "categories": stats.categories,
                 "start_time": stats.start_time.isoformat() if stats.start_time else None,
                 "end_time": stats.end_time.isoformat() if stats.end_time else None,
+                "sample_rate_minutes": stats.sample_rate_minutes,
             },
         })
     except Exception as e:
         _Logger.error("Error during resampling: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/sample_rate")
+def get_sample_rate():
+    """Get the current sample rate configuration."""
+    try:
+        rate = get_sample_rate_minutes()
+        return jsonify({
+            "status": "success",
+            "sample_rate_minutes": rate,
+            "valid_rates": VALID_SAMPLE_RATES,
+            "description": f"Data is sampled into {rate}-minute time slots",
+        })
+    except Exception as e:
+        _Logger.error("Error getting sample rate: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

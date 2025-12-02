@@ -2,6 +2,17 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.58] - 2025-12-02
+
+- **Configurable Sample Rate**: Added ability to configure the sample rate for data resampling
+  - New `sample_rate_minutes` configuration option (1-60 minutes, default: 5)
+  - Allows training models with different time granularity for different use cases
+  - kWh usage is correctly calculated for the configured timeframe
+  - `/resample` endpoint now accepts optional `sample_rate_minutes` in request body
+  - New `/api/sample_rate` endpoint to get current sample rate configuration
+  - `ResampleStats` now includes `sample_rate_minutes` field
+  - Added 17 new tests for configurable sample rate functionality
+
 ## [0.0.0.57] - 2025-12-02
 
 - **Feature Set Configuration**: Complete overhaul of the heat pump consumption model feature set

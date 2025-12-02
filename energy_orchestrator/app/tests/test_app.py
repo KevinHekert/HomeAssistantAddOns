@@ -1050,3 +1050,109 @@ class TestHistoricalDayEndpoint:
             data = response.get_json()
             assert data["status"] == "error"
             assert "Database error" in data["message"]
+
+
+class TestSampleRateEndpoint:
+    """Test the /api/sample_rate GET endpoint."""
+
+    def test_get_sample_rate(self, client):
+        """Get sample rate returns current configuration."""
+        with patch("app.get_sample_rate_minutes") as mock_get_rate:
+            mock_get_rate.return_value = 5
+
+            response = client.get("/api/sample_rate")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["sample_rate_minutes"] == 5
+            assert "5-minute" in data["description"]
+
+    def test_get_sample_rate_custom(self, client):
+        """Get sample rate returns custom configuration."""
+        with patch("app.get_sample_rate_minutes") as mock_get_rate:
+            mock_get_rate.return_value = 15
+
+            response = client.get("/api/sample_rate")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["sample_rate_minutes"] == 15
+            assert "15-minute" in data["description"]
+
+
+class TestResampleWithSampleRate:
+    """Test the /resample POST endpoint with configurable sample rate."""
+
+    def test_resample_with_custom_rate(self, client):
+        """Resample with custom sample rate uses provided value."""
+        mock_stats = ResampleStats(
+            slots_processed=50,
+            slots_saved=45,
+            slots_skipped=5,
+            categories=["outdoor_temp", "wind"],
+            start_time=datetime(2024, 1, 1, 12, 0, 0),
+            end_time=datetime(2024, 1, 1, 20, 0, 0),
+            sample_rate_minutes=10,
+        )
+        with patch("app.resample_all_categories") as mock_resample:
+            mock_resample.return_value = mock_stats
+
+            response = client.post(
+                "/resample",
+                json={"sample_rate_minutes": 10},
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["stats"]["sample_rate_minutes"] == 10
+            mock_resample.assert_called_once_with(10)
+
+    def test_resample_invalid_rate_not_divisor(self, client):
+        """Resample with sample rate that doesn't divide 60 returns error."""
+        response = client.post(
+            "/resample",
+            json={"sample_rate_minutes": 7},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        # Check that the error message mentions valid rates
+        assert "[1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]" in data["message"]
+
+    def test_resample_invalid_rate_too_high(self, client):
+        """Resample with sample rate > 60 returns error."""
+        response = client.post(
+            "/resample",
+            json={"sample_rate_minutes": 120},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+
+    def test_resample_default_rate(self, client):
+        """Resample without custom rate uses default."""
+        mock_stats = ResampleStats(
+            slots_processed=100,
+            slots_saved=90,
+            slots_skipped=10,
+            categories=["outdoor_temp", "wind"],
+            start_time=datetime(2024, 1, 1, 12, 0, 0),
+            end_time=datetime(2024, 1, 1, 20, 0, 0),
+            sample_rate_minutes=5,
+        )
+        with patch("app.resample_all_categories_to_5min") as mock_resample:
+            mock_resample.return_value = mock_stats
+
+            response = client.post("/resample")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["stats"]["sample_rate_minutes"] == 5
+            mock_resample.assert_called_once()

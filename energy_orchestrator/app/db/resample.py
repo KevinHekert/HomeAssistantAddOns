@@ -1,13 +1,14 @@
 """
-Resampling logic for aggregating raw sensor samples into 5-minute time slots.
+Resampling logic for aggregating raw sensor samples into configurable time slots.
 
 This module provides functionality to:
 1. Map logical categories to Home Assistant entities
 2. Compute time-weighted averages for sensor data
-3. Resample raw samples into uniform 5-minute time slots
+3. Resample raw samples into uniform time slots (configurable, default 5 minutes)
 """
 
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -20,8 +21,35 @@ from db.core import engine, init_db_schema
 
 _Logger = logging.getLogger(__name__)
 
-# Fixed step size for resampling
+# Valid sample rates that divide evenly into 60 minutes
+VALID_SAMPLE_RATES = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]
+
+# Default step size for resampling (used for backward compatibility)
 RESAMPLE_STEP = timedelta(minutes=5)
+
+
+def get_sample_rate_minutes() -> int:
+    """Get the sample rate in minutes from environment variable.
+    
+    Valid sample rates are divisors of 60: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60.
+    This ensures that time slots align properly at hour boundaries.
+    
+    Returns:
+        Sample rate in minutes, defaults to 5 if not configured or invalid.
+    """
+    try:
+        rate = int(os.environ.get("SAMPLE_RATE_MINUTES", "5"))
+        if rate not in VALID_SAMPLE_RATES:
+            _Logger.warning(
+                "Invalid sample rate %d. Valid rates are %s. Using default 5 minutes",
+                rate,
+                VALID_SAMPLE_RATES,
+            )
+            return 5
+        return rate
+    except ValueError:
+        _Logger.warning("Invalid SAMPLE_RATE_MINUTES value, using default 5 minutes")
+        return 5
 
 
 @dataclass
@@ -33,6 +61,7 @@ class ResampleStats:
     categories: list[str]
     start_time: datetime | None
     end_time: datetime | None
+    sample_rate_minutes: int = 5
 
 
 def get_primary_entities_by_category() -> dict[str, str]:
@@ -234,26 +263,59 @@ def _align_to_5min_boundary(dt: datetime) -> datetime:
     Align a datetime downwards to the nearest 5-minute boundary.
 
     Strips seconds/microseconds and floors minutes to a multiple of 5.
+    
+    Note: This function uses a fixed 5-minute boundary for backward compatibility.
+    For configurable sample rates, use _align_to_boundary().
     """
     aligned_minutes = (dt.minute // 5) * 5
     return dt.replace(minute=aligned_minutes, second=0, microsecond=0)
 
 
-def resample_all_categories_to_5min() -> ResampleStats:
+def _align_to_boundary(dt: datetime, sample_rate_minutes: int) -> datetime:
     """
-    Resample raw sensor samples into 5-minute slots for all configured categories.
+    Align a datetime downwards to the nearest boundary based on sample rate.
+
+    Strips seconds/microseconds and floors minutes to a multiple of sample_rate_minutes.
+    
+    Args:
+        dt: The datetime to align.
+        sample_rate_minutes: The sample rate in minutes (e.g., 5, 10, 15, 30, 60).
+        
+    Returns:
+        Aligned datetime with seconds/microseconds stripped and minutes floored.
+    """
+    if sample_rate_minutes <= 0:
+        sample_rate_minutes = 5
+    
+    aligned_minutes = (dt.minute // sample_rate_minutes) * sample_rate_minutes
+    return dt.replace(minute=aligned_minutes, second=0, microsecond=0)
+
+
+def resample_all_categories(sample_rate_minutes: int | None = None) -> ResampleStats:
+    """
+    Resample raw sensor samples into time slots for all configured categories.
 
     This function:
     1. Ensures DB schema exists (creates tables if missing).
     2. Fetches category-to-entity mappings.
     3. Computes the global time range where all categories have data.
-    4. Iterates over 5-minute slots and computes time-weighted averages.
+    4. Iterates over time slots and computes time-weighted averages.
     5. Only writes complete slots (all categories have values).
     6. Ensures idempotence by deleting existing rows before inserting.
+    
+    Args:
+        sample_rate_minutes: Optional sample rate in minutes. If None, uses
+            the configured SAMPLE_RATE_MINUTES environment variable (default 5).
 
     Returns:
         ResampleStats with statistics about the resampling operation.
     """
+    # Use provided sample rate or get from environment
+    if sample_rate_minutes is None:
+        sample_rate_minutes = get_sample_rate_minutes()
+    
+    resample_step = timedelta(minutes=sample_rate_minutes)
+    
     # Step 1: Ensure DB schema exists
     init_db_schema()
 
@@ -271,6 +333,7 @@ def resample_all_categories_to_5min() -> ResampleStats:
             categories=[],
             start_time=None,
             end_time=None,
+            sample_rate_minutes=sample_rate_minutes,
         )
 
     # Step 3: Get global time range
@@ -287,16 +350,18 @@ def resample_all_categories_to_5min() -> ResampleStats:
             categories=list(category_to_entity.keys()),
             start_time=None,
             end_time=None,
+            sample_rate_minutes=sample_rate_minutes,
         )
 
-    # Step 4: Align global_start to 5-minute boundary
-    aligned_start = _align_to_5min_boundary(global_start)
+    # Step 4: Align global_start to boundary based on sample rate
+    aligned_start = _align_to_boundary(global_start, sample_rate_minutes)
 
     _Logger.info(
-        "Starting resample: aligned_start=%s, global_end=%s, categories=%s",
+        "Starting resample: aligned_start=%s, global_end=%s, categories=%s, sample_rate=%dm",
         aligned_start,
         global_end,
         list(category_to_entity.keys()),
+        sample_rate_minutes,
     )
 
     # Track statistics
@@ -310,7 +375,7 @@ def resample_all_categories_to_5min() -> ResampleStats:
             slot_start = aligned_start
 
             while slot_start < global_end:
-                slot_end = slot_start + RESAMPLE_STEP
+                slot_end = slot_start + resample_step
                 slots_processed += 1
 
                 # Compute values for all categories
@@ -359,10 +424,11 @@ def resample_all_categories_to_5min() -> ResampleStats:
             session.commit()
 
             _Logger.info(
-                "Resample completed successfully. Processed: %d, Saved: %d, Skipped: %d",
+                "Resample completed successfully. Processed: %d, Saved: %d, Skipped: %d, Rate: %dm",
                 slots_processed,
                 slots_saved,
                 slots_skipped,
+                sample_rate_minutes,
             )
 
             return ResampleStats(
@@ -372,8 +438,30 @@ def resample_all_categories_to_5min() -> ResampleStats:
                 categories=list(category_to_entity.keys()),
                 start_time=aligned_start,
                 end_time=global_end,
+                sample_rate_minutes=sample_rate_minutes,
             )
 
     except SQLAlchemyError as e:
         _Logger.error("Error during resampling: %s", e)
         raise
+
+
+def resample_all_categories_to_5min() -> ResampleStats:
+    """
+    Resample raw sensor samples into time slots for all configured categories.
+    
+    This is a convenience wrapper that uses the configured sample rate
+    (defaults to 5 minutes if not configured).
+
+    This function:
+    1. Ensures DB schema exists (creates tables if missing).
+    2. Fetches category-to-entity mappings.
+    3. Computes the global time range where all categories have data.
+    4. Iterates over time slots and computes time-weighted averages.
+    5. Only writes complete slots (all categories have values).
+    6. Ensures idempotence by deleting existing rows before inserting.
+
+    Returns:
+        ResampleStats with statistics about the resampling operation.
+    """
+    return resample_all_categories()

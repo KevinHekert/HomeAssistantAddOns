@@ -2,6 +2,48 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.77] - 2025-12-02
+
+- **Sensor Category Configuration**: Refactored sensor configuration with Core/Experimental categories
+  - **Core Sensors** (always enabled, required for prediction):
+    - `hp_kwh_total`: Heat Pump kWh Total - Required for training and predictions
+    - `outdoor_temp`: Outdoor Temperature - Essential for heating demand prediction
+    - `indoor_temp`: Indoor Temperature - Required for setpoint calculations
+    - `target_temp`: Target Temperature - Required for heating predictions
+    - `wind`: Wind Speed - Affects heat loss and heating demand
+    - `humidity`: Humidity - Affects thermal comfort
+  - **Experimental Sensors** (optional, can be enabled/disabled via UI):
+    - `pressure`: Barometric Pressure - May help predict weather patterns
+    - `flow_temp`: Flow Temperature - For advanced heating system monitoring
+    - `return_temp`: Return Temperature - For advanced heating system monitoring
+    - `dhw_temp`: DHW Temperature - Used to filter DHW cycles
+    - `dhw_active`: DHW Active - Helps exclude DHW from training
+- **Sensor Configuration UI**: New "Sensor Configuration" card in Configuration tab
+  - Sensors grouped by type: Usage, Weather, Indoor, Heating
+  - Core sensors shown with green badge (always enabled)
+  - Experimental sensors shown with orange badge (toggleable)
+  - Entity ID input field for each sensor with Save button
+  - Summary showing core/experimental/enabled counts
+- **New API Endpoints**:
+  - `GET /api/sensors/category_config`: Get sensor configuration with grouping by type
+  - `POST /api/sensors/toggle`: Toggle experimental sensors (core sensors cannot be toggled)
+  - `POST /api/sensors/set_entity`: Set entity_id for any sensor
+  - `GET /api/sensors/definitions`: Get all sensor metadata definitions
+- **Configuration Migration**: On first run, sensor settings are automatically migrated from `config.yaml` environment variables to the new JSON-based configuration (`/data/sensor_category_config.json`)
+- **Sensor Sync Worker**: Updated to use new sensor category configuration
+  - Only enabled sensors are synced
+  - Dynamic sensor list based on configuration
+- **New Module**: `db/sensor_category_config.py` for sensor category management
+  - `SensorDefinition` and `SensorConfig` dataclasses
+  - `SensorCategoryConfiguration` class for configuration management
+  - Automatic migration from environment variables
+  - Persistent JSON storage
+- **Tests**: Added 70+ new tests for sensor category functionality
+  - 54 tests for sensor category configuration module
+  - 16 tests for API endpoints
+  - 7 tests for sync_sensor_mappings
+- **Note**: Sensor entity IDs in `config.yaml` (e.g., `wind_entity_id`) are now deprecated. They will be used for initial migration only. Configure sensors via the UI instead.
+
 ## [0.0.0.76] - 2025-12-02
 
 - **Settings Optimizer**: Added automatic optimization feature to find the best model configuration

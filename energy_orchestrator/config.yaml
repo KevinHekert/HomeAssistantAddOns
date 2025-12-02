@@ -32,6 +32,10 @@ options:
   indoor_temp_entity_id: sensor.anna_temperature
   target_temp_entity_id: sensor.anna_setpoint
   dhw_active_entity_id: binary_sensor.dhw_active
+  backfill_days: 14
+  sync_window_days: 1
+  sensor_sync_interval: 1
+  sensor_loop_interval: 1
 
 schema:
   db_host: str
@@ -49,3 +53,7 @@ schema:
   indoor_temp_entity_id: str?
   target_temp_entity_id: str?
   dhw_active_entity_id: str?
+  backfill_days: int?
+  sync_window_days: int?
+  sensor_sync_interval: int?
+  sensor_loop_interval: int?

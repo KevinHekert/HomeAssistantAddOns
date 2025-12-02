@@ -477,7 +477,27 @@
     <div id="tab-configuration" class="tab-content active">
         <div class="card">
             <h3>🔄 Data Resampling</h3>
-            <p>Resample raw sensor data into <span id="sampleRateText">configured</span>-minute time slots and save to resampled_samples table.</p>
+            <p>Resample raw sensor data into time slots and save to resampled_samples table.</p>
+            
+            <div class="timezone-config" style="margin-bottom: 1rem;">
+                <label for="sampleRateSelect">📊 Sample Rate (minutes):</label>
+                <select id="sampleRateSelect" onchange="updateSampleRate()" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem 1rem; font-size: 0.9rem;">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5" selected>5</option>
+                    <option value="6">6</option>
+                    <option value="10">10</option>
+                    <option value="12">12</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                    <option value="60">60</option>
+                </select>
+                <span style="color: var(--text-secondary); font-size: 0.85rem;">Current: <span id="sampleRateText">5</span> minutes</span>
+            </div>
+            
             <div style="margin-bottom: 0.5rem;">
                 <label for="flushCheckbox" style="cursor: pointer;">
                     <input type="checkbox" id="flushCheckbox" style="margin-right: 0.5rem;">
@@ -623,9 +643,47 @@
                 
                 if (response.ok) {
                     document.getElementById('sampleRateText').textContent = data.sample_rate_minutes;
+                    document.getElementById('sampleRateSelect').value = data.sample_rate_minutes;
                 }
             } catch (error) {
                 console.error('Error loading sample rate:', error);
+            }
+        }
+        
+        async function updateSampleRate() {
+            const select = document.getElementById('sampleRateSelect');
+            const statusDiv = document.getElementById('resampleStatus');
+            const newRate = parseInt(select.value);
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Updating sample rate...';
+            
+            try {
+                const response = await fetch('api/sample_rate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sample_rate_minutes: newRate })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('sampleRateText').textContent = data.sample_rate_minutes;
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message + '\n\n' + data.note;
+                    
+                    // Automatically check the flush checkbox when sample rate changes
+                    document.getElementById('flushCheckbox').checked = true;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    // Reload to restore the previous value
+                    loadSampleRate();
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                loadSampleRate();
             }
         }
         

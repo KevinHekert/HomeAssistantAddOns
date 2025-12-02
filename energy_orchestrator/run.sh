@@ -28,9 +28,5 @@ export INDOOR_TEMP_ENTITY_ID="$(bashio::config 'indoor_temp_entity_id')"
 export TARGET_TEMP_ENTITY_ID="$(bashio::config 'target_temp_entity_id')"
 export DHW_ACTIVE_ENTITY_ID="$(bashio::config 'dhw_active_entity_id')"
 
-# Sample rate configuration
-export SAMPLE_RATE_MINUTES="$(bashio::config 'sample_rate_minutes')"
-bashio::log.info "Sample rate: ${SAMPLE_RATE_MINUTES} minutes"
-
 cd /app
 exec python app.py

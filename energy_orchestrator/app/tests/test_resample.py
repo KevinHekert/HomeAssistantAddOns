@@ -1025,38 +1025,110 @@ class TestResampleStats:
 
 
 class TestConfigurableSampleRate:
-    """Test configurable sample rate functionality."""
+    """Test configurable sample rate functionality with file-based persistence."""
 
-    def test_get_sample_rate_default(self, monkeypatch):
-        """Default sample rate is 5 minutes when not configured."""
-        from db.resample import get_sample_rate_minutes
-        monkeypatch.delenv("SAMPLE_RATE_MINUTES", raising=False)
-        assert get_sample_rate_minutes() == 5
+    def test_get_sample_rate_default_no_config_file(self, monkeypatch, tmp_path):
+        """Default sample rate is 5 minutes when config file doesn't exist."""
+        import db.resample as resample_module
+        
+        # Point to non-existent config file
+        config_path = tmp_path / "nonexistent" / "resample_config.json"
+        monkeypatch.setattr(resample_module, "CONFIG_FILE_PATH", config_path)
+        
+        assert resample_module.get_sample_rate_minutes() == 5
 
-    def test_get_sample_rate_from_env(self, monkeypatch):
-        """Sample rate can be set via environment variable."""
-        from db.resample import get_sample_rate_minutes
-        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "10")
-        assert get_sample_rate_minutes() == 10
+    def test_set_and_get_sample_rate(self, monkeypatch, tmp_path):
+        """Sample rate can be set and retrieved from persistent storage."""
+        import db.resample as resample_module
+        
+        config_path = tmp_path / "resample_config.json"
+        monkeypatch.setattr(resample_module, "CONFIG_FILE_PATH", config_path)
+        
+        # Set sample rate
+        assert resample_module.set_sample_rate_minutes(10) is True
+        
+        # Verify it was saved
+        assert resample_module.get_sample_rate_minutes() == 10
 
-    def test_get_sample_rate_invalid_not_divisor(self, monkeypatch):
-        """Sample rate that doesn't divide 60 defaults to 5."""
-        from db.resample import get_sample_rate_minutes
-        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "7")
-        assert get_sample_rate_minutes() == 5
+    def test_set_sample_rate_invalid_rate(self, monkeypatch, tmp_path):
+        """Invalid sample rate returns False and doesn't save."""
+        import db.resample as resample_module
+        
+        config_path = tmp_path / "resample_config.json"
+        monkeypatch.setattr(resample_module, "CONFIG_FILE_PATH", config_path)
+        
+        # Try to set invalid rate
+        assert resample_module.set_sample_rate_minutes(7) is False
+        
+        # Default should still be used
+        assert resample_module.get_sample_rate_minutes() == 5
 
-    def test_get_sample_rate_valid_divisors(self, monkeypatch):
+    def test_get_sample_rate_valid_divisors(self, monkeypatch, tmp_path):
         """All valid divisors of 60 are accepted."""
-        from db.resample import get_sample_rate_minutes, VALID_SAMPLE_RATES
-        for rate in VALID_SAMPLE_RATES:
-            monkeypatch.setenv("SAMPLE_RATE_MINUTES", str(rate))
-            assert get_sample_rate_minutes() == rate
+        import db.resample as resample_module
+        
+        config_path = tmp_path / "resample_config.json"
+        monkeypatch.setattr(resample_module, "CONFIG_FILE_PATH", config_path)
+        
+        for rate in resample_module.VALID_SAMPLE_RATES:
+            assert resample_module.set_sample_rate_minutes(rate) is True
+            assert resample_module.get_sample_rate_minutes() == rate
 
-    def test_get_sample_rate_invalid_string(self, monkeypatch):
-        """Invalid sample rate defaults to 5."""
-        from db.resample import get_sample_rate_minutes
-        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "invalid")
-        assert get_sample_rate_minutes() == 5
+    def test_get_sample_rate_corrupt_config_file(self, monkeypatch, tmp_path):
+        """Corrupt config file defaults to 5."""
+        import db.resample as resample_module
+        
+        config_path = tmp_path / "resample_config.json"
+        monkeypatch.setattr(resample_module, "CONFIG_FILE_PATH", config_path)
+        
+        # Create corrupt JSON file
+        config_path.write_text("not valid json {")
+        
+        assert resample_module.get_sample_rate_minutes() == 5
+
+    def test_get_sample_rate_config_file_missing_key(self, monkeypatch, tmp_path):
+        """Config file without sample_rate_minutes defaults to 5."""
+        import db.resample as resample_module
+        import json
+        
+        config_path = tmp_path / "resample_config.json"
+        monkeypatch.setattr(resample_module, "CONFIG_FILE_PATH", config_path)
+        
+        # Create config file without sample_rate_minutes
+        config_path.write_text(json.dumps({"other_key": "value"}))
+        
+        assert resample_module.get_sample_rate_minutes() == 5
+
+    def test_set_sample_rate_creates_parent_directories(self, monkeypatch, tmp_path):
+        """set_sample_rate_minutes creates parent directories if they don't exist."""
+        import db.resample as resample_module
+        
+        config_path = tmp_path / "nested" / "dir" / "resample_config.json"
+        monkeypatch.setattr(resample_module, "CONFIG_FILE_PATH", config_path)
+        
+        assert resample_module.set_sample_rate_minutes(15) is True
+        assert config_path.exists()
+        assert resample_module.get_sample_rate_minutes() == 15
+
+    def test_set_sample_rate_preserves_other_config(self, monkeypatch, tmp_path):
+        """set_sample_rate_minutes preserves other keys in config file."""
+        import db.resample as resample_module
+        import json
+        
+        config_path = tmp_path / "resample_config.json"
+        monkeypatch.setattr(resample_module, "CONFIG_FILE_PATH", config_path)
+        
+        # Create config file with other settings
+        config_path.write_text(json.dumps({"other_setting": "value", "sample_rate_minutes": 5}))
+        
+        # Update sample rate
+        assert resample_module.set_sample_rate_minutes(10) is True
+        
+        # Verify other settings are preserved
+        with open(config_path) as f:
+            config = json.load(f)
+        assert config["other_setting"] == "value"
+        assert config["sample_rate_minutes"] == 10
 
 
 class TestAlignToBoundary:
@@ -1205,11 +1277,15 @@ class TestResampleAllCategoriesWithConfigurableRate:
         stats = resample_all_categories(sample_rate_minutes=10)
         assert stats.sample_rate_minutes == 10
 
-    def test_resample_uses_env_when_no_arg(self, patch_engine, monkeypatch):
-        """When no sample_rate_minutes arg, uses environment variable."""
+    def test_resample_uses_config_file_when_no_arg(self, patch_engine, monkeypatch, tmp_path):
+        """When no sample_rate_minutes arg, uses persistent config file."""
+        import db.resample as resample_module
         from db.resample import resample_all_categories
         
-        monkeypatch.setenv("SAMPLE_RATE_MINUTES", "15")
+        # Set up config file with 15-minute rate
+        config_path = tmp_path / "resample_config.json"
+        monkeypatch.setattr(resample_module, "CONFIG_FILE_PATH", config_path)
+        resample_module.set_sample_rate_minutes(15)
         
         with Session(patch_engine) as session:
             session.add(

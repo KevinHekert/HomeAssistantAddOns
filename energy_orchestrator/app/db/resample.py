@@ -7,10 +7,12 @@ This module provides functionality to:
 3. Resample raw samples into uniform time slots (configurable, default 5 minutes)
 """
 
+import json
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
@@ -27,9 +29,87 @@ VALID_SAMPLE_RATES = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]
 # Default step size for resampling (used for backward compatibility)
 RESAMPLE_STEP = timedelta(minutes=5)
 
+# Default sample rate in minutes
+DEFAULT_SAMPLE_RATE = 5
+
+# Configuration file path for persistent sample rate storage
+# In Home Assistant add-ons, /data is the persistent data directory
+CONFIG_FILE_PATH = Path(os.environ.get("DATA_DIR", "/data")) / "resample_config.json"
+
+
+def _get_config_file_path() -> Path:
+    """Get the configuration file path. Allows overriding for tests."""
+    return CONFIG_FILE_PATH
+
+
+def _load_sample_rate_config() -> int:
+    """Load sample rate from persistent configuration file.
+    
+    Returns:
+        Sample rate in minutes, defaults to 5 if not configured or invalid.
+    """
+    config_path = _get_config_file_path()
+    try:
+        if config_path.exists():
+            with open(config_path, "r") as f:
+                config = json.load(f)
+                rate = config.get("sample_rate_minutes", DEFAULT_SAMPLE_RATE)
+                if isinstance(rate, int) and rate in VALID_SAMPLE_RATES:
+                    return rate
+                _Logger.warning(
+                    "Invalid sample rate %s in config. Valid rates are %s. Using default %d minutes",
+                    rate,
+                    VALID_SAMPLE_RATES,
+                    DEFAULT_SAMPLE_RATE,
+                )
+    except (json.JSONDecodeError, OSError) as e:
+        _Logger.warning("Error loading sample rate config: %s. Using default %d minutes", e, DEFAULT_SAMPLE_RATE)
+    return DEFAULT_SAMPLE_RATE
+
+
+def _save_sample_rate_config(rate: int) -> bool:
+    """Save sample rate to persistent configuration file.
+    
+    Args:
+        rate: Sample rate in minutes. Must be one of VALID_SAMPLE_RATES.
+        
+    Returns:
+        True if saved successfully, False otherwise.
+    """
+    if rate not in VALID_SAMPLE_RATES:
+        _Logger.error("Cannot save invalid sample rate %d. Valid rates are %s", rate, VALID_SAMPLE_RATES)
+        return False
+    
+    config_path = _get_config_file_path()
+    try:
+        # Ensure parent directory exists
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Load existing config or create new
+        config = {}
+        if config_path.exists():
+            try:
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        
+        # Update sample rate
+        config["sample_rate_minutes"] = rate
+        
+        # Save config
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+        
+        _Logger.info("Sample rate saved to config: %d minutes", rate)
+        return True
+    except OSError as e:
+        _Logger.error("Error saving sample rate config: %s", e)
+        return False
+
 
 def get_sample_rate_minutes() -> int:
-    """Get the sample rate in minutes from environment variable.
+    """Get the sample rate in minutes from persistent configuration.
     
     Valid sample rates are divisors of 60: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60.
     This ensures that time slots align properly at hour boundaries.
@@ -37,19 +117,26 @@ def get_sample_rate_minutes() -> int:
     Returns:
         Sample rate in minutes, defaults to 5 if not configured or invalid.
     """
-    try:
-        rate = int(os.environ.get("SAMPLE_RATE_MINUTES", "5"))
-        if rate not in VALID_SAMPLE_RATES:
-            _Logger.warning(
-                "Invalid sample rate %d. Valid rates are %s. Using default 5 minutes",
-                rate,
-                VALID_SAMPLE_RATES,
-            )
-            return 5
-        return rate
-    except ValueError:
-        _Logger.warning("Invalid SAMPLE_RATE_MINUTES value, using default 5 minutes")
-        return 5
+    return _load_sample_rate_config()
+
+
+def set_sample_rate_minutes(rate: int) -> bool:
+    """Set the sample rate in minutes and persist to configuration.
+    
+    Args:
+        rate: Sample rate in minutes. Must be one of VALID_SAMPLE_RATES.
+        
+    Returns:
+        True if saved successfully, False if rate is invalid or save failed.
+    """
+    if rate not in VALID_SAMPLE_RATES:
+        _Logger.warning(
+            "Invalid sample rate %d. Valid rates are %s.",
+            rate,
+            VALID_SAMPLE_RATES,
+        )
+        return False
+    return _save_sample_rate_config(rate)
 
 
 @dataclass

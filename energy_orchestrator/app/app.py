@@ -4,7 +4,7 @@ from flask import Flask, render_template, jsonify, request
 import pandas as pd
 from ha.ha_api import get_entity_state
 from workers import start_sensor_logging_worker
-from db.resample import resample_all_categories, get_sample_rate_minutes, VALID_SAMPLE_RATES, flush_resampled_samples
+from db.resample import resample_all_categories, get_sample_rate_minutes, set_sample_rate_minutes, VALID_SAMPLE_RATES, flush_resampled_samples
 from db.core import init_db_schema
 from db.sensor_config import sync_sensor_mappings
 from db.samples import get_sensor_info
@@ -145,6 +145,73 @@ def get_sample_rate():
         })
     except Exception as e:
         _Logger.error("Error getting sample rate: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/sample_rate")
+def update_sample_rate():
+    """Update the sample rate configuration.
+    
+    Request body:
+    {
+        "sample_rate_minutes": 5  // Must be one of VALID_SAMPLE_RATES
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "sample_rate_minutes": 5,
+        "message": "Sample rate updated to 5 minutes",
+        "note": "Flush existing resampled data and resample to use the new rate"
+    }
+    """
+    try:
+        if not request.is_json:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+                "valid_rates": VALID_SAMPLE_RATES,
+            }), 400
+        
+        data = request.get_json()
+        if not data or "sample_rate_minutes" not in data:
+            return jsonify({
+                "status": "error",
+                "message": "sample_rate_minutes is required",
+                "valid_rates": VALID_SAMPLE_RATES,
+            }), 400
+        
+        try:
+            rate = int(data["sample_rate_minutes"])
+        except (TypeError, ValueError):
+            return jsonify({
+                "status": "error",
+                "message": "sample_rate_minutes must be an integer",
+                "valid_rates": VALID_SAMPLE_RATES,
+            }), 400
+        
+        if rate not in VALID_SAMPLE_RATES:
+            return jsonify({
+                "status": "error",
+                "message": f"sample_rate_minutes must be one of {VALID_SAMPLE_RATES}",
+                "valid_rates": VALID_SAMPLE_RATES,
+            }), 400
+        
+        if set_sample_rate_minutes(rate):
+            _Logger.info("Sample rate updated to %d minutes via API", rate)
+            return jsonify({
+                "status": "success",
+                "sample_rate_minutes": rate,
+                "message": f"Sample rate updated to {rate} minutes",
+                "note": "Flush existing resampled data and resample to use the new rate",
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to save sample rate configuration",
+            }), 500
+    except Exception as e:
+        _Logger.error("Error updating sample rate: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

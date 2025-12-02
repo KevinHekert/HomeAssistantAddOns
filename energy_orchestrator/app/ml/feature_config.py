@@ -355,9 +355,12 @@ class FeatureConfiguration:
     - Which features are used in training and prediction
     - Feature metadata for UI display and documentation
     - Timezone settings for time-based features
+    - Two-step prediction settings (experimental)
     """
     timezone: str = DEFAULT_TIMEZONE
     experimental_enabled: dict[str, bool] = field(default_factory=dict)
+    # Two-step prediction: first classify active/inactive, then regress for active hours only
+    two_step_prediction_enabled: bool = False
     
     def __post_init__(self):
         """Initialize experimental feature states from defaults if not provided."""
@@ -480,11 +483,26 @@ class FeatureConfiguration:
                           self.timezone, DEFAULT_TIMEZONE)
             return ZoneInfo(DEFAULT_TIMEZONE)
     
+    def enable_two_step_prediction(self) -> None:
+        """Enable the two-step prediction mode (classifier + regressor)."""
+        self.two_step_prediction_enabled = True
+        _Logger.info("Two-step prediction enabled")
+    
+    def disable_two_step_prediction(self) -> None:
+        """Disable the two-step prediction mode (use single regressor)."""
+        self.two_step_prediction_enabled = False
+        _Logger.info("Two-step prediction disabled")
+    
+    def is_two_step_prediction_enabled(self) -> bool:
+        """Check if two-step prediction is enabled."""
+        return self.two_step_prediction_enabled
+    
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
             "timezone": self.timezone,
             "experimental_enabled": self.experimental_enabled,
+            "two_step_prediction_enabled": self.two_step_prediction_enabled,
         }
     
     @classmethod
@@ -493,6 +511,7 @@ class FeatureConfiguration:
         return cls(
             timezone=data.get("timezone", DEFAULT_TIMEZONE),
             experimental_enabled=data.get("experimental_enabled", {}),
+            two_step_prediction_enabled=data.get("two_step_prediction_enabled", False),
         )
     
     def save(self) -> bool:

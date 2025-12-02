@@ -287,6 +287,87 @@ MODEL_DIR=/custom/path
 
 The model file name is always `heating_demand_model.joblib`.
 
+### Two-Step Prediction (Experimental)
+
+The two-step prediction approach addresses a common issue where the single-regressor model:
+- **Overestimates** when the heat pump is off (predicting kWh when there should be 0)
+- **Underestimates** during heavy heating (averaging with inactive hours)
+
+#### How It Works
+
+1. **Step 1 - Classifier**: Predicts whether the hour will be "active" (heating on) or "inactive" (no heating)
+2. **Step 2 - Regressor**: For active hours only, predicts how many kWh will be used. Inactive hours automatically return 0 kWh.
+
+#### Automatic Threshold Detection
+
+The system automatically determines what counts as "active" vs "inactive":
+
+- Analyzes the distribution of target kWh values during training
+- Uses the **5th percentile** of positive kWh values as the threshold
+- Minimum threshold of **0.01 kWh** (10 Wh) to filter noise/standby consumption
+- Threshold is stored with the model and reused for predictions
+
+**No manual configuration required** - the threshold is computed automatically from your data.
+
+#### Enabling Two-Step Prediction
+
+```http
+POST /api/features/two_step_prediction
+Content-Type: application/json
+
+{"enabled": true}
+```
+
+#### Training the Two-Step Model
+
+```http
+POST /api/train/two_step_heating_demand
+```
+
+This trains both the classifier and regressor. Response includes:
+- `threshold`: Computed activity threshold and sample counts
+- `classifier_metrics`: Accuracy, precision, recall, F1 score
+- `regressor_metrics`: MAE, MAPE, R² (on active samples only)
+
+#### Making Two-Step Predictions
+
+```http
+POST /api/predictions/two_step_scenario
+Content-Type: application/json
+
+{
+  "timeslots": [
+    {
+      "timestamp": "2024-01-15T14:00:00",
+      "outdoor_temperature": 5.0,
+      "wind_speed": 3.0,
+      "humidity": 75.0,
+      "pressure": 1013.0,
+      "target_temperature": 20.0
+    }
+  ]
+}
+```
+
+Response includes for each hour:
+- `is_active`: Whether heating is predicted to be active
+- `predicted_kwh`: Predicted consumption (0 for inactive hours)
+- `activity_probability`: Classifier confidence (0-1)
+
+#### Model Storage
+
+The two-step model is stored separately:
+
+```
+/data/heating_demand_two_step_model.joblib
+```
+
+Contains:
+- Trained classifier (GradientBoostingClassifier)
+- Trained regressor (GradientBoostingRegressor)
+- Activity threshold (kWh)
+- Feature names and training timestamp
+
 ---
 
 ## API Reference

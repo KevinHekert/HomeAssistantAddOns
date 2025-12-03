@@ -384,81 +384,67 @@ class TestOptimizerEndpoints:
     """Test the optimizer API endpoints."""
 
     def test_run_optimizer_success(self, client):
-        """Run optimizer returns 200 with results."""
-        mock_df = pd.DataFrame({
-            "outdoor_temp": [10.0, 11.0],
-            "target_heating_kwh_1h": [1.0, 1.5],
-        })
-        mock_stats = MagicMock()
-        mock_model = MagicMock()
-        mock_metrics = MagicMock()
-        mock_metrics.val_mape = 0.1
-        mock_metrics.val_mae = 0.15
-        mock_metrics.val_r2 = 0.85
-        mock_metrics.train_samples = 60
-        mock_metrics.val_samples = 20
-        mock_metrics.features = ["outdoor_temp"]
-        
-        mock_two_step_metrics = MagicMock()
-        mock_two_step_metrics.regressor_val_mape = 0.08
-        mock_two_step_metrics.regressor_val_mae = 0.18
-        mock_two_step_metrics.regressor_val_r2 = 0.85
-        mock_two_step_metrics.regressor_train_samples = 200
-        mock_two_step_metrics.regressor_val_samples = 50
-        mock_two_step_metrics.features = ["outdoor_temp"]
-        
-        with patch("app.build_heating_feature_dataset") as mock_build, \
-             patch("app.train_heating_demand_model") as mock_train, \
-             patch("app.train_two_step_heating_demand_model") as mock_train_two:
-            mock_build.return_value = (mock_df, mock_stats)
-            mock_train.return_value = (mock_model, mock_metrics)
-            mock_train_two.return_value = (mock_model, mock_two_step_metrics)
+        """Run optimizer starts async and returns success."""
+        with patch("app.threading.Thread") as mock_thread_class:
+            mock_thread = MagicMock()
+            mock_thread_class.return_value = mock_thread
             
             response = client.post("/api/optimizer/run")
         
         assert response.status_code == 200
         data = response.get_json()
         assert data["status"] == "success"
-        assert "results" in data
-        assert len(data["results"]) > 0
+        assert data["running"] is True
+        assert "background" in data["message"].lower()
+        
+        # Verify thread was started
+        mock_thread_class.assert_called_once()
+        mock_thread.start.assert_called_once()
     
     def test_run_optimizer_returns_best_result(self, client):
-        """Run optimizer returns best result in response."""
-        mock_df = pd.DataFrame({
-            "outdoor_temp": [10.0, 11.0],
-            "target_heating_kwh_1h": [1.0, 1.5],
-        })
-        mock_stats = MagicMock()
-        mock_model = MagicMock()
-        mock_metrics = MagicMock()
-        mock_metrics.val_mape = 0.10
-        mock_metrics.val_mae = 0.15
-        mock_metrics.val_r2 = 0.85
-        mock_metrics.train_samples = 60
-        mock_metrics.val_samples = 20
-        mock_metrics.features = ["outdoor_temp"]
+        """Run optimizer with async - best result available via status endpoint."""
+        import app as app_module
+        from ml.optimizer import OptimizerProgress, OptimizationResult
         
-        mock_two_step_metrics = MagicMock()
-        mock_two_step_metrics.regressor_val_mape = 0.08
-        mock_two_step_metrics.regressor_val_mae = 0.18
-        mock_two_step_metrics.regressor_val_r2 = 0.85
-        mock_two_step_metrics.regressor_train_samples = 200
-        mock_two_step_metrics.regressor_val_samples = 50
-        mock_two_step_metrics.features = ["outdoor_temp"]
+        # Set up completed progress with best result
+        result = OptimizationResult(
+            config_name="Test",
+            model_type="two_step",
+            experimental_features={"pressure": True},
+            val_mape_pct=8.0,
+            val_mae_kwh=0.18,
+            val_r2=0.85,
+            train_samples=200,
+            val_samples=50,
+            success=True,
+        )
         
-        with patch("app.build_heating_feature_dataset") as mock_build, \
-             patch("app.train_heating_demand_model") as mock_train, \
-             patch("app.train_two_step_heating_demand_model") as mock_train_two:
-            mock_build.return_value = (mock_df, mock_stats)
-            mock_train.return_value = (mock_model, mock_metrics)
-            mock_train_two.return_value = (mock_model, mock_two_step_metrics)
+        progress = OptimizerProgress(
+            total_configurations=2,
+            completed_configurations=2,
+            current_configuration="",
+            current_model_type="",
+            phase="complete",
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+        )
+        progress.results = [result]
+        progress.best_result = result
+        
+        app_module._optimizer_progress = progress
+        app_module._optimizer_running = False
+        
+        try:
+            response = client.get("/api/optimizer/status")
             
-            response = client.post("/api/optimizer/run")
-        
-        assert response.status_code == 200
-        data = response.get_json()
-        assert "best_result" in data
-        assert data["best_result"]["model_type"] == "two_step"  # Lower MAPE
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert data["running"] is False
+            assert "best_result" in data["progress"]
+            assert data["progress"]["best_result"]["model_type"] == "two_step"
+        finally:
+            app_module._optimizer_progress = None
     
     def test_get_optimizer_status_no_run(self, client):
         """Get optimizer status returns message when no run has happened."""

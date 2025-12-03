@@ -2,6 +2,21 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.111] - 2025-12-03
+
+- **Fix onClick JavaScript Syntax Error in Optimizer Results Table**
+  - **Issue**: Clicking on optimizer result rows caused JavaScript syntax error "Unexpected end of input"
+  - **Root Cause**: JSON.stringify() was used directly in HTML onclick attributes without proper escaping
+    - Double quotes in JSON broke the HTML attribute syntax
+    - Example: `onclick="func({\"key\": \"value\"})"` created malformed HTML/JavaScript
+  - **Solution**: Properly escape JSON data before embedding in onclick attributes
+    - Convert JSON to string and escape single quotes: `JSON.stringify(data).replace(/'/g, "\\'")`
+    - Use single-quoted strings in onclick with JSON.parse: `onclick="func(JSON.parse('...'))`
+    - This ensures JSON data is safely embedded without breaking HTML attribute syntax
+  - **Impact**: onClick functionality now works correctly for optimizer result rows
+  - **Files Changed**: `app/templates/index.html` (lines 3117-3121, 3371-3376)
+  - **Testing**: Validated with test HTML file containing complex JSON with quotes and special characters
+
 ## [0.0.0.110] - 2025-12-03
 
 - **Fix GA Phase Feature Diversity - Ensure Small Feature Counts Are Tested**

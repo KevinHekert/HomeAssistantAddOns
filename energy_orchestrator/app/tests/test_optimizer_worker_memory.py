@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock, call
 import pandas as pd
 
 from ml.optimizer import (
+    SearchStrategy,
     _train_single_configuration,
     run_optimization,
     OptimizationResult,
@@ -211,7 +212,9 @@ class TestConfiguredMaxWorkers:
                     max_memory_mb=None,
                     configured_max_workers=5,
                     configured_max_combinations=2,  # Limit combinations for fast test execution
-                )
+                
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
+            )
             except Exception:
                 # Expected to fail due to mocking, but we just want to check the logger call
                 pass
@@ -258,7 +261,9 @@ class TestConfiguredMaxWorkers:
                     max_memory_mb=None,
                     configured_max_workers=None,
                     configured_max_combinations=2,  # Limit combinations for fast test execution
-                )
+                
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
+            )
             except Exception:
                 # Expected to fail due to mocking, but we just want to check calc was called
                 pass
@@ -304,7 +309,9 @@ class TestConfiguredMaxWorkers:
                     max_memory_mb=None,
                     configured_max_workers=0,
                     configured_max_combinations=2,  # Limit combinations for fast test execution
-                )
+                
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
+            )
             except Exception:
                 # Expected to fail due to mocking, but we just want to check calc was called
                 pass

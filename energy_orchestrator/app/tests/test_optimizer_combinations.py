@@ -16,6 +16,7 @@ from math import comb
 from itertools import combinations as iter_combinations
 
 from ml.optimizer import (
+    SearchStrategy,
     _generate_experimental_feature_combinations,
     run_optimization,
     _train_single_configuration,
@@ -459,6 +460,8 @@ class TestThreadSafety:
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
                 configured_max_combinations=2,  # Limit to 2 combinations for fast test
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # Should have 2 combinations × 2 models = 4 results in database

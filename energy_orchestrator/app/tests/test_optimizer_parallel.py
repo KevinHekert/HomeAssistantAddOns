@@ -9,6 +9,7 @@ import pandas as pd
 import time
 
 from ml.optimizer import (
+    SearchStrategy,
     run_optimization,
     OptimizerProgress,
     OptimizationResult,
@@ -351,6 +352,8 @@ class TestParallelExecution:
                 min_samples=50,
                 configured_max_combinations=2,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
             elapsed = time.time() - start_time
         
@@ -404,6 +407,8 @@ class TestParallelExecution:
                 min_samples=50,
                 configured_max_combinations=2,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # Progress callback should have been called multiple times
@@ -502,6 +507,8 @@ class TestParallelExecution:
                 min_samples=50,
                 configured_max_combinations=3,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # All results should be recorded despite concurrent updates
@@ -552,6 +559,8 @@ class TestProgressReporting:
                 min_samples=50,
                 configured_max_combinations=2,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # Check that progress messages include X/Y format
@@ -593,6 +602,8 @@ class TestProgressReporting:
                 min_samples=50,
                 configured_max_combinations=1,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # Should have messages about new best results (marked with trophy emoji)

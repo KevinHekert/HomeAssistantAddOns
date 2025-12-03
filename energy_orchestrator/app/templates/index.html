@@ -264,6 +264,30 @@
         .results-table tr:hover {
             background: var(--bg-tertiary);
         }
+        .results-table tbody tr {
+            cursor: pointer;
+        }
+        .feature-details-row {
+            background: var(--bg-secondary) !important;
+        }
+        .feature-details-row td {
+            padding: 1rem !important;
+        }
+        .feature-details-content {
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            border-left: 3px solid var(--accent-blue);
+        }
+        .feature-tag {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            margin: 0.2rem;
+            background: var(--accent-blue);
+            color: white;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
         .chart-container {
             margin-top: 1rem;
             background: var(--bg-tertiary);
@@ -2877,6 +2901,116 @@
             }
         }
 
+        function toggleFeatureDetails(resultId, features, trainSamples, valSamples, firstRowData, lastRowData) {
+            // Check if details row already exists
+            const detailsRowId = `features-${resultId}`;
+            const existingRow = document.getElementById(detailsRowId);
+            
+            if (existingRow) {
+                // Remove the details row if it exists
+                existingRow.remove();
+                return;
+            }
+            
+            // Find the result row
+            const resultRow = event.target.closest('tr');
+            if (!resultRow) return;
+            
+            // Create new details row
+            const detailsRow = document.createElement('tr');
+            detailsRow.id = detailsRowId;
+            detailsRow.className = 'feature-details-row';
+            
+            const detailsCell = document.createElement('td');
+            detailsCell.colSpan = 7;  // Span all columns
+            
+            // Core features (15 features - always used in their configured state)
+            const coreFeatures = [
+                'outdoor_temp', 'wind', 'humidity', 'indoor_temp', 'target_temp',
+                'outdoor_temp_avg_1h', 'outdoor_temp_avg_24h', 'indoor_temp_avg_6h', 
+                'indoor_temp_avg_24h', 'target_temp_avg_6h', 'target_temp_avg_24h',
+                'hour_of_day', 'is_weekend', 'is_night', 'hp_kwh_prev_1h'
+            ];
+            
+            // Build features display
+            let html = '<div class="feature-details-content">';
+            html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">';
+            html += '<h5 style="margin: 0;">Features Used in Training:</h5>';
+            html += '<div style="color: var(--text-secondary); font-size: 0.9rem;">';
+            html += `Training: <strong>${trainSamples || 0}</strong> rows | Validation: <strong>${valSamples || 0}</strong> rows`;
+            html += '</div>';
+            html += '</div>';
+            
+            // Show core features
+            html += '<div style="margin-bottom: 1rem;">';
+            html += '<h6 style="margin: 0 0 0.5rem 0; color: var(--accent-green); font-size: 0.9rem;">Core Features (always used):</h6>';
+            html += '<div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">';
+            for (const coreFeat of coreFeatures) {
+                html += `<span class="feature-tag" style="background: var(--accent-green);">${coreFeat} (${trainSamples || 0} rows)</span>`;
+            }
+            html += '</div>';
+            html += '</div>';
+            
+            // Show experimental features
+            html += '<div>';
+            html += '<h6 style="margin: 0 0 0.5rem 0; color: var(--accent-orange); font-size: 0.9rem;">Experimental Features (tested in this configuration):</h6>';
+            if (features && Object.keys(features).length > 0) {
+                const enabledFeatures = Object.entries(features).filter(([_, value]) => value === true);
+                
+                if (enabledFeatures.length > 0) {
+                    html += '<div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">';
+                    for (const [key, _] of enabledFeatures) {
+                        html += `<span class="feature-tag" style="background: var(--accent-orange);">${key} (${trainSamples || 0} rows)</span>`;
+                    }
+                    html += '</div>';
+                } else {
+                    html += '<p style="color: var(--text-secondary); margin: 0;">None enabled (core features only)</p>';
+                }
+            } else {
+                html += '<p style="color: var(--text-secondary); margin: 0;">None enabled (core features only)</p>';
+            }
+            html += '</div>';
+            
+            html += `<p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0.75rem 0 0 0; font-style: italic;">Total: ${coreFeatures.length} core + ${Object.values(features || {}).filter(v => v === true).length} experimental features = ${coreFeatures.length + Object.values(features || {}).filter(v => v === true).length} features used</p>`;
+            
+            // Display actual training data (first and last rows)
+            if (firstRowData || lastRowData) {
+                html += '<div style="margin-top: 1rem;">';
+                html += '<h6 style="margin: 0 0 0.5rem 0; color: var(--text-primary); font-size: 0.9rem;">📊 Training Dataset Samples:</h6>';
+                
+                if (firstRowData) {
+                    html += '<div style="margin-bottom: 0.75rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px; border-left: 3px solid var(--accent-green);">';
+                    html += '<strong style="color: var(--accent-green);">First Row:</strong>';
+                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.25rem; margin-top: 0.25rem; font-size: 0.8rem;">';
+                    for (const [key, value] of Object.entries(firstRowData)) {
+                        const displayValue = value !== null && value !== undefined ? (typeof value === 'number' ? value.toFixed(4) : value) : 'null';
+                        html += `<span style="color: var(--text-secondary);"><strong>${key}:</strong> ${displayValue}</span>`;
+                    }
+                    html += '</div></div>';
+                }
+                
+                if (lastRowData) {
+                    html += '<div style="padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px; border-left: 3px solid var(--accent-blue);">';
+                    html += '<strong style="color: var(--accent-blue);">Last Row:</strong>';
+                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.25rem; margin-top: 0.25rem; font-size: 0.8rem;">';
+                    for (const [key, value] of Object.entries(lastRowData)) {
+                        const displayValue = value !== null && value !== undefined ? (typeof value === 'number' ? value.toFixed(4) : value) : 'null';
+                        html += `<span style="color: var(--text-secondary);"><strong>${key}:</strong> ${displayValue}</span>`;
+                    }
+                    html += '</div></div>';
+                }
+                
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            detailsCell.innerHTML = html;
+            detailsRow.appendChild(detailsCell);
+            
+            // Insert after the clicked row
+            resultRow.parentNode.insertBefore(detailsRow, resultRow.nextSibling);
+        }
+
         async function runOptimizer() {
             const btn = document.getElementById('runOptimizerBtn');
             const statusDiv = document.getElementById('optimizerStatus');
@@ -2950,7 +3084,14 @@
                                         
                                         // Build results table with Apply buttons
                                         if (p.results && p.results.length > 0) {
-                                            let html = '<h4 style="margin-bottom: 0.5rem;">All Results</h4>';
+                                            const maxResults = 30;
+                                            const totalResults = p.results.length;
+                                            let html = '<h4 style="margin-bottom: 0.5rem;">Top ' + Math.min(maxResults, totalResults) + ' Results';
+                                            if (totalResults > maxResults) {
+                                                html += ' <span style="color: var(--text-secondary); font-size: 0.85rem;">(showing ' + maxResults + ' of ' + totalResults + ')</span>';
+                                            }
+                                            html += '</h4>';
+                                            html += '<p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">Click on a row to view features used</p>';
                                             html += '<table class="results-table"><thead><tr>';
                                             html += '<th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th><th>Action</th>';
                                             html += '</tr></thead><tbody>';
@@ -2962,14 +3103,20 @@
                                                 return a.val_mape_pct - b.val_mape_pct;
                                             });
                                             
-                                            sortedResults.forEach((result, idx) => {
+                                            // Limit to top 30 results
+                                            const limitedResults = sortedResults.slice(0, maxResults);
+                                            
+                                            limitedResults.forEach((result, idx) => {
                                                 const isBest = p.best_result && 
                                                     result.config_name === p.best_result.config_name && 
                                                     result.model_type === p.best_result.model_type;
                                                 // Light green background for winner
                                                 const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
                                                 
-                                                html += `<tr style="${rowStyle}">`;
+                                                // Store features for click handler
+                                                const featuresJson = JSON.stringify(result.experimental_features || {}).replace(/"/g, '&quot;');
+                                                
+                                                html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(${result.id}, ${JSON.stringify(result.experimental_features || {})}, ${result.train_samples || 0}, ${result.val_samples || 0}, ${JSON.stringify(result.first_row_data || null)}, ${JSON.stringify(result.last_row_data || null)})">`;
                                                 html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
                                                 html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
                                                 html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
@@ -2977,9 +3124,9 @@
                                                 html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
                                                 html += `<td>${result.success ? '✓' : '✗ ' + (result.error_message || 'Failed')}</td>`;
                                                 
-                                                // Add apply button for successful results
+                                                // Add apply button for successful results (stop propagation to prevent row click)
                                                 if (result.success && result.id) {
-                                                    html += `<td><button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" onclick="applyResultById(${result.id})">Apply</button></td>`;
+                                                    html += `<td><button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" onclick="event.stopPropagation(); applyResultById(${result.id})">Apply</button></td>`;
                                                 } else {
                                                     html += `<td>-</td>`;
                                                 }
@@ -3190,7 +3337,14 @@
                     
                     // Show results table
                     if (run.results && run.results.length > 0) {
-                        let html = '<h4 style="margin-bottom: 0.5rem;">Results from Previous Run</h4>';
+                        const maxResults = 30;
+                        const totalResults = run.results.length;
+                        let html = '<h4 style="margin-bottom: 0.5rem;">Results from Previous Run - Top ' + Math.min(maxResults, totalResults);
+                        if (totalResults > maxResults) {
+                            html += ' <span style="color: var(--text-secondary); font-size: 0.85rem;">(showing ' + maxResults + ' of ' + totalResults + ')</span>';
+                        }
+                        html += '</h4>';
+                        html += '<p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">Click on a row to view features used</p>';
                         html += '<table class="results-table"><thead><tr>';
                         html += '<th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th><th>Action</th>';
                         html += '</tr></thead><tbody>';
@@ -3202,24 +3356,27 @@
                             return a.val_mape_pct - b.val_mape_pct;
                         });
                         
-                        sortedResults.forEach((result) => {
+                        // Limit to top 30 results
+                        const limitedResults = sortedResults.slice(0, maxResults);
+                        
+                        limitedResults.forEach((result) => {
                             const isBest = run.best_result && 
                                 result.config_name === run.best_result.config_name && 
                                 result.model_type === run.best_result.model_type;
                             // Light green background for winner
                             const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
                             
-                            html += `<tr style="${rowStyle}">`;
+                            html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(${result.id}, ${JSON.stringify(result.experimental_features || {})}, ${result.train_samples || 0}, ${result.val_samples || 0}, ${JSON.stringify(result.first_row_data || null)}, ${JSON.stringify(result.last_row_data || null)})">`;
                             html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
                             html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
                             html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
                             html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
                             html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
-                            html += `<td>${result.success ? '✓' : '✗ ' + (result.error_message || 'Failed')}</td>`;
+                            html += `<td>${result.success ? '✓' : '✗' + (result.error_message || 'Failed')}</td>`;
                             
-                            // Add apply button for successful results
+                            // Add apply button for successful results (stop propagation to prevent row click)
                             if (result.success && result.id) {
-                                html += `<td><button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" onclick="applyResultById(${result.id})">Apply</button></td>`;
+                                html += `<td><button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" onclick="event.stopPropagation(); applyResultById(${result.id})">Apply</button></td>`;
                             } else {
                                 html += `<td>-</td>`;
                             }

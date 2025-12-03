@@ -209,6 +209,8 @@ class OptimizationResult:
     success: bool
     error_message: Optional[str] = None
     training_timestamp: Optional[datetime] = None
+    first_row_data: Optional[dict] = None  # First row of training dataset
+    last_row_data: Optional[dict] = None   # Last row of training dataset
 
 
 @dataclass
@@ -789,6 +791,24 @@ def _train_single_configuration(
         # Train model
         model, metrics = train_fn(df)
         
+        # Capture first and last row of actual training data before cleanup
+        first_row_data = None
+        last_row_data = None
+        if df is not None and len(df) > 0:
+            try:
+                # Convert first and last rows to dict, handling NaN values
+                first_row = df.iloc[0].to_dict()
+                last_row = df.iloc[-1].to_dict()
+                
+                # Replace NaN with None for JSON serialization
+                import math as _math
+                first_row_data = {k: (None if isinstance(v, float) and _math.isnan(v) else float(v) if isinstance(v, (int, float)) else v) 
+                                 for k, v in first_row.items()}
+                last_row_data = {k: (None if isinstance(v, float) and _math.isnan(v) else float(v) if isinstance(v, (int, float)) else v) 
+                                for k, v in last_row.items()}
+            except Exception as e:
+                _Logger.warning("Failed to capture first/last row data: %s", e)
+        
         # Report worker memory after training
         mem_after = _log_memory_usage(f"Worker {process_id} (thread {thread_id}) AFTER training {config_name} ({model_type})")
         
@@ -833,6 +853,8 @@ def _train_single_configuration(
                 val_samples=metrics.val_samples,
                 success=True,
                 training_timestamp=datetime.now(),
+                first_row_data=first_row_data,
+                last_row_data=last_row_data,
             )
         else:  # two_step
             val_mape_pct = None
@@ -850,6 +872,8 @@ def _train_single_configuration(
                 val_samples=metrics.regressor_val_samples,
                 success=True,
                 training_timestamp=datetime.now(),
+                first_row_data=first_row_data,
+                last_row_data=last_row_data,
             )
         
         return result

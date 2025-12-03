@@ -130,6 +130,8 @@ class OptimizerResult(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     training_timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    first_row_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON dict of first training row
+    last_row_json: Mapped[str | None] = mapped_column(Text, nullable=True)   # JSON dict of last training row
 
 
 class OptimizerConfig(Base):

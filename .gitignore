@@ -32,6 +32,11 @@ coverage.xml
 # Docker volumes and temp files
 docker-compose*.override.yml
 
+# Environment files (keep .env.test.example)
+.env
+.env.test
+.env.local
+
 # OS specific
 .DS_Store
 Thumbs.db

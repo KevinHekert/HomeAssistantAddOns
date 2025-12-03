@@ -864,26 +864,32 @@ def _train_single_configuration(
         # Capture first and last row of actual training data (not validation) before cleanup
         first_row_data = None
         last_row_data = None
-        if df is not None and len(df) > 0 and metrics.train_samples > 0:
+        if df is not None and len(df) > 0:
             try:
                 import math as _math
                 
-                # Calculate the training split index based on actual train_samples
-                # This ensures we capture the TRAINING data boundaries, not the full dataset
-                train_samples = metrics.train_samples
+                # Get train_samples from metrics (different attribute names for single vs two-step)
+                if model_type == "single_step":
+                    train_samples = metrics.train_samples if hasattr(metrics, 'train_samples') else 0
+                else:  # two_step
+                    train_samples = metrics.regressor_train_samples if hasattr(metrics, 'regressor_train_samples') else 0
                 
-                # Get first row of training data (always row 0)
-                first_row = df.iloc[0].to_dict()
-                
-                # Get last row of training data (row before validation split)
-                # The training data goes from index 0 to train_samples-1
-                last_row = df.iloc[train_samples - 1].to_dict()
-                
-                # Replace NaN with None for JSON serialization
-                first_row_data = {k: (None if isinstance(v, float) and _math.isnan(v) else float(v) if isinstance(v, (int, float)) else v) 
-                                 for k, v in first_row.items()}
-                last_row_data = {k: (None if isinstance(v, float) and _math.isnan(v) else float(v) if isinstance(v, (int, float)) else v) 
-                                for k, v in last_row.items()}
+                if train_samples > 0:
+                    # Calculate the training split index based on actual train_samples
+                    # This ensures we capture the TRAINING data boundaries, not the full dataset
+                    
+                    # Get first row of training data (always row 0)
+                    first_row = df.iloc[0].to_dict()
+                    
+                    # Get last row of training data (row before validation split)
+                    # The training data goes from index 0 to train_samples-1
+                    last_row = df.iloc[train_samples - 1].to_dict()
+                    
+                    # Replace NaN with None for JSON serialization
+                    first_row_data = {k: (None if isinstance(v, float) and _math.isnan(v) else float(v) if isinstance(v, (int, float)) else v) 
+                                     for k, v in first_row.items()}
+                    last_row_data = {k: (None if isinstance(v, float) and _math.isnan(v) else float(v) if isinstance(v, (int, float)) else v) 
+                                    for k, v in last_row.items()}
             except Exception as e:
                 _Logger.warning("Failed to capture first/last row data: %s", e)
         

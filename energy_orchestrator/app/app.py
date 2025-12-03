@@ -115,6 +115,7 @@ from ml.optimizer import (
     run_optimization,
     apply_best_configuration,
     OptimizerProgress,
+    SearchStrategy,
 )
 
 
@@ -3255,18 +3256,25 @@ def _run_optimizer_in_thread():
         # Get optimizer configuration from database
         optimizer_config = get_optimizer_config()
         configured_max_workers = optimizer_config.get("max_workers", None)
+        configured_max_combinations = optimizer_config.get("max_combinations", None)
         
         # Run the optimization with adaptive parallelism and memory throttling
         # configured_max_workers is read from UI settings (None or 0 = auto-calculate)
+        # configured_max_combinations limits exhaustive search (None = default 1024)
+        # Default strategy: HYBRID_GENETIC_BAYESIAN for scalable feature selection
         progress = run_optimization(
             train_single_step_fn=train_heating_demand_model,
             train_two_step_fn=train_two_step_heating_demand_model,
             build_dataset_fn=build_heating_feature_dataset,
             progress_callback=progress_callback,
             min_samples=50,
-            include_derived_features=True,  # Include derived features in optimization
+            include_derived_features=True,  # Include ALL derived features (52+)
             max_memory_mb=None,  # None = auto-detect (75% of available RAM)
             configured_max_workers=configured_max_workers,  # From UI config
+            configured_max_combinations=configured_max_combinations,  # From UI config (for exhaustive only)
+            # Genetic Algorithm + Bayesian Optimization parameters (default values)
+            # search_strategy defaults to HYBRID_GENETIC_BAYESIAN in function signature
+            # genetic_population_size=50, genetic_num_generations=100, bayesian_iterations=100
         )
         
         with _optimizer_lock:

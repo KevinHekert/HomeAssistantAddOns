@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Resampling logic for aggregating raw sensor samples into configurable time slots.
 

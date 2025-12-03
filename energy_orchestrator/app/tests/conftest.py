@@ -91,3 +91,26 @@ def clean_database(setup_test_database):
             conn.commit()
     
     yield setup_test_database
+
+
+@pytest.fixture(autouse=True)
+def reset_resample_state():
+    """
+    Reset the global resampling state between tests.
+    
+    This ensures tests don't interfere with each other when testing
+    the background resampling functionality.
+    """
+    import app
+    
+    # Reset global state
+    app._resample_running = False
+    app._resample_progress = None
+    app._resample_thread = None
+    
+    yield
+    
+    # Clean up after test
+    app._resample_running = False
+    app._resample_progress = None
+    app._resample_thread = None

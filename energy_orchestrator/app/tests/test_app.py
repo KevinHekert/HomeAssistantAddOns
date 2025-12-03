@@ -33,44 +33,31 @@ def mock_model():
 
 
 class TestResampleEndpoint:
-    """Test the /resample POST endpoint."""
+    """Test the /resample POST endpoint (now runs in background)."""
 
     def test_resample_success(self, client):
-        """Successful resample returns 200 with success message and stats."""
-        mock_stats = ResampleStats(
-            slots_processed=100,
-            slots_saved=90,
-            slots_skipped=10,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-        )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
-
+        """Successful resample starts background thread and returns immediately."""
+        with patch("app._run_resample_in_thread") as mock_thread_func:
             response = client.post("/resample")
 
             assert response.status_code == 200
             data = response.get_json()
             assert data["status"] == "success"
-            assert "successfully" in data["message"]
-            assert data["stats"]["slots_processed"] == 100
-            assert data["stats"]["slots_saved"] == 90
-            assert data["stats"]["slots_skipped"] == 10
-            assert data["stats"]["categories"] == ["outdoor_temp", "wind"]
-            mock_resample.assert_called_once()
+            assert "background" in data["message"].lower()
+            assert data["running"] is True
 
     def test_resample_error(self, client):
-        """Error during resample returns 500 with error message."""
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.side_effect = Exception("Database error")
+        """Error during resample initialization returns 500 with error message."""
+        # Simulate error in thread creation
+        with patch("app.threading.Thread") as mock_thread:
+            mock_thread.side_effect = Exception("Thread creation failed")
 
             response = client.post("/resample")
 
             assert response.status_code == 500
             data = response.get_json()
             assert data["status"] == "error"
-            assert "Database error" in data["message"]
+            assert "Thread creation failed" in data["message"]
 
 
 class TestIndexEndpoint:
@@ -1129,30 +1116,18 @@ class TestResampleWithSampleRate:
     """Test the /resample POST endpoint with configurable sample rate."""
 
     def test_resample_with_custom_rate(self, client):
-        """Resample with custom sample rate uses provided value."""
-        mock_stats = ResampleStats(
-            slots_processed=50,
-            slots_saved=45,
-            slots_skipped=5,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-            sample_rate_minutes=10,
+        """Resample with custom sample rate accepts the value and starts background thread."""
+        response = client.post(
+            "/resample",
+            json={"sample_rate_minutes": 10},
+            content_type="application/json",
         )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
 
-            response = client.post(
-                "/resample",
-                json={"sample_rate_minutes": 10},
-                content_type="application/json",
-            )
-
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data["status"] == "success"
-            assert data["stats"]["sample_rate_minutes"] == 10
-            mock_resample.assert_called_once_with(10, flush=False)
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
+        assert "background" in data["message"].lower()
 
     def test_resample_invalid_rate_not_divisor(self, client):
         """Resample with sample rate that doesn't divide 60 returns error."""
@@ -1181,106 +1156,98 @@ class TestResampleWithSampleRate:
         assert data["status"] == "error"
 
     def test_resample_default_rate(self, client):
-        """Resample without custom rate uses default."""
-        mock_stats = ResampleStats(
-            slots_processed=100,
-            slots_saved=90,
-            slots_skipped=10,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-            sample_rate_minutes=5,
-        )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
+        """Resample without custom rate uses default and starts background thread."""
+        response = client.post("/resample")
 
-            response = client.post("/resample")
-
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data["stats"]["sample_rate_minutes"] == 5
-            mock_resample.assert_called_once()
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
 
     def test_resample_with_flush(self, client):
-        """Resample with flush=true clears existing data."""
-        mock_stats = ResampleStats(
-            slots_processed=100,
-            slots_saved=90,
-            slots_skipped=10,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-            sample_rate_minutes=10,
-            table_flushed=True,
+        """Resample with flush=true accepts the parameter and starts background thread."""
+        response = client.post(
+            "/resample",
+            json={"sample_rate_minutes": 10, "flush": True},
+            content_type="application/json",
         )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
 
-            response = client.post(
-                "/resample",
-                json={"sample_rate_minutes": 10, "flush": True},
-                content_type="application/json",
-            )
-
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data["status"] == "success"
-            assert data["stats"]["sample_rate_minutes"] == 10
-            assert data["stats"]["table_flushed"] is True
-            mock_resample.assert_called_once_with(10, flush=True)
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
 
     def test_resample_table_flushed_in_response(self, client):
-        """Resample response includes table_flushed field."""
-        mock_stats = ResampleStats(
-            slots_processed=50,
-            slots_saved=40,
-            slots_skipped=10,
-            categories=["outdoor_temp"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 18, 0, 0),
-            sample_rate_minutes=5,
-            table_flushed=False,
+        """Resample with flush starts background thread."""
+        response = client.post(
+            "/resample",
+            json={"sample_rate_minutes": 5, "flush": True},
+            content_type="application/json",
         )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
 
-            response = client.post(
-                "/resample",
-                json={"sample_rate_minutes": 5},
-                content_type="application/json",
-            )
-
-            assert response.status_code == 200
-            data = response.get_json()
-            assert "table_flushed" in data["stats"]
-            assert data["stats"]["table_flushed"] is False
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
 
     def test_resample_with_flush_default_rate(self, client):
-        """Resample with flush=true and default sample rate clears existing data."""
-        mock_stats = ResampleStats(
-            slots_processed=100,
-            slots_saved=90,
-            slots_skipped=10,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-            sample_rate_minutes=5,
-            table_flushed=True,
+        """Resample with flush and default rate starts background thread."""
+        response = client.post(
+            "/resample",
+            json={"flush": True},
+            content_type="application/json",
         )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
 
-            response = client.post(
-                "/resample",
-                json={"flush": True},
-                content_type="application/json",
-            )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
 
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data["status"] == "success"
-            assert data["stats"]["table_flushed"] is True
-            mock_resample.assert_called_once_with(None, flush=True)
+
+class TestResampleStatusEndpoint:
+    """Test the /api/resample/status GET endpoint."""
+
+    def test_resample_status_no_progress(self, client):
+        """Status endpoint returns success when no resampling has been run."""
+        response = client.get("/api/resample/status")
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is False
+        assert data["progress"] is None
+        assert "message" in data
+
+    def test_resample_status_with_progress(self, client):
+        """Status endpoint returns progress when resampling is running."""
+        # Simulate resampling in progress by setting global state
+        with patch("app._resample_progress") as mock_progress:
+            with patch("app._resample_running", True):
+                with patch("app._resample_lock"):
+                    mock_progress.phase = "resampling"
+                    mock_progress.slots_processed = 60
+                    mock_progress.slots_total = 120
+                    mock_progress.slots_saved = 55
+                    mock_progress.slots_skipped = 5
+                    mock_progress.categories = ["outdoor_temp", "indoor_temp"]
+                    mock_progress.current_slot = datetime(2024, 12, 3, 10, 0, 0)
+                    mock_progress.log_messages = ["Log line 1", "Log line 2"]
+                    mock_progress.sample_rate_minutes = 5
+                    mock_progress.get_hours_processed = lambda: 5
+                    mock_progress.get_hours_total = lambda: 10
+                    mock_progress.error_message = None
+                    
+                    response = client.get("/api/resample/status")
+
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data["status"] == "success"
+                    assert data["running"] is True
+                    assert data["progress"]["phase"] == "resampling"
+                    assert data["progress"]["hours_processed"] == 5
+                    assert data["progress"]["hours_total"] == 10
+                    assert data["progress"]["slots_processed"] == 60
+                    assert data["progress"]["slots_total"] == 120
 
 
 class TestSampleRateEndpoints:

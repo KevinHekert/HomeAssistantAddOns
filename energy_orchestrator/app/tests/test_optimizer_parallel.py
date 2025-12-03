@@ -211,6 +211,104 @@ class TestParallelExecution:
         assert result.success is False
         assert result.error_message == "Insufficient data for training"
     
+    def test_train_single_configuration_captures_training_rows(self, mock_training_metrics):
+        """Train single configuration captures first and last rows from training split, not full dataset."""
+        # Create a DataFrame with 100 rows
+        # With train_ratio=0.8, training will use rows 0-79, validation rows 80-99
+        mock_df = pd.DataFrame({
+            "outdoor_temp": range(100),  # 0, 1, 2, ..., 99
+            "wind": range(100, 200),     # 100, 101, 102, ..., 199
+            "target_heating_kwh_1h": [float(i) / 10.0 for i in range(100)],
+        })
+        mock_stats = MagicMock()
+        mock_model = MagicMock()
+        
+        # Set train_samples to 80 (80% of 100)
+        mock_training_metrics.train_samples = 80
+        mock_training_metrics.val_samples = 20
+        
+        def mock_build_dataset(min_samples):
+            return (mock_df, mock_stats)
+        
+        def mock_train(df):
+            return (mock_model, mock_training_metrics)
+        
+        combo = {"pressure": True}
+        
+        with patch("ml.optimizer.get_feature_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_get_config.return_value = mock_config
+            
+            result = _train_single_configuration(
+                config_name="Test Training Rows",
+                combo=combo,
+                model_type="single_step",
+                train_fn=mock_train,
+                build_dataset_fn=mock_build_dataset,
+                min_samples=50,
+            )
+        
+        assert result.success is True
+        assert result.first_row_data is not None
+        assert result.last_row_data is not None
+        
+        # First row should be row 0 (first training row)
+        assert result.first_row_data["outdoor_temp"] == 0.0
+        assert result.first_row_data["wind"] == 100.0
+        
+        # Last row should be row 79 (last training row), NOT row 99 (last dataset row)
+        assert result.last_row_data["outdoor_temp"] == 79.0
+        assert result.last_row_data["wind"] == 179.0
+    
+    def test_train_single_configuration_two_step_captures_training_rows(self, mock_two_step_metrics):
+        """Train single configuration captures first and last rows from training split for two-step model."""
+        # Create a DataFrame with 100 rows
+        # With train_ratio=0.8, training will use rows 0-79, validation rows 80-99
+        mock_df = pd.DataFrame({
+            "outdoor_temp": range(100),  # 0, 1, 2, ..., 99
+            "wind": range(100, 200),     # 100, 101, 102, ..., 199
+            "target_heating_kwh_1h": [float(i) / 10.0 for i in range(100)],
+        })
+        mock_stats = MagicMock()
+        mock_model = MagicMock()
+        
+        # Set regressor_train_samples to 80 (80% of 100) for two-step model
+        mock_two_step_metrics.regressor_train_samples = 80
+        mock_two_step_metrics.regressor_val_samples = 20
+        
+        def mock_build_dataset(min_samples):
+            return (mock_df, mock_stats)
+        
+        def mock_train(df):
+            return (mock_model, mock_two_step_metrics)
+        
+        combo = {"pressure": True}
+        
+        with patch("ml.optimizer.get_feature_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_get_config.return_value = mock_config
+            
+            result = _train_single_configuration(
+                config_name="Test Two-Step Training Rows",
+                combo=combo,
+                model_type="two_step",
+                train_fn=mock_train,
+                build_dataset_fn=mock_build_dataset,
+                min_samples=50,
+            )
+        
+        assert result.success is True
+        assert result.first_row_data is not None
+        assert result.last_row_data is not None
+        
+        # First row should be row 0 (first training row)
+        assert result.first_row_data["outdoor_temp"] == 0.0
+        assert result.first_row_data["wind"] == 100.0
+        
+        # Last row should be row 79 (last training row), NOT row 99 (last dataset row)
+        assert result.last_row_data["outdoor_temp"] == 79.0
+        assert result.last_row_data["wind"] == 179.0
+    
     def test_run_optimization_with_parallel_workers(self, mock_training_metrics, mock_two_step_metrics):
         """Run optimization uses parallel workers."""
         mock_df = pd.DataFrame({

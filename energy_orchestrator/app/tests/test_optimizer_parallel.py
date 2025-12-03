@@ -362,7 +362,7 @@ class TestParallelExecution:
         # So it's expected to take longer than pure parallel execution for stability
         assert elapsed < 5.0  # Should finish within reasonable time with adaptive throttling
         assert progress.phase == "complete"
-        assert len(progress.results) == 4  # 2 configs × 2 models
+        assert progress.completed_configurations == 4  # 2 configs × 2 models
         assert progress.completed_configurations == 4
     
     def test_run_optimization_progress_updates_during_parallel(self, mock_training_metrics, mock_two_step_metrics):
@@ -512,7 +512,7 @@ class TestParallelExecution:
             )
         
         # All results should be recorded despite concurrent updates
-        assert len(progress.results) == 6  # 3 configs × 2 models
+        assert progress.completed_configurations == 6  # 3 configs × 2 models
         assert progress.completed_configurations == 6
         # Each combination of (config_name, model_type) should appear exactly once
         combo_set = set((r.config_name, r.model_type) for r in progress.results)

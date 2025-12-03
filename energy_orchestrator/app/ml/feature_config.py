@@ -552,7 +552,9 @@ class FeatureConfiguration:
         Check if a feature name corresponds to a derived sensor statistic.
         
         Derived features have the format: <sensor_name>_avg_<time_window>
-        Examples: wind_avg_1h, outdoor_temp_avg_6h, pressure_avg_24h
+        Examples: wind_avg_1h, outdoor_temp_avg_6h, pressure_avg_24h, temp_delta_avg_1h
+        
+        This includes both raw sensors and virtual sensors.
         
         Args:
             feature_name: Name of the feature to check
@@ -575,11 +577,21 @@ class FeatureConfiguration:
         if time_window not in valid_windows:
             return False
         
-        # Check if this sensor exists in sensor category configuration
+        # Check if this sensor exists in sensor category configuration (raw sensors)
         try:
             from db.sensor_category_config import get_sensor_category_config
+            from db.virtual_sensors import get_virtual_sensors_config
+            
             sensor_config = get_sensor_category_config()
-            return sensor_config.get_sensor_config(sensor_name) is not None
+            if sensor_config.get_sensor_config(sensor_name) is not None:
+                return True
+            
+            # Also check virtual sensors configuration
+            virtual_config = get_virtual_sensors_config()
+            if virtual_config.get_sensor(sensor_name) is not None:
+                return True
+                
+            return False
         except Exception as e:
             _Logger.warning("Error checking sensor config for %s: %s", sensor_name, e)
             return False
@@ -588,8 +600,10 @@ class FeatureConfiguration:
         """
         Create FeatureMetadata for a derived sensor statistic feature.
         
+        This supports both raw sensors and virtual sensors.
+        
         Args:
-            feature_name: Name of the feature (e.g., "wind_avg_1h")
+            feature_name: Name of the feature (e.g., "wind_avg_1h" or "temp_delta_avg_1h")
             enabled: Whether the feature is currently enabled
             
         Returns:
@@ -616,41 +630,63 @@ class FeatureConfiguration:
         # Try to get sensor configuration for unit and category
         try:
             from db.sensor_category_config import get_sensor_category_config, get_sensor_definition
+            from db.virtual_sensors import get_virtual_sensors_config
+            
             sensor_config = get_sensor_category_config()
             sensor_conf = sensor_config.get_sensor_config(sensor_name)
             
-            if sensor_conf is None:
-                return None
+            # First try raw sensor
+            if sensor_conf is not None:
+                # Get sensor definition for display information
+                sensor_def = get_sensor_definition(sensor_name)
+                
+                # Determine category based on sensor type
+                category = FeatureCategory.WEATHER  # Default
+                if sensor_def:
+                    sensor_type = sensor_def.sensor_type.value
+                    if sensor_type == "indoor":
+                        category = FeatureCategory.INDOOR
+                    elif sensor_type == "control":
+                        category = FeatureCategory.CONTROL
+                    elif sensor_type == "usage":
+                        category = FeatureCategory.USAGE
+                
+                # Create descriptive text
+                window_text = time_window.upper()
+                description = f"{window_text} average for {sensor_name}"
+                if sensor_def:
+                    description = f"{window_text} average of {sensor_def.display_name}"
+                
+                return FeatureMetadata(
+                    name=feature_name,
+                    category=category,
+                    description=description,
+                    unit=sensor_conf.unit or "",
+                    time_window=time_window_enum,
+                    is_core=False,
+                    enabled=enabled,
+                )
             
-            # Get sensor definition for display information
-            sensor_def = get_sensor_definition(sensor_name)
+            # Try virtual sensor
+            virtual_config = get_virtual_sensors_config()
+            virtual_sensor = virtual_config.get_sensor(sensor_name)
             
-            # Determine category based on sensor type
-            category = FeatureCategory.WEATHER  # Default
-            if sensor_def:
-                sensor_type = sensor_def.sensor_type.value
-                if sensor_type == "indoor":
-                    category = FeatureCategory.INDOOR
-                elif sensor_type == "control":
-                    category = FeatureCategory.CONTROL
-                elif sensor_type == "usage":
-                    category = FeatureCategory.USAGE
+            if virtual_sensor is not None:
+                # Virtual sensors - default to EXPERIMENTAL category
+                window_text = time_window.upper()
+                description = f"{window_text} average of {virtual_sensor.display_name}"
+                
+                return FeatureMetadata(
+                    name=feature_name,
+                    category=FeatureCategory.CONTROL,  # Virtual sensors as CONTROL category
+                    description=description,
+                    unit=virtual_sensor.unit or "",
+                    time_window=time_window_enum,
+                    is_core=False,
+                    enabled=enabled,
+                )
             
-            # Create descriptive text
-            window_text = time_window.upper()
-            description = f"{window_text} average for {sensor_name}"
-            if sensor_def:
-                description = f"{window_text} average of {sensor_def.display_name}"
-            
-            return FeatureMetadata(
-                name=feature_name,
-                category=category,
-                description=description,
-                unit=sensor_conf.unit or "",
-                time_window=time_window_enum,
-                is_core=False,
-                enabled=enabled,
-            )
+            return None
         except Exception as e:
             _Logger.warning("Error creating metadata for derived feature %s: %s", feature_name, e)
             return None

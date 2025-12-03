@@ -532,38 +532,6 @@
 
     <!-- Configuration Tab -->
     <div id="tab-configuration" class="tab-content active">
-        <div class="card">
-            <h3>🔄 Data Resampling</h3>
-            <p>Resample raw sensor data into time slots and save to resampled_samples table.</p>
-            
-            <div class="timezone-config" style="margin-bottom: 1rem;">
-                <label for="sampleRateSelect">📊 Sample Rate (minutes):</label>
-                <select id="sampleRateSelect" onchange="updateSampleRate()" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem 1rem; font-size: 0.9rem;">
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5" selected>5</option>
-                    <option value="6">6</option>
-                    <option value="10">10</option>
-                    <option value="12">12</option>
-                    <option value="15">15</option>
-                    <option value="20">20</option>
-                    <option value="30">30</option>
-                    <option value="60">60</option>
-                </select>
-                <span style="color: var(--text-secondary); font-size: 0.85rem;">Current: <span id="sampleRateText">5</span> minutes</span>
-            </div>
-            
-            <div style="margin-bottom: 0.5rem;">
-                <label for="flushCheckbox" style="cursor: pointer;">
-                    <input type="checkbox" id="flushCheckbox" style="margin-right: 0.5rem;">
-                    Flush existing data (required when sample rate changes)
-                </label>
-            </div>
-            <button class="action-btn" id="resampleBtn" onclick="triggerResample()">Resample Data</button>
-            <div id="resampleStatus" class="status-message"></div>
-        </div>
 
         <div class="card">
             <h3>📡 Sync Configuration</h3>
@@ -857,26 +825,6 @@
             <div id="optimizerStatusDisplay" class="status-message" style="display: none;"></div>
         </div>
 
-        <!-- Best Result Card (always visible if exists) -->
-        <div class="card" id="optimizerBestResultCard" style="display: none;">
-            <h3>🏆 Best Configuration</h3>
-            <div class="stats-grid">
-                <div class="stat-item">
-                    <div class="stat-label">Configuration</div>
-                    <div class="stat-value" id="optimizerBestConfig" style="font-size: 1rem;">-</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Model Type</div>
-                    <div class="stat-value" id="optimizerBestModel">-</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Val MAPE</div>
-                    <div class="stat-value" id="optimizerBestMape" style="color: var(--accent-green);">-</div>
-                </div>
-            </div>
-            <button class="action-btn" id="applyOptimizerBtn" onclick="applyOptimizerResult()" style="margin-top: 1rem;">✓ Apply Best Settings</button>
-        </div>
-
         <!-- Results Table (always visible, shows top 30) -->
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
@@ -908,6 +856,47 @@
             <button class="action-btn secondary" id="loadSensorsBtn" onclick="loadSensorInfo()">Load Sensor Info</button>
             <div id="sensorInfoStatus" class="status-message"></div>
             <div id="sensorInfoTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>📈 Resampled Sensor Information</h3>
+            <p>View resampled sensor data statistics from the resampled_samples table.</p>
+            <button class="action-btn secondary" id="loadResampledSensorsBtn" onclick="loadResampledSensorInfo()">Load Resampled Sensor Info</button>
+            <div id="resampledSensorInfoStatus" class="status-message"></div>
+            <div id="resampledSensorInfoTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔄 Data Resampling</h3>
+            <p>Resample raw sensor data into time slots and save to resampled_samples table.</p>
+            
+            <div class="timezone-config" style="margin-bottom: 1rem;">
+                <label for="sampleRateSelect">📊 Sample Rate (minutes):</label>
+                <select id="sampleRateSelect" onchange="updateSampleRate()" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem 1rem; font-size: 0.9rem;">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5" selected>5</option>
+                    <option value="6">6</option>
+                    <option value="10">10</option>
+                    <option value="12">12</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                    <option value="60">60</option>
+                </select>
+                <span style="color: var(--text-secondary); font-size: 0.85rem;">Current: <span id="sampleRateText">5</span> minutes</span>
+            </div>
+            
+            <div style="margin-bottom: 0.5rem;">
+                <label for="flushCheckbox" style="cursor: pointer;">
+                    <input type="checkbox" id="flushCheckbox" style="margin-right: 0.5rem;">
+                    Flush existing data (required when sample rate changes)
+                </label>
+            </div>
+            <button class="action-btn" id="resampleBtn" onclick="triggerResample()">Resample Data</button>
+            <div id="resampleStatus" class="status-message"></div>
         </div>
     </div>
 
@@ -1667,6 +1656,92 @@
                 } else if (response.ok) {
                     statusDiv.className = 'status-message info';
                     statusDiv.textContent = 'ℹ️ No sensors found in database';
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error: ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function loadResampledSensorInfo() {
+            const btn = document.getElementById('loadResampledSensorsBtn');
+            const statusDiv = document.getElementById('resampledSensorInfoStatus');
+            const tableDiv = document.getElementById('resampledSensorInfoTable');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading resampled sensor information...';
+            tableDiv.innerHTML = '';
+            
+            try {
+                // Get unique categories from resampled data
+                // Note: Limit set to 1000 to balance between data coverage and performance
+                const RESAMPLED_DATA_LIMIT = 1000;
+                const response = await fetch(`api/resampled_data?limit=${RESAMPLED_DATA_LIMIT}`);
+                const data = await response.json();
+                
+                if (response.ok && data.data && data.data.length > 0) {
+                    // Group by category and find first/last timestamps
+                    const sensorStats = {};
+                    
+                    data.data.forEach(sample => {
+                        if (!sensorStats[sample.category]) {
+                            sensorStats[sample.category] = {
+                                category: sample.category,
+                                unit: sample.unit,
+                                is_derived: sample.is_derived,
+                                first_timestamp: sample.slot_start,
+                                last_timestamp: sample.slot_start,
+                                count: 0
+                            };
+                        }
+                        
+                        const stats = sensorStats[sample.category];
+                        stats.count++;
+                        
+                        // Track min and max timestamps across all samples
+                        // This works regardless of the API sort order
+                        if (sample.slot_start < stats.first_timestamp) {
+                            stats.first_timestamp = sample.slot_start;
+                        }
+                        if (sample.slot_start > stats.last_timestamp) {
+                            stats.last_timestamp = sample.slot_start;
+                        }
+                    });
+                    
+                    const sensorList = Object.values(sensorStats);
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Found ${sensorList.length} resampled sensor categories (from up to ${RESAMPLED_DATA_LIMIT} total samples)`;
+                    
+                    let html = '<table class="sensor-table"><thead><tr>';
+                    html += '<th>Category</th><th>Unit</th><th>Type</th><th>First Timestamp</th><th>Last Timestamp</th><th>Sample Count</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    sensorList.forEach(sensor => {
+                        const typeBadge = sensor.is_derived 
+                            ? '<span style="padding: 2px 8px; background: var(--accent-orange); color: white; border-radius: 3px; font-size: 0.8em;">Derived</span>'
+                            : '<span style="padding: 2px 8px; background: var(--accent-blue); color: white; border-radius: 3px; font-size: 0.8em;">Raw</span>';
+                        
+                        html += `<tr>`;
+                        html += `<td>${sensor.category}</td>`;
+                        html += `<td>${sensor.unit || '-'}</td>`;
+                        html += `<td>${typeBadge}</td>`;
+                        html += `<td>${sensor.first_timestamp || 'N/A'}</td>`;
+                        html += `<td>${sensor.last_timestamp || 'N/A'}</td>`;
+                        html += `<td>${sensor.count.toLocaleString()}</td>`;
+                        html += `</tr>`;
+                    });
+                    
+                    html += '</tbody></table>';
+                    tableDiv.innerHTML = html;
+                } else if (response.ok) {
+                    statusDiv.className = 'status-message info';
+                    statusDiv.textContent = 'ℹ️ No resampled data found. Run resampling to generate data.';
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ Error: ' + data.message;
@@ -3054,8 +3129,6 @@
             const logDiv = document.getElementById('optimizerLog');
             const logContent = document.getElementById('optimizerLogContent');
             const resultsTable = document.getElementById('optimizerResultsTable');
-            const bestResultCard = document.getElementById('optimizerBestResultCard');
-            const applyBtn = document.getElementById('applyOptimizerBtn');
             
             btn.disabled = true;
             progressDiv.style.display = 'block';
@@ -3063,8 +3136,6 @@
             progressContent.textContent = 'Starting optimization... This will run in the background.';
             logContent.textContent = 'Initializing optimizer...\n';
             resultsTable.innerHTML = '<p style="color: var(--text-secondary);">Optimization in progress...</p>';
-            bestResultCard.style.display = 'none';
-            applyBtn.style.display = 'none';
             
             try {
                 const response = await fetch('api/optimizer/run', {
@@ -3105,14 +3176,6 @@
                                     if (p.phase === 'complete') {
                                         progressContent.className = 'status-message success';
                                         progressContent.textContent = '✓ Optimization complete!';
-                                        
-                                        // Show best result
-                                        if (p.best_result) {
-                                            bestResultCard.style.display = 'block';
-                                            document.getElementById('optimizerBestConfig').textContent = p.best_result.config_name;
-                                            document.getElementById('optimizerBestModel').textContent = p.best_result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step';
-                                            document.getElementById('optimizerBestMape').textContent = p.best_result.val_mape_pct !== null ? p.best_result.val_mape_pct + '%' : 'N/A';
-                                        }
                                         
                                         // Load results table
                                         await loadOptimizerResultsTable();
@@ -3498,8 +3561,6 @@
             const logDiv = document.getElementById('optimizerLog');
             const logContent = document.getElementById('optimizerLogContent');
             const resultsDiv = document.getElementById('optimizerResultsTable');
-            const bestResultDiv = document.getElementById('optimizerBestResultCard');
-            const applyBtn = document.getElementById('applyOptimizerBtn');
             
             try {
                 const response = await fetch('api/optimizer/latest');
@@ -3516,23 +3577,11 @@
                         logContent.textContent = `Previous run: Started ${startTime}, Ended ${endTime}\nPhase: ${run.phase}\n`;
                     }
                     
-                    // Show best result if available
-                    if (run.best_result && bestResultDiv) {
-                        bestResultDiv.style.display = 'block';
-                        const bestConfigEl = document.getElementById('optimizerBestConfig');
-                        const bestModelEl = document.getElementById('optimizerBestModel');
-                        const bestMapeEl = document.getElementById('optimizerBestMape');
-                        
-                        if (bestConfigEl) bestConfigEl.textContent = run.best_result.config_name;
-                        if (bestModelEl) bestModelEl.textContent = run.best_result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step';
-                        if (bestMapeEl) bestMapeEl.textContent = run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A';
-                        if (applyBtn) applyBtn.style.display = 'inline-block';
-                        
-                        if (statusDiv) {
-                            statusDiv.className = 'status-message success';
-                            statusDiv.textContent = '✓ Previous optimization results loaded. Best Val MAPE: ' + 
-                                (run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A');
-                        }
+                    // Show status if best result available
+                    if (run.best_result && statusDiv) {
+                        statusDiv.className = 'status-message success';
+                        statusDiv.textContent = '✓ Previous optimization results loaded. Best Val MAPE: ' + 
+                            (run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A');
                     }
                     
                     // Show results table

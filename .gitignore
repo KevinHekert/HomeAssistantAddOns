@@ -21,3 +21,22 @@ __pycache__/
 htmlcov/
 *.cover
 coverage.xml
+
+# Pytest cache
+.pytest_cache/
+
+# Integration test artifacts
+.tox/
+*.egg-info/
+
+# Docker volumes and temp files
+docker-compose*.override.yml
+
+# Environment files (keep .env.test.example)
+.env
+.env.test
+.env.local
+
+# OS specific
+.DS_Store
+Thumbs.db

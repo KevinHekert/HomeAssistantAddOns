@@ -3337,8 +3337,10 @@
         }
 
         async function getOptimizerStatus() {
-            const statusDiv = document.getElementById('optimizerStatus');
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
             const btn = document.getElementById('optimizerStatusBtn');
+            
+            if (!btn || !statusDiv) return;
             
             btn.disabled = true;
             statusDiv.className = 'status-message loading';
@@ -3389,14 +3391,17 @@
         }
 
         async function applyOptimizerResult() {
-            const statusDiv = document.getElementById('optimizerStatus');
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
             const btn = document.getElementById('applyOptimizerBtn');
             
             if (!confirm('Apply the best configuration found by the optimizer? This will save the new settings.')) {
                 return;
             }
             
+            if (!statusDiv || !btn) return;
+            
             btn.disabled = true;
+            statusDiv.style.display = 'block';
             statusDiv.className = 'status-message loading';
             statusDiv.textContent = 'Applying best configuration...';
             
@@ -3439,7 +3444,11 @@
                 return;
             }
             
-            const statusDiv = document.getElementById('optimizerStatus');
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
+            
+            if (!statusDiv) return;
+            
+            statusDiv.style.display = 'block';
             statusDiv.className = 'status-message loading';
             statusDiv.textContent = 'Applying configuration...';
             

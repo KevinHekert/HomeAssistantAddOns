@@ -452,19 +452,20 @@ def run_optimization(
         progress.end_time = datetime.now()
     
     finally:
-        # Restore original settings
+        # Restore original settings (handles both experimental and derived features)
         if progress.original_settings:
             config = get_feature_config()
             original = progress.original_settings
             for feature_name, enabled in original.get("experimental_enabled", {}).items():
                 if enabled:
-                    config.enable_experimental_feature(feature_name)
+                    config.enable_feature(feature_name)
                 else:
-                    config.disable_experimental_feature(feature_name)
+                    config.disable_feature(feature_name)
             # Note: we don't save to disk here - user can choose to apply best settings
-            progress.log_messages.append(
-                f"[{datetime.now().strftime('%H:%M:%S')}] Original settings restored"
-            )
+            with _progress_lock:
+                progress.log_messages.append(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] Original settings restored"
+                )
     
     if progress_callback:
         progress_callback(progress)

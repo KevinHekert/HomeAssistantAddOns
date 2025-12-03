@@ -334,7 +334,7 @@ def run_optimization(
     build_dataset_fn: Callable,
     progress_callback: Optional[Callable[[OptimizerProgress], None]] = None,
     min_samples: int = 50,
-    max_workers: int = 3,
+    max_workers: int = 1,
     include_derived_features: bool = True,
 ) -> OptimizerProgress:
     """
@@ -355,7 +355,7 @@ def run_optimization(
         build_dataset_fn: Function to build feature dataset (min_samples) -> (df, stats)
         progress_callback: Optional callback for progress updates
         min_samples: Minimum samples required for training
-        max_workers: Maximum number of parallel workers (default: 3)
+        max_workers: Maximum number of parallel workers (default: 1, reduced from 3 to prevent OOM)
         include_derived_features: Whether to include derived features in combinations (default: True)
         
     Returns:

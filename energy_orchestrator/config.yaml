@@ -1,5 +1,5 @@
 name: Energy Orchestrator
-version: "0.0.0.98"
+version: "0.0.0.100"
 slug: energy_orchestrator
 description: Flask UI voor toekomstige energie-optimisatie.
 arch:
@@ -15,6 +15,10 @@ build_from:
   amd64: ghcr.io/home-assistant/amd64-base:3.22
 
 homeassistant_api: true
+
+# Resource limits to prevent OOM kills during optimizer runs
+map_ram: 1024
+max_ram: 2048
 
 options:
   db_host: core-mariadb

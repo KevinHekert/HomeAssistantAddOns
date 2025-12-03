@@ -2,6 +2,15 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.100] - 2025-12-03
+
+- **Reduce Optimizer Memory Usage**
+  - Reduced max_workers from 3 to 1 in the model optimizer to prevent high RAM usage and OOM (Out Of Memory) kills
+  - This throttles parallel training to reduce memory consumption during optimization runs
+  - Training will take longer but should complete successfully without being killed by the system
+  - Affects both app.py (explicit call) and optimizer.py (default value)
+  - Added resource limits to config.yaml: map_ram=1024MB, max_ram=2048MB to enforce container memory limits
+
 ## [0.0.0.98] - 2025-12-03
 
 - **Comprehensive Optimizer: Test ALL Feature Combinations**

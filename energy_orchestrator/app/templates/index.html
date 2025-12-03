@@ -3113,12 +3113,12 @@
                                                 // Light green background for winner
                                                 const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
                                                 
-                                                // Store features for click handler - escape for HTML attribute
-                                                const escapedFeatures = JSON.stringify(result.experimental_features || {}).replace(/'/g, "\\'");
-                                                const escapedFirstRow = JSON.stringify(result.first_row_data || null).replace(/'/g, "\\'");
-                                                const escapedLastRow = JSON.stringify(result.last_row_data || null).replace(/'/g, "\\'");
+                                                // Store features for click handler - use base64 encoding to avoid escaping issues
+                                                const base64Features = btoa(JSON.stringify(result.experimental_features || {}));
+                                                const base64FirstRow = btoa(JSON.stringify(result.first_row_data || null));
+                                                const base64LastRow = btoa(JSON.stringify(result.last_row_data || null));
                                                 
-                                                html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(event, ${result.id}, JSON.parse('${escapedFeatures}'), ${result.train_samples || 0}, ${result.val_samples || 0}, JSON.parse('${escapedFirstRow}'), JSON.parse('${escapedLastRow}'))">`;
+                                                html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(event, ${result.id}, JSON.parse(atob('${base64Features}')), ${result.train_samples || 0}, ${result.val_samples || 0}, JSON.parse(atob('${base64FirstRow}')), JSON.parse(atob('${base64LastRow}')))">`;
                                                 html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
                                                 html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
                                                 html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
@@ -3368,12 +3368,12 @@
                             // Light green background for winner
                             const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
                             
-                            // Escape JSON for HTML attribute
-                            const escapedFeatures = JSON.stringify(result.experimental_features || {}).replace(/'/g, "\\'");
-                            const escapedFirstRow = JSON.stringify(result.first_row_data || null).replace(/'/g, "\\'");
-                            const escapedLastRow = JSON.stringify(result.last_row_data || null).replace(/'/g, "\\'");
+                            // Encode JSON as base64 to avoid any escaping issues
+                            const base64Features = btoa(JSON.stringify(result.experimental_features || {}));
+                            const base64FirstRow = btoa(JSON.stringify(result.first_row_data || null));
+                            const base64LastRow = btoa(JSON.stringify(result.last_row_data || null));
                             
-                            html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(event, ${result.id}, JSON.parse('${escapedFeatures}'), ${result.train_samples || 0}, ${result.val_samples || 0}, JSON.parse('${escapedFirstRow}'), JSON.parse('${escapedLastRow}'))">`;
+                            html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(event, ${result.id}, JSON.parse(atob('${base64Features}')), ${result.train_samples || 0}, ${result.val_samples || 0}, JSON.parse(atob('${base64FirstRow}')), JSON.parse(atob('${base64LastRow}')))">`;
                             html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
                             html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
                             html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;

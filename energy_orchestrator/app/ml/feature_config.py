@@ -696,6 +696,20 @@ class FeatureConfiguration:
             two_step_prediction_enabled=data.get("two_step_prediction_enabled", False),
         )
     
+    def get_complete_feature_state(self) -> dict[str, bool]:
+        """
+        Get complete feature state (all features, core + experimental).
+        
+        Returns a dictionary with all feature names and their enabled state.
+        This is useful for storing the complete configuration with optimizer results.
+        """
+        complete_state = {}
+        # Add all core features
+        complete_state.update(self.core_enabled)
+        # Add all experimental features
+        complete_state.update(self.experimental_enabled)
+        return complete_state
+    
     def save(self) -> bool:
         """
         Save configuration to disk.

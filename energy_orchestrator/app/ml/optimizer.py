@@ -211,6 +211,7 @@ class OptimizationResult:
     training_timestamp: Optional[datetime] = None
     first_row_data: Optional[dict] = None  # First row of training dataset
     last_row_data: Optional[dict] = None   # Last row of training dataset
+    complete_feature_config: Optional[dict[str, bool]] = None  # Complete feature state (all features)
 
 
 @dataclass
@@ -840,6 +841,10 @@ def _train_single_configuration(
                 else:
                     config.disable_feature(feature_name)
             
+            # Capture the complete feature configuration state after applying combo
+            # This includes ALL features (core + experimental), not just the ones in combo
+            complete_feature_config = config.get_complete_feature_state()
+            
             # Build dataset with current configuration while holding the lock
             # This ensures the config is consistent throughout dataset building
             df, stats = build_dataset_fn(min_samples=min_samples)
@@ -849,6 +854,7 @@ def _train_single_configuration(
                 config_name=config_name,
                 model_type=model_type,
                 experimental_features=combo.copy(),
+                complete_feature_config=complete_feature_config.copy(),
                 val_mape_pct=None,
                 val_mae_kwh=None,
                 val_r2=None,
@@ -927,6 +933,7 @@ def _train_single_configuration(
                 config_name=config_name,
                 model_type=model_type,
                 experimental_features=combo.copy(),
+                complete_feature_config=complete_feature_config.copy(),
                 val_mape_pct=val_mape_pct,
                 val_mae_kwh=metrics.val_mae,
                 val_r2=metrics.val_r2,
@@ -946,6 +953,7 @@ def _train_single_configuration(
                 config_name=config_name,
                 model_type=model_type,
                 experimental_features=combo.copy(),
+                complete_feature_config=complete_feature_config.copy(),
                 val_mape_pct=val_mape_pct,
                 val_mae_kwh=metrics.regressor_val_mae,
                 val_r2=metrics.regressor_val_r2,
@@ -965,6 +973,7 @@ def _train_single_configuration(
             config_name=config_name,
             model_type=model_type,
             experimental_features=combo.copy(),
+            complete_feature_config=None,  # None on error since we don't have config captured
             val_mape_pct=None,
             val_mae_kwh=None,
             val_r2=None,
@@ -1459,6 +1468,9 @@ def apply_best_configuration(
     This function handles both experimental features and derived features
     using the generic enable_feature()/disable_feature() API from FeatureConfiguration.
     
+    If complete_feature_config is available (new format), it applies ALL feature states.
+    Otherwise, it falls back to only applying experimental_features (legacy format).
+    
     Note: This relies on FeatureConfiguration.enable_feature() and disable_feature()
     methods which support both experimental and derived features (see ml/feature_config.py).
     
@@ -1472,13 +1484,23 @@ def apply_best_configuration(
     try:
         config = get_feature_config()
         
-        # Apply feature settings using generic enable_feature()/disable_feature()
-        # These methods work for both experimental and derived features
-        for feature_name, enabled in best_result.experimental_features.items():
-            if enabled:
-                config.enable_feature(feature_name)
-            else:
-                config.disable_feature(feature_name)
+        # Prefer complete_feature_config if available (new format)
+        # This ensures ALL features (core + experimental) are restored to the exact state
+        if best_result.complete_feature_config:
+            _Logger.info("Applying complete feature configuration (%d features)", len(best_result.complete_feature_config))
+            for feature_name, enabled in best_result.complete_feature_config.items():
+                if enabled:
+                    config.enable_feature(feature_name)
+                else:
+                    config.disable_feature(feature_name)
+        else:
+            # Fallback to legacy behavior: only apply experimental features that were tested
+            _Logger.info("Applying experimental features only (legacy format) (%d features)", len(best_result.experimental_features))
+            for feature_name, enabled in best_result.experimental_features.items():
+                if enabled:
+                    config.enable_feature(feature_name)
+                else:
+                    config.disable_feature(feature_name)
         
         # Optionally enable two-step prediction
         if enable_two_step and best_result.model_type == "two_step":

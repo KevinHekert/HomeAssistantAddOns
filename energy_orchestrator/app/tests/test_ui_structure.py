@@ -148,3 +148,76 @@ def test_configuration_tab_structure():
         assert pos != -1, f"Configuration tab should have '{section}' section"
         assert pos > last_pos, f"'{section}' should appear after previous sections"
         last_pos = pos
+
+
+def test_loadFeatureConfig_has_no_missing_button_reference():
+    """Test that loadFeatureConfig function does not reference non-existent loadFeaturesBtn."""
+    template_path = Path(__file__).parent.parent / "templates" / "index.html"
+    with open(template_path, "r") as f:
+        content = f.read()
+    
+    # Find the loadFeatureConfig function
+    func_start = content.find('async function loadFeatureConfig()')
+    assert func_start != -1, "loadFeatureConfig function should exist"
+    
+    # Find the end of the function - look for next async function or end of script
+    # Look for the next function definition or closing script tag
+    func_end = content.find('async function ', func_start + 10)
+    if func_end == -1:
+        func_end = content.find('</script>', func_start)
+    assert func_end != -1, "Should be able to find end of loadFeatureConfig function"
+    
+    # Extract the function content
+    func_content = content[func_start:func_end]
+    
+    # Verify the function does NOT reference loadFeaturesBtn
+    assert 'loadFeaturesBtn' not in func_content, (
+        "loadFeatureConfig should not reference non-existent 'loadFeaturesBtn' button"
+    )
+    
+    # Verify the function does NOT try to manipulate btn.disabled
+    assert 'btn.disabled' not in func_content, (
+        "loadFeatureConfig should not reference 'btn.disabled' when button doesn't exist"
+    )
+    
+    # Verify the function still gets the status and content divs (it needs these)
+    assert 'getElementById("featureConfigStatus")' in func_content or "getElementById('featureConfigStatus')" in func_content, (
+        "loadFeatureConfig should still get featureConfigStatus div"
+    )
+    assert 'getElementById("featureConfigContent")' in func_content or "getElementById('featureConfigContent')" in func_content, (
+        "loadFeatureConfig should still get featureConfigContent div"
+    )
+
+
+def test_optimizer_apply_calls_loadFeatureConfig():
+    """Test that applying optimizer results correctly calls loadFeatureConfig to refresh UI."""
+    template_path = Path(__file__).parent.parent / "templates" / "index.html"
+    with open(template_path, "r") as f:
+        content = f.read()
+    
+    # Find the applyOptimizerResult function
+    func_start = content.find('async function applyOptimizerResult()')
+    assert func_start != -1, "applyOptimizerResult function should exist"
+    
+    # Find the end of the function
+    func_end = content.find('async function applyResultById(', func_start)
+    assert func_end != -1, "applyResultById function should exist after applyOptimizerResult"
+    
+    # Extract the function content
+    func_content = content[func_start:func_end]
+    
+    # Verify it calls loadFeatureConfig() after successful apply
+    assert 'loadFeatureConfig()' in func_content, (
+        "applyOptimizerResult should call loadFeatureConfig() to refresh the feature configuration UI"
+    )
+    
+    # Now check applyResultById as well
+    func2_end = content.find('async function loadLatestOptimizerResults()', func_end)
+    assert func2_end != -1, "loadLatestOptimizerResults function should exist after applyResultById"
+    
+    func2_content = content[func_end:func2_end]
+    
+    # Verify it also calls loadFeatureConfig()
+    assert 'loadFeatureConfig()' in func2_content, (
+        "applyResultById should also call loadFeatureConfig() to refresh the feature configuration UI"
+    )

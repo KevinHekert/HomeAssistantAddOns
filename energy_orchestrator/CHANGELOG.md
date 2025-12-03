@@ -9,6 +9,7 @@ All notable changes to this add-on will be documented in this file.
   - This throttles parallel training to reduce memory consumption during optimization runs
   - Training will take longer but should complete successfully without being killed by the system
   - Affects both app.py (explicit call) and optimizer.py (default value)
+  - Added resource limits to config.yaml: map_ram=1024MB, max_ram=2048MB to enforce container memory limits
 
 ## [0.0.0.98] - 2025-12-03
 

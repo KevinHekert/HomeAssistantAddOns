@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 import pandas as pd
 
 from app import app
-from db.resample import ResampleStats, ResampleProgress
+from db.resample import ResampleStats
 from ml.heating_features import FeatureDatasetStats, TrainingDataRange
 
 
@@ -1244,10 +1244,10 @@ class TestResampleStatusEndpoint:
                     assert data["status"] == "success"
                     assert data["running"] is True
                     assert data["progress"]["phase"] == "resampling"
-            assert data["progress"]["hours_processed"] == 5
-            assert data["progress"]["hours_total"] == 10
-            assert data["progress"]["slots_processed"] == 60
-            assert data["progress"]["slots_total"] == 120
+                    assert data["progress"]["hours_processed"] == 5
+                    assert data["progress"]["hours_total"] == 10
+                    assert data["progress"]["slots_processed"] == 60
+                    assert data["progress"]["slots_total"] == 120
 
 
 class TestSampleRateEndpoints:

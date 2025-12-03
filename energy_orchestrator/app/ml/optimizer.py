@@ -22,6 +22,7 @@ from typing import Callable, Optional
 import copy
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from itertools import combinations
 
 from ml.feature_config import (
     FeatureConfiguration,
@@ -74,6 +75,46 @@ class OptimizerProgress:
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     error_message: Optional[str] = None
+    max_log_messages: int = 10  # Maximum number of log messages to keep
+    
+    def add_log_message(self, message: str) -> None:
+        """
+        Add a log message and maintain the tail limit.
+        
+        Keeps only the last max_log_messages entries to prevent memory issues
+        with large optimization runs (1024+ combinations).
+        
+        Args:
+            message: Log message to add
+        """
+        self.log_messages.append(message)
+        
+        # Keep only the last N messages
+        if len(self.log_messages) > self.max_log_messages:
+            self.log_messages = self.log_messages[-self.max_log_messages:]
+    
+    def get_top_results(self, n: int = 20) -> list[OptimizationResult]:
+        """
+        Get the top N results sorted by validation MAPE (lower is better).
+        
+        Args:
+            n: Number of top results to return (default: 20)
+            
+        Returns:
+            List of top N OptimizationResult objects sorted by Val MAPE
+        """
+        # Filter successful results with valid MAPE
+        valid_results = [
+            r for r in self.results 
+            if r.success and r.val_mape_pct is not None
+        ]
+        
+        # Sort by MAPE (ascending - lower is better)
+        sorted_results = sorted(valid_results, key=lambda r: r.val_mape_pct)
+        
+        # Return top N
+        return sorted_results[:n]
+
 
 
 def _get_all_available_features() -> list[str]:
@@ -101,80 +142,58 @@ def _get_all_available_features() -> list[str]:
     return feature_names
 
 
-def _get_experimental_feature_combinations(include_derived: bool = True) -> list[dict[str, bool]]:
+def _get_experimental_feature_combinations(
+    include_derived: bool = True,
+) -> list[dict[str, bool]]:
     """
-    Generate all combinations of experimental features to test.
+    Generate ALL combinations of experimental features to test.
     
-    Rather than testing all 2^N combinations (which could be huge),
-    we test:
-    1. All features disabled (baseline)
-    2. Each feature enabled individually
-    3. All 2-feature combinations (pairwise testing)
-    4. Logical groups of 3+ features together
+    This function generates all possible combinations (2^N):
+    - Size 0: Baseline (all disabled)
+    - Size 1: Each feature individually
+    - Size 2: All 2-feature combinations
+    - Size 3: All 3-feature combinations
+    - ... up to all features
+    - Size N: All features enabled
+    
+    For 10 features, this generates 2^10 = 1024 combinations.
+    With 2 models tested per combination, that's 2048 total trainings.
     
     Args:
         include_derived: If True, includes derived features in combinations
     
     Returns:
-        List of experimental feature state dictionaries
+        List of experimental feature state dictionaries (all 2^N combinations)
     """
     if include_derived:
         feature_names = _get_all_available_features()
     else:
         feature_names = [f.name for f in EXPERIMENTAL_FEATURES]
     
-    combinations = []
+    n_features = len(feature_names)
+    combos = []
     
-    # 1. Baseline: all experimental features disabled
-    combinations.append({name: False for name in feature_names})
+    _Logger.info(
+        "Generating ALL feature combinations (2^%d = %d combinations)",
+        n_features,
+        2 ** n_features,
+    )
     
-    # 2. Each feature enabled individually
-    for name in feature_names:
-        config = {n: False for n in feature_names}
-        config[name] = True
-        combinations.append(config)
+    # Generate all combinations for each size from 0 to n_features
+    for size in range(n_features + 1):
+        if size == 0:
+            # Baseline: all features disabled
+            combos.append({name: False for name in feature_names})
+        else:
+            # Generate all combinations of this size
+            for feature_combo in combinations(feature_names, size):
+                config = {name: False for name in feature_names}
+                for feature_name in feature_combo:
+                    config[feature_name] = True
+                combos.append(config)
     
-    # 3. All 2-feature combinations (pairwise testing)
-    # This significantly improves coverage of feature interactions
-    for i in range(len(feature_names)):
-        for j in range(i + 1, len(feature_names)):
-            config = {name: False for name in feature_names}
-            config[feature_names[i]] = True
-            config[feature_names[j]] = True
-            combinations.append(config)
-    
-    # 4. Logical groups: time-related features together (all 3)
-    time_features = ["day_of_week", "is_weekend", "is_night"]
-    matching_time = [f for f in feature_names if f in time_features]
-    if len(matching_time) >= MIN_FEATURES_FOR_GROUP:
-        config = {name: False for name in feature_names}
-        for tf in matching_time:
-            config[tf] = True
-        combinations.append(config)
-    
-    # 5. All weather aggregations
-    weather_agg_features = ["pressure", "outdoor_temp_avg_6h", "outdoor_temp_avg_7d"]
-    matching_weather = [f for f in feature_names if f in weather_agg_features]
-    if len(matching_weather) >= MIN_FEATURES_FOR_GROUP:
-        config = {name: False for name in feature_names}
-        for wf in matching_weather:
-            config[wf] = True
-        combinations.append(config)
-    
-    # 6. Heating-related features
-    heating_features = ["heating_kwh_last_7d", "heating_degree_hours_24h", "heating_degree_hours_7d"]
-    matching_heating = [f for f in feature_names if f in heating_features]
-    if len(matching_heating) >= MIN_FEATURES_FOR_GROUP:
-        config = {name: False for name in feature_names}
-        for hf in matching_heating:
-            config[hf] = True
-        combinations.append(config)
-    
-    # 7. All experimental features enabled
-    combinations.append({name: True for name in feature_names})
-    
-    _Logger.info("Generated %d feature combinations to test", len(combinations))
-    return combinations
+    _Logger.info("Generated %d feature combinations to test", len(combos))
+    return combos
 
 
 def _train_single_configuration(
@@ -326,10 +345,12 @@ def run_optimization(
     
     This function:
     1. Saves current settings
-    2. Iterates through feature configurations
+    2. Iterates through ALL feature combinations (2^N)
     3. Trains both single-step and two-step models (in parallel)
     4. Compares Val MAPE to find the best configuration
     5. Reports progress via callback
+    
+    For 10 experimental features, this tests 1024 combinations × 2 models = 2048 trainings.
     
     Args:
         train_single_step_fn: Function to train single-step model (df) -> (model, metrics)
@@ -341,10 +362,13 @@ def run_optimization(
         include_derived_features: Whether to include derived features in combinations (default: True)
         
     Returns:
-        OptimizerProgress with all results and the best configuration
+        OptimizerProgress with all results and the best configuration.
+        Use progress.get_top_results(20) to get the top 20 results for UI display.
     """
     # Initialize progress
-    combinations = _get_experimental_feature_combinations(include_derived=include_derived_features)
+    combinations = _get_experimental_feature_combinations(
+        include_derived=include_derived_features,
+    )
     # Each combination is tested with both models (2 trainings per configuration)
     total_configs = len(combinations) * 2
     
@@ -360,17 +384,17 @@ def run_optimization(
     # Save original settings
     original_config = get_feature_config()
     progress.original_settings = original_config.to_dict()
-    progress.log_messages.append(
+    progress.add_log_message(
         f"[{datetime.now().strftime('%H:%M:%S')}] Optimizer started"
     )
-    progress.log_messages.append(
+    progress.add_log_message(
         f"[{datetime.now().strftime('%H:%M:%S')}] Original settings saved"
     )
-    progress.log_messages.append(
+    progress.add_log_message(
         f"[{datetime.now().strftime('%H:%M:%S')}] Testing {len(combinations)} configurations with 2 models each ({total_configs} total trainings)"
     )
     
-    progress.log_messages.append(
+    progress.add_log_message(
         f"[{datetime.now().strftime('%H:%M:%S')}] Using {max_workers} parallel workers for training"
     )
     
@@ -420,11 +444,11 @@ def run_optimization(
                         # Log the result
                         if result.success:
                             mape_str = f"{result.val_mape_pct:.2f}%" if result.val_mape_pct is not None else "N/A"
-                            progress.log_messages.append(
+                            progress.add_log_message(
                                 f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Val MAPE = {mape_str}"
                             )
                         else:
-                            progress.log_messages.append(
+                            progress.add_log_message(
                                 f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Failed - {result.error_message}"
                             )
                         
@@ -436,7 +460,7 @@ def run_optimization(
                                 or result.val_mape_pct < progress.best_result.val_mape_pct
                             ):
                                 progress.best_result = result
-                                progress.log_messages.append(
+                                progress.add_log_message(
                                     f"[{datetime.now().strftime('%H:%M:%S')}] 🏆 New best: {config_name} ({model_type}) with Val MAPE = {result.val_mape_pct:.2f}%"
                                 )
                     
@@ -447,7 +471,7 @@ def run_optimization(
                 except Exception as e:
                     _Logger.error("Error processing result for %s (%s): %s", config_name, model_type, e)
                     with _progress_lock:
-                        progress.log_messages.append(
+                        progress.add_log_message(
                             f"[{datetime.now().strftime('%H:%M:%S')}] Error processing result: {str(e)}"
                         )
         
@@ -457,21 +481,21 @@ def run_optimization(
         
         with _progress_lock:
             if progress.best_result:
-                progress.log_messages.append(
+                progress.add_log_message(
                     f"[{datetime.now().strftime('%H:%M:%S')}] Optimization complete!"
                 )
-                progress.log_messages.append(
+                progress.add_log_message(
                     f"[{datetime.now().strftime('%H:%M:%S')}] Best configuration: {progress.best_result.config_name}"
                 )
-                progress.log_messages.append(
+                progress.add_log_message(
                     f"[{datetime.now().strftime('%H:%M:%S')}] Best model: {progress.best_result.model_type}"
                 )
                 mape_str = f"{progress.best_result.val_mape_pct:.2f}%" if progress.best_result.val_mape_pct else "N/A"
-                progress.log_messages.append(
+                progress.add_log_message(
                     f"[{datetime.now().strftime('%H:%M:%S')}] Best Val MAPE: {mape_str}"
                 )
             else:
-                progress.log_messages.append(
+                progress.add_log_message(
                     f"[{datetime.now().strftime('%H:%M:%S')}] Optimization complete (no valid results)"
                 )
         
@@ -480,7 +504,7 @@ def run_optimization(
         progress.phase = "error"
         progress.error_message = str(e)
         with _progress_lock:
-            progress.log_messages.append(
+            progress.add_log_message(
                 f"[{datetime.now().strftime('%H:%M:%S')}] Error: {str(e)}"
             )
         progress.end_time = datetime.now()
@@ -497,7 +521,7 @@ def run_optimization(
                     config.disable_feature(feature_name)
             # Note: we don't save to disk here - user can choose to apply best settings
             with _progress_lock:
-                progress.log_messages.append(
+                progress.add_log_message(
                     f"[{datetime.now().strftime('%H:%M:%S')}] Original settings restored"
                 )
     

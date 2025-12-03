@@ -338,3 +338,109 @@ class TestGetSensorInfo:
         assert sensor_b["sample_count"] == 1
         assert sensor_b["first_timestamp"] == "2024-01-01T11:00:00"
         assert sensor_b["last_timestamp"] == "2024-01-01T11:00:00"
+
+
+class TestGetResampledSensorInfo:
+    """Test the get_resampled_sensor_info function."""
+
+    def test_no_resampled_samples(self, patch_engine):
+        """Returns empty list when no resampled samples exist."""
+        from db.samples import get_resampled_sensor_info
+        result = get_resampled_sensor_info()
+        assert result == []
+
+    def test_single_category(self, patch_engine):
+        """Returns info for single category."""
+        from db.samples import get_resampled_sensor_info
+        from db import ResampledSample
+        from sqlalchemy.orm import Session
+        
+        # Add some resampled samples
+        with Session(patch_engine) as session:
+            session.add(ResampledSample(
+                slot_start=datetime(2024, 1, 1, 12, 0, 0),
+                category="outdoor_temp",
+                value=5.5,
+                unit="°C",
+                is_derived=False
+            ))
+            session.add(ResampledSample(
+                slot_start=datetime(2024, 1, 1, 13, 0, 0),
+                category="outdoor_temp",
+                value=6.0,
+                unit="°C",
+                is_derived=False
+            ))
+            session.commit()
+        
+        result = get_resampled_sensor_info()
+        assert len(result) == 1
+        assert result[0]["category"] == "outdoor_temp"
+        assert result[0]["unit"] == "°C"
+        assert result[0]["is_derived"] is False
+        assert result[0]["first_timestamp"] == "2024-01-01T12:00:00"
+        assert result[0]["last_timestamp"] == "2024-01-01T13:00:00"
+        assert result[0]["sample_count"] == 2
+
+    def test_multiple_categories(self, patch_engine):
+        """Returns info for multiple categories."""
+        from db.samples import get_resampled_sensor_info
+        from db import ResampledSample
+        from sqlalchemy.orm import Session
+        
+        # Add samples for multiple categories
+        with Session(patch_engine) as session:
+            # outdoor_temp - raw
+            session.add(ResampledSample(
+                slot_start=datetime(2024, 1, 1, 10, 0, 0),
+                category="outdoor_temp",
+                value=5.5,
+                unit="°C",
+                is_derived=False
+            ))
+            session.add(ResampledSample(
+                slot_start=datetime(2024, 1, 1, 12, 0, 0),
+                category="outdoor_temp",
+                value=6.0,
+                unit="°C",
+                is_derived=False
+            ))
+            # indoor_temp - raw
+            session.add(ResampledSample(
+                slot_start=datetime(2024, 1, 1, 11, 0, 0),
+                category="indoor_temp",
+                value=20.0,
+                unit="°C",
+                is_derived=False
+            ))
+            # outdoor_temp_avg_1h - derived
+            session.add(ResampledSample(
+                slot_start=datetime(2024, 1, 1, 12, 0, 0),
+                category="outdoor_temp_avg_1h",
+                value=5.8,
+                unit="°C",
+                is_derived=True
+            ))
+            session.commit()
+        
+        result = get_resampled_sensor_info()
+        assert len(result) == 3
+        
+        # Results should be ordered by category
+        outdoor_temp = next(s for s in result if s["category"] == "outdoor_temp")
+        indoor_temp = next(s for s in result if s["category"] == "indoor_temp")
+        outdoor_temp_avg = next(s for s in result if s["category"] == "outdoor_temp_avg_1h")
+        
+        assert outdoor_temp["sample_count"] == 2
+        assert outdoor_temp["first_timestamp"] == "2024-01-01T10:00:00"
+        assert outdoor_temp["last_timestamp"] == "2024-01-01T12:00:00"
+        assert outdoor_temp["is_derived"] is False
+        
+        assert indoor_temp["sample_count"] == 1
+        assert indoor_temp["first_timestamp"] == "2024-01-01T11:00:00"
+        assert indoor_temp["last_timestamp"] == "2024-01-01T11:00:00"
+        assert indoor_temp["is_derived"] is False
+        
+        assert outdoor_temp_avg["sample_count"] == 1
+        assert outdoor_temp_avg["is_derived"] is True
+

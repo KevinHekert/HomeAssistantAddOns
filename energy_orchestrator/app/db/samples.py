@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from db import Sample
+from db import Sample, ResampledSample
 from db.core import engine
 
 _Logger = logging.getLogger(__name__)
@@ -100,6 +100,44 @@ def get_sensor_info() -> list[dict]:
             ]
     except SQLAlchemyError as e:
         _Logger.error("Error getting sensor info: %s", e)
+        return []
+
+
+def get_resampled_sensor_info() -> list[dict]:
+    """
+    Get first and last slot_start timestamp for each unique category in the resampled_samples table.
+    
+    Returns:
+        List of dicts with category, unit, is_derived, first_timestamp, last_timestamp, and sample_count
+    """
+    try:
+        with Session(engine) as session:
+            result = (
+                session.query(
+                    ResampledSample.category,
+                    ResampledSample.unit,
+                    ResampledSample.is_derived,
+                    func.min(ResampledSample.slot_start).label("first_timestamp"),
+                    func.max(ResampledSample.slot_start).label("last_timestamp"),
+                    func.count(ResampledSample.id).label("sample_count"),
+                )
+                .group_by(ResampledSample.category, ResampledSample.unit, ResampledSample.is_derived)
+                .order_by(ResampledSample.category)
+                .all()
+            )
+            return [
+                {
+                    "category": row.category,
+                    "unit": row.unit,
+                    "is_derived": row.is_derived,
+                    "first_timestamp": row.first_timestamp.isoformat() if row.first_timestamp else None,
+                    "last_timestamp": row.last_timestamp.isoformat() if row.last_timestamp else None,
+                    "sample_count": row.sample_count,
+                }
+                for row in result
+            ]
+    except SQLAlchemyError as e:
+        _Logger.error("Error getting resampled sensor info: %s", e)
         return []
 
 

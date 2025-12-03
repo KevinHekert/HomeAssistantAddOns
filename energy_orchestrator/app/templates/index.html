@@ -2226,11 +2226,9 @@
         }
 
         async function loadFeatureConfig() {
-            const btn = document.getElementById('loadFeaturesBtn');
             const statusDiv = document.getElementById('featureConfigStatus');
             const contentDiv = document.getElementById('featureConfigContent');
             
-            btn.disabled = true;
             statusDiv.className = 'status-message loading';
             statusDiv.textContent = 'Loading feature configuration...';
             
@@ -2320,8 +2318,6 @@
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
-            } finally {
-                btn.disabled = false;
             }
         }
 

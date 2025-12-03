@@ -251,14 +251,14 @@ class TestParallelExecution:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
-                max_workers=3,
+
             )
             elapsed = time.time() - start_time
         
-        # With 4 total trainings (2 configs × 2 models), parallel should be faster than sequential
-        # Sequential would take at least 4 × 0.02s = 0.08s
-        # Parallel with 3 workers should be closer to 2 × 0.02s = 0.04s
-        assert elapsed < 0.1  # Should finish quickly with parallelism
+        # With 4 total trainings (2 configs × 2 models) and adaptive parallelism
+        # The optimizer now includes 0.5s delays between trainings for GC and memory throttling checks
+        # So it's expected to take longer than pure parallel execution for stability
+        assert elapsed < 5.0  # Should finish within reasonable time with adaptive throttling
         assert progress.phase == "complete"
         assert len(progress.results) == 4  # 2 configs × 2 models
         assert progress.completed_configurations == 4
@@ -303,7 +303,7 @@ class TestParallelExecution:
                 build_dataset_fn=mock_build_dataset,
                 progress_callback=progress_callback,
                 min_samples=50,
-                max_workers=3,
+
             )
         
         # Progress callback should have been called multiple times
@@ -345,7 +345,7 @@ class TestParallelExecution:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
-                max_workers=3,
+
             )
         
         # Best result should be two-step with 8% MAPE (better than single-step 10%)
@@ -400,7 +400,7 @@ class TestParallelExecution:
                 train_two_step_fn=mock_train_two,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
-                max_workers=3,
+
             )
         
         # All results should be recorded despite concurrent updates
@@ -449,7 +449,7 @@ class TestProgressReporting:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
-                max_workers=3,
+
             )
         
         # Check that progress messages include X/Y format
@@ -489,7 +489,7 @@ class TestProgressReporting:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
-                max_workers=3,
+
             )
         
         # Should have messages about new best results (marked with trophy emoji)

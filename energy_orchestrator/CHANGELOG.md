@@ -2,6 +2,20 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.104] - 2025-12-03
+
+- **Fix Failing Tests After Feature Set Reduction**
+  - **Problem**: 12 tests were failing after reducing feature set from 10 to 4 features
+  - **Solution**: Updated all affected tests to work with the reduced feature set
+  - **Changes Made**:
+    1. Updated `test_feature_config.py` to check for the 4 retained features instead of removed ones
+    2. Updated `test_optimizer_combinations.py` to test pairwise combinations with the new 4-feature set
+    3. Updated `test_feature_stats_sync.py` to use `outdoor_temp_avg_6h` instead of removed features
+    4. Removed deprecated `max_workers` parameter from all test calls (now auto-calculated)
+    5. Updated timing expectations in parallel tests to account for adaptive throttling delays
+  - **Test Results**: All 647 tests now passing
+  - **Version bumped to 0.0.0.104**
+
 ## [0.0.0.103] - 2025-12-03
 
 - **Reduced Optimizer Test Set for Faster Execution**

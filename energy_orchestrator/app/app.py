@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Optional
 from flask import Flask, render_template, jsonify, request
@@ -55,6 +56,13 @@ from db.prediction_storage import (
     delete_prediction,
     compare_prediction_with_actual,
     get_prediction_list_summary,
+)
+from db.optimizer_storage import (
+    save_optimizer_run,
+    get_latest_optimizer_run,
+    get_optimizer_run_by_id,
+    get_optimizer_result_by_id,
+    list_optimizer_runs,
 )
 from ml.heating_features import (
     build_heating_feature_dataset,
@@ -3221,6 +3229,49 @@ def compare_stored_prediction_endpoint(prediction_id: str):
 # Global optimizer state
 _optimizer_progress: Optional[OptimizerProgress] = None
 _optimizer_running: bool = False
+_optimizer_thread: Optional[threading.Thread] = None
+
+
+def _run_optimizer_in_thread():
+    """Background thread function to run the optimizer."""
+    global _optimizer_progress, _optimizer_running
+    
+    try:
+        _Logger.info("Starting settings optimizer in background...")
+        
+        def progress_callback(progress):
+            """Update global progress state."""
+            global _optimizer_progress
+            _optimizer_progress = progress
+        
+        # Run the optimization
+        progress = run_optimization(
+            train_single_step_fn=train_heating_demand_model,
+            train_two_step_fn=train_two_step_heating_demand_model,
+            build_dataset_fn=build_heating_feature_dataset,
+            progress_callback=progress_callback,
+            min_samples=50,
+        )
+        
+        _optimizer_progress = progress
+        
+        # Save results to database
+        if progress:
+            run_id = save_optimizer_run(progress)
+            if run_id:
+                _Logger.info("Saved optimizer run to database with ID: %d", run_id)
+            else:
+                _Logger.warning("Failed to save optimizer run to database")
+        
+    except Exception as e:
+        _Logger.error("Error running optimizer: %s", e, exc_info=True)
+        # Update progress with error
+        if _optimizer_progress:
+            _optimizer_progress.phase = "error"
+            _optimizer_progress.error_message = str(e)
+    
+    finally:
+        _optimizer_running = False
 
 
 @app.post("/api/optimizer/run")
@@ -3233,6 +3284,10 @@ def run_optimizer():
     2. Cycle through different feature configurations
     3. Train both single-step and two-step models
     4. Find the configuration with the lowest Val MAPE (%)
+    5. Save results to database
+    
+    This endpoint starts the optimization in the background and returns immediately.
+    Use /api/optimizer/status to poll for progress.
     
     Response:
     {
@@ -3241,7 +3296,7 @@ def run_optimizer():
         "total_configurations": 12
     }
     """
-    global _optimizer_progress, _optimizer_running
+    global _optimizer_progress, _optimizer_running, _optimizer_thread
     
     if _optimizer_running:
         return jsonify({
@@ -3251,61 +3306,30 @@ def run_optimizer():
     
     try:
         _optimizer_running = True
-        _optimizer_progress = None
-        
-        _Logger.info("Starting settings optimizer...")
-        
-        # Run the optimization synchronously (in a real app, this should be async)
-        progress = run_optimization(
-            train_single_step_fn=train_heating_demand_model,
-            train_two_step_fn=train_two_step_heating_demand_model,
-            build_dataset_fn=build_heating_feature_dataset,
-            min_samples=50,
+        _optimizer_progress = OptimizerProgress(
+            total_configurations=0,
+            completed_configurations=0,
+            current_configuration="",
+            current_model_type="",
+            phase="initializing",
+            start_time=datetime.now(),
         )
         
-        _optimizer_progress = progress
-        _optimizer_running = False
+        # Start optimizer in background thread
+        _optimizer_thread = threading.Thread(target=_run_optimizer_in_thread, daemon=True)
+        _optimizer_thread.start()
         
-        # Build response
-        response_data = {
+        _Logger.info("Optimizer thread started")
+        
+        return jsonify({
             "status": "success",
-            "message": "Optimization complete",
-            "phase": progress.phase,
-            "total_configurations": progress.total_configurations,
-            "completed_configurations": progress.completed_configurations,
-            "log": progress.log_messages,
-            "results": [
-                {
-                    "config_name": r.config_name,
-                    "model_type": r.model_type,
-                    "val_mape_pct": round(r.val_mape_pct, 2) if r.val_mape_pct is not None else None,
-                    "val_mae_kwh": round(r.val_mae_kwh, 4) if r.val_mae_kwh is not None else None,
-                    "val_r2": round(r.val_r2, 4) if r.val_r2 is not None else None,
-                    "success": r.success,
-                    "error_message": r.error_message,
-                }
-                for r in progress.results
-            ],
-        }
-        
-        if progress.best_result:
-            response_data["best_result"] = {
-                "config_name": progress.best_result.config_name,
-                "model_type": progress.best_result.model_type,
-                "val_mape_pct": round(progress.best_result.val_mape_pct, 2) if progress.best_result.val_mape_pct else None,
-                "val_mae_kwh": round(progress.best_result.val_mae_kwh, 4) if progress.best_result.val_mae_kwh else None,
-                "val_r2": round(progress.best_result.val_r2, 4) if progress.best_result.val_r2 else None,
-                "experimental_features": progress.best_result.experimental_features,
-            }
-        
-        if progress.error_message:
-            response_data["error"] = progress.error_message
-            
-        return jsonify(response_data)
+            "message": "Optimizer started in background. Use /api/optimizer/status to check progress.",
+            "running": True,
+        })
         
     except Exception as e:
         _optimizer_running = False
-        _Logger.error("Error running optimizer: %s", e, exc_info=True)
+        _Logger.error("Error starting optimizer: %s", e, exc_info=True)
         return jsonify({
             "status": "error",
             "message": str(e),
@@ -3349,11 +3373,30 @@ def get_optimizer_status():
         },
     }
     
+    # Include full results if optimization is complete
+    if progress.phase in ["complete", "error"] and not _optimizer_running:
+        response_data["progress"]["results"] = [
+            {
+                "config_name": r.config_name,
+                "model_type": r.model_type,
+                "val_mape_pct": round(r.val_mape_pct, 2) if r.val_mape_pct is not None else None,
+                "val_mae_kwh": round(r.val_mae_kwh, 4) if r.val_mae_kwh is not None else None,
+                "val_r2": round(r.val_r2, 4) if r.val_r2 is not None else None,
+                "success": r.success,
+                "error_message": r.error_message,
+            }
+            for r in progress.results
+        ]
+        
+        if progress.error_message:
+            response_data["progress"]["error"] = progress.error_message
+    
     if progress.best_result:
         response_data["progress"]["best_result"] = {
             "config_name": progress.best_result.config_name,
             "model_type": progress.best_result.model_type,
             "val_mape_pct": round(progress.best_result.val_mape_pct, 2) if progress.best_result.val_mape_pct else None,
+            "experimental_features": progress.best_result.experimental_features,
         }
     
     return jsonify(response_data)
@@ -3418,6 +3461,218 @@ def apply_optimizer_result():
             
     except Exception as e:
         _Logger.error("Error applying optimizer result: %s", e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.post("/api/optimizer/apply/<int:result_id>")
+def apply_optimizer_result_by_id(result_id: int):
+    """
+    Apply a specific optimizer result by its database ID.
+    
+    This allows applying any result from the results table, not just the best one.
+    
+    Path parameter:
+        result_id: The database ID of the optimizer result to apply
+    
+    Request body (optional):
+    {
+        "enable_two_step": true  // Whether to enable two-step if that was the model type
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Configuration applied",
+        "applied_settings": {...}
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        enable_two_step = data.get("enable_two_step", True)
+        
+        # Retrieve the result from database
+        result_dict = get_optimizer_result_by_id(result_id)
+        
+        if not result_dict:
+            return jsonify({
+                "status": "error",
+                "message": f"Optimizer result with ID {result_id} not found",
+            }), 404
+        
+        # Convert to OptimizationResult for apply function
+        from ml.optimizer import OptimizationResult
+        
+        result = OptimizationResult(
+            config_name=result_dict["config_name"],
+            model_type=result_dict["model_type"],
+            experimental_features=result_dict["experimental_features"],
+            val_mape_pct=result_dict["val_mape_pct"],
+            val_mae_kwh=result_dict["val_mae_kwh"],
+            val_r2=result_dict["val_r2"],
+            train_samples=result_dict["train_samples"],
+            val_samples=result_dict["val_samples"],
+            success=result_dict["success"],
+            error_message=result_dict["error_message"],
+        )
+        
+        success = apply_best_configuration(
+            best_result=result,
+            enable_two_step=enable_two_step and result.model_type == "two_step",
+        )
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Configuration applied and saved",
+                "applied_settings": {
+                    "config_name": result.config_name,
+                    "model_type": result.model_type,
+                    "experimental_features": result.experimental_features,
+                    "two_step_enabled": enable_two_step and result.model_type == "two_step",
+                    "val_mape_pct": round(result.val_mape_pct, 2) if result.val_mape_pct else None,
+                },
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to save configuration",
+            }), 500
+            
+    except Exception as e:
+        _Logger.error("Error applying optimizer result %d: %s", result_id, e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/optimizer/runs")
+def get_optimizer_runs():
+    """
+    Get a list of recent optimizer runs.
+    
+    Query parameters:
+        limit: Maximum number of runs to return (default 10)
+    
+    Response:
+    {
+        "status": "success",
+        "runs": [
+            {
+                "id": 1,
+                "start_time": "2025-12-03T10:00:00",
+                "end_time": "2025-12-03T10:15:00",
+                "phase": "complete",
+                "total_configurations": 12,
+                "completed_configurations": 12,
+                "best_result": {...}
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        limit = request.args.get("limit", 10, type=int)
+        runs = list_optimizer_runs(limit=limit)
+        
+        return jsonify({
+            "status": "success",
+            "runs": runs,
+        })
+        
+    except Exception as e:
+        _Logger.error("Error retrieving optimizer runs: %s", e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/optimizer/runs/<int:run_id>")
+def get_optimizer_run_details(run_id: int):
+    """
+    Get detailed information about a specific optimizer run.
+    
+    Path parameter:
+        run_id: The database ID of the optimizer run
+    
+    Response:
+    {
+        "status": "success",
+        "run": {
+            "id": 1,
+            "start_time": "2025-12-03T10:00:00",
+            "end_time": "2025-12-03T10:15:00",
+            "phase": "complete",
+            "total_configurations": 12,
+            "completed_configurations": 12,
+            "best_result": {...},
+            "results": [...]
+        }
+    }
+    """
+    try:
+        run = get_optimizer_run_by_id(run_id)
+        
+        if not run:
+            return jsonify({
+                "status": "error",
+                "message": f"Optimizer run with ID {run_id} not found",
+            }), 404
+        
+        return jsonify({
+            "status": "success",
+            "run": run,
+        })
+        
+    except Exception as e:
+        _Logger.error("Error retrieving optimizer run %d: %s", run_id, e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/optimizer/latest")
+def get_latest_optimizer_run_api():
+    """
+    Get the most recent optimizer run with all its results.
+    
+    Response:
+    {
+        "status": "success",
+        "run": {
+            "id": 1,
+            "start_time": "2025-12-03T10:00:00",
+            "end_time": "2025-12-03T10:15:00",
+            "phase": "complete",
+            "total_configurations": 12,
+            "completed_configurations": 12,
+            "best_result": {...},
+            "results": [...]
+        }
+    }
+    """
+    try:
+        run = get_latest_optimizer_run()
+        
+        if not run:
+            return jsonify({
+                "status": "success",
+                "run": None,
+                "message": "No optimizer runs found in database",
+            })
+        
+        return jsonify({
+            "status": "success",
+            "run": run,
+        })
+        
+    except Exception as e:
+        _Logger.error("Error retrieving latest optimizer run: %s", e)
         return jsonify({
             "status": "error",
             "message": str(e),

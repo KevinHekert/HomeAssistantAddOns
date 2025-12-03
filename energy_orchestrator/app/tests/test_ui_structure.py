@@ -112,13 +112,14 @@ def test_tabs_structure():
     tabs_nav_start = content.find('<div class="tabs-nav">')
     assert tabs_nav_start != -1, "Tabs navigation should exist"
     
-    # Extract a portion containing tab buttons
-    tabs_section = content[tabs_nav_start:tabs_nav_start + 500]
+    # Extract a larger portion containing all tab buttons
+    tabs_section = content[tabs_nav_start:tabs_nav_start + 800]
     
     # Verify expected tabs
     assert "⚙️ Configuration" in tabs_section, "Configuration tab button should exist"
     assert "📡 Sensor Configuration" in tabs_section, "Sensor Configuration tab button should exist"
     assert "🤖 Model Training" in tabs_section, "Model Training tab button should exist"
+    assert "🔍 Optimizer" in tabs_section, "Optimizer tab button should exist"
     assert "📊 Sensor Information" in tabs_section, "Sensor Information tab button should exist"
 
 
@@ -134,8 +135,8 @@ def test_configuration_tab_structure():
     config_tab_content = content[config_tab_start:sensor_config_tab_start]
     
     # Verify expected sections exist (in order)
+    # Note: Data Resampling has been moved to Sensor Information tab
     sections = [
-        "🔄 Data Resampling",
         "📡 Sync Configuration",
         "⚙️ Feature Configuration",
         "🔀 Two-Step Prediction",
@@ -148,6 +149,11 @@ def test_configuration_tab_structure():
         assert pos != -1, f"Configuration tab should have '{section}' section"
         assert pos > last_pos, f"'{section}' should appear after previous sections"
         last_pos = pos
+    
+    # Verify Data Resampling is NOT in Configuration tab anymore
+    assert "🔄 Data Resampling" not in config_tab_content, (
+        "Data Resampling section should have been moved to Sensor Information tab"
+    )
 
 
 def test_loadFeatureConfig_has_no_missing_button_reference():
@@ -220,4 +226,117 @@ def test_optimizer_apply_calls_loadFeatureConfig():
     # Verify it also calls loadFeatureConfig()
     assert 'loadFeatureConfig()' in func2_content, (
         "applyResultById should also call loadFeatureConfig() to refresh the feature configuration UI"
+    )
+
+
+def test_sensor_information_tab_structure():
+    """Test that Sensor Information tab has all expected sections."""
+    template_path = Path(__file__).parent.parent / "templates" / "index.html"
+    with open(template_path, "r") as f:
+        content = f.read()
+    
+    # Find the Sensor Information tab
+    sensors_tab_start = content.find('<div id="tab-sensors" class="tab-content">')
+    assert sensors_tab_start != -1, "Sensor Information tab should exist"
+    
+    # Find the end of the tab (look for next closing div at same level or script tag)
+    # We'll look for the script tag that comes after all tabs
+    script_start = content.find('<script>', sensors_tab_start)
+    assert script_start != -1, "Script section should exist"
+    
+    # Extract the Sensor Information tab content
+    sensors_tab_content = content[sensors_tab_start:script_start]
+    
+    # Verify it has all expected sections
+    assert '<h3>📊 Sensor Information</h3>' in sensors_tab_content, (
+        "Sensor Information tab should have raw Sensor Information section"
+    )
+    assert '<h3>📈 Resampled Sensor Information</h3>' in sensors_tab_content, (
+        "Sensor Information tab should have Resampled Sensor Information section"
+    )
+    assert '<h3>🔄 Data Resampling</h3>' in sensors_tab_content, (
+        "Sensor Information tab should have Data Resampling section (moved from Configuration tab)"
+    )
+    
+    # Verify the buttons exist
+    assert 'id="loadSensorsBtn"' in sensors_tab_content, (
+        "Load Sensor Info button should exist"
+    )
+    assert 'id="loadResampledSensorsBtn"' in sensors_tab_content, (
+        "Load Resampled Sensor Info button should exist"
+    )
+    assert 'id="resampleBtn"' in sensors_tab_content, (
+        "Resample Data button should exist"
+    )
+
+
+def test_resampled_sensor_info_function_exists():
+    """Test that loadResampledSensorInfo function exists and is properly structured."""
+    template_path = Path(__file__).parent.parent / "templates" / "index.html"
+    with open(template_path, "r") as f:
+        content = f.read()
+    
+    # Find the loadResampledSensorInfo function
+    func_start = content.find('async function loadResampledSensorInfo()')
+    assert func_start != -1, "loadResampledSensorInfo function should exist"
+    
+    # Find the end of the function
+    func_end = content.find('async function', func_start + 10)
+    assert func_end != -1, "Should be able to find end of function"
+    
+    # Extract the function content
+    func_content = content[func_start:func_end]
+    
+    # Verify key elements of the function
+    assert 'api/resampled_data' in func_content, (
+        "loadResampledSensorInfo should call the resampled_data API endpoint"
+    )
+    assert 'resampledSensorInfoStatus' in func_content, (
+        "loadResampledSensorInfo should update the status div"
+    )
+    assert 'resampledSensorInfoTable' in func_content, (
+        "loadResampledSensorInfo should update the table div"
+    )
+    assert 'is_derived' in func_content, (
+        "loadResampledSensorInfo should show is_derived information"
+    )
+
+
+def test_optimizer_best_result_card_removed():
+    """Test that the deprecated optimizerBestResultCard has been removed."""
+    template_path = Path(__file__).parent.parent / "templates" / "index.html"
+    with open(template_path, "r") as f:
+        content = f.read()
+    
+    # Verify the card HTML element does not exist
+    assert 'id="optimizerBestResultCard"' not in content, (
+        "optimizerBestResultCard should have been removed from the HTML"
+    )
+    
+    # Verify related element IDs are not in the HTML
+    assert 'id="optimizerBestConfig"' not in content, (
+        "optimizerBestConfig element should not exist"
+    )
+    assert 'id="optimizerBestModel"' not in content, (
+        "optimizerBestModel element should not exist"
+    )
+    assert 'id="optimizerBestMape"' not in content, (
+        "optimizerBestMape element should not exist"
+    )
+    
+    # Verify the runOptimizer function doesn't reference the removed card
+    func_start = content.find('async function runOptimizer()')
+    assert func_start != -1, "runOptimizer function should exist"
+    
+    func_end = content.find('async function checkOptimizerStatus()', func_start)
+    assert func_end != -1, "checkOptimizerStatus function should exist after runOptimizer"
+    
+    func_content = content[func_start:func_end]
+    
+    # The function should not try to manipulate the removed card
+    assert 'bestResultCard.style.display' not in func_content, (
+        "runOptimizer should not reference bestResultCard"
+    )
+    assert 'applyBtn.style.display' not in func_content, (
+        "runOptimizer should not reference applyBtn from removed card"
     )

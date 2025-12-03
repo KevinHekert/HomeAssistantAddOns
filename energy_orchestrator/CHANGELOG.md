@@ -2,6 +2,25 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.103] - 2025-12-03
+
+- **Reduced Optimizer Test Set for Faster Execution**
+  - **Problem**: Optimizer test runs taking too long with 10 features (2,048 trainings)
+  - **Solution**: Reduced experimental feature set from 10 to 4 features
+  - **Impact**:
+    - Feature combinations: 1,024 → 16 (94% reduction)
+    - Total trainings: 2,048 → 32 (~64x faster)
+    - Estimated optimizer runtime reduced from hours to minutes
+  - **Features Retained** (4 most impactful across categories):
+    1. `pressure` - Weather feature for atmospheric conditions
+    2. `outdoor_temp_avg_6h` - Short-term weather trend
+    3. `heating_degree_hours_24h` - Heating demand metric
+    4. `day_of_week` - Weekly pattern detection
+  - **Features Removed** (can be manually enabled if needed):
+    - `outdoor_temp_avg_7d`, `target_temp_avg_24h`, `heating_kwh_last_7d`
+    - `heating_degree_hours_7d`, `is_weekend`, `is_night`
+  - This makes optimizer testing practical for development/testing while maintaining diverse feature coverage
+
 ## [0.0.0.102] - 2025-12-03
 
 - **Adaptive Memory-Aware Parallel Processing with Auto-Calculated Workers**

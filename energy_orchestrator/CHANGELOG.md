@@ -2,6 +2,28 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [Unreleased]
+
+- **Improved Sensor Information Tab Organization**
+  - **Feature**: Reorganized UI to better group sensor-related functionality
+  - **Changes**:
+    - Added new "📈 Resampled Sensor Information" card showing statistics from resampled data
+      - Displays category, unit, type (Raw/Derived), first/last timestamp, and sample count
+      - Fetches data from `/api/resampled_data` endpoint
+      - Shows up to 1000 samples per category grouped by sensor
+    - Moved "🔄 Data Resampling" functionality from Configuration tab to Sensor Information tab
+      - Includes sample rate selector, flush checkbox, and resample button
+      - All functionality preserved, just relocated for better organization
+    - Sensor Information tab now contains all sensor-related features in one place
+  - **Rationale**: Groups all sensor data viewing and processing in one logical location
+  - **Files Changed**: `energy_orchestrator/app/templates/index.html`, `energy_orchestrator/app/tests/test_ui_structure.py`
+
+- **Removed Deprecated Optimizer Best Result Card**
+  - **Cleanup**: Removed redundant "🏆 Best Configuration" card from Optimizer tab
+  - **Rationale**: This information is already shown in the results table with a 👑 crown icon for the best result
+  - **Impact**: Cleaner Optimizer tab UI without duplicate information
+  - **Files Changed**: `energy_orchestrator/app/templates/index.html`
+
 ## [0.0.0.115] - 2025-12-03
 
 - **Fixed JavaScript Null Reference Error in Optimizer Tab**

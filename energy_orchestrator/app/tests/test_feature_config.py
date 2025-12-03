@@ -186,9 +186,16 @@ class TestExperimentalFeatures:
         assert "day_of_week" in experimental_names
     
     def test_is_weekend_is_experimental(self):
-        """is_weekend should be experimental."""
+        """Test that experimental features are properly defined."""
         experimental_names = {f.name for f in EXPERIMENTAL_FEATURES}
-        assert "is_weekend" in experimental_names
+        # After reduction to 4 features, the current experimental features are:
+        # pressure, outdoor_temp_avg_6h, heating_degree_hours_24h, day_of_week
+        assert "pressure" in experimental_names
+        assert "outdoor_temp_avg_6h" in experimental_names
+        assert "heating_degree_hours_24h" in experimental_names
+        assert "day_of_week" in experimental_names
+        # is_weekend was removed in the optimization to 4 features
+        assert len(experimental_names) == 4
 
 
 class TestFeatureConfiguration:

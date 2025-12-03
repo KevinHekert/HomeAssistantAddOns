@@ -56,15 +56,15 @@ class TestCombinationGeneration:
             assert actual == expected, f"Size {size}: expected {expected}, got {actual}"
     
     def test_specific_pairwise_combinations_exist(self):
-        """Verify specific 2-feature combinations mentioned in the issue."""
+        """Verify specific 2-feature combinations exist with reduced feature set."""
         combos = _get_experimental_feature_combinations(include_derived=False)
         
-        # These specific combinations were mentioned in the issue
+        # Updated for 4-feature set: pressure, outdoor_temp_avg_6h, heating_degree_hours_24h, day_of_week
         required_pairs = [
-            {'target_temp_avg_24h', 'heating_degree_hours_7d'},
-            {'target_temp_avg_24h', 'heating_degree_hours_24h'},
-            {'day_of_week', 'is_weekend'},
             {'pressure', 'outdoor_temp_avg_6h'},
+            {'pressure', 'heating_degree_hours_24h'},
+            {'outdoor_temp_avg_6h', 'day_of_week'},
+            {'heating_degree_hours_24h', 'day_of_week'},
         ]
         
         for required_pair in required_pairs:
@@ -77,11 +77,11 @@ class TestCombinationGeneration:
             assert found, f"Required pair {required_pair} not found in combinations"
     
     def test_individual_features_exist(self):
-        """Verify individual features are tested separately."""
+        """Verify individual features are tested separately with reduced feature set."""
         combos = _get_experimental_feature_combinations(include_derived=False)
         
-        # These individual features were mentioned in the issue
-        individual_features = ['day_of_week', 'is_weekend', 'is_night']
+        # Updated for 4-feature set
+        individual_features = ['pressure', 'outdoor_temp_avg_6h', 'heating_degree_hours_24h', 'day_of_week']
         
         for feature in individual_features:
             found = False
@@ -487,7 +487,7 @@ class TestThreadSafety:
                     train_two_step_fn=mock_train_two_step,
                     build_dataset_fn=mock_build_dataset,
                     min_samples=50,
-                    max_workers=2,  # Use 2 parallel workers
+
                 )
         
         # Should have 5 combinations × 2 models = 10 results

@@ -74,20 +74,16 @@ class TestFeatureStatsSync(unittest.TestCase):
         
         config = get_feature_config()
         
-        # Enable some experimental features
+        # Enable experimental features from the reduced 4-feature set
         config.enable_experimental_feature("outdoor_temp_avg_6h")
-        config.enable_experimental_feature("target_temp_avg_24h")
+        # Note: heating_degree_hours_24h doesn't create sensor stats (it's a derived metric)
         config.save()
         
         required_stats = derive_stats_from_feature_config()
         
-        # Now outdoor_temp should need avg_6h
+        # outdoor_temp should need avg_6h
         self.assertIn("outdoor_temp", required_stats)
         self.assertIn(StatType.AVG_6H, required_stats["outdoor_temp"])
-        
-        # And target_temp should need avg_24h
-        self.assertIn("target_temp", required_stats)
-        self.assertIn(StatType.AVG_24H, required_stats["target_temp"])
     
     def test_derive_stats_ignores_non_aggregation_features(self):
         """Test that non-aggregation features don't create stat requirements."""
@@ -140,19 +136,20 @@ class TestFeatureStatsSync(unittest.TestCase):
         from ml.feature_config import get_feature_config
         from db.feature_stats import get_feature_stats_config
         
-        # Enable experimental feature
+        # Enable experimental feature from the reduced 4-feature set
+        # outdoor_temp_avg_6h is available in the reduced set
         ml_config = get_feature_config()
-        ml_config.enable_experimental_feature("outdoor_temp_avg_7d")
+        ml_config.enable_experimental_feature("outdoor_temp_avg_6h")
         ml_config.save()
         
         # Sync stats config
         sync_stats_config_with_features()
         
-        # Verify that avg_7d is now enabled for outdoor_temp
+        # Verify that avg_6h is now enabled for outdoor_temp
         stats_config = get_feature_stats_config()
         outdoor_stats = stats_config.get_sensor_config("outdoor_temp").enabled_stats
         
-        self.assertIn(StatType.AVG_7D, outdoor_stats)
+        self.assertIn(StatType.AVG_6H, outdoor_stats)
     
     def test_feature_names_with_multiple_underscores(self):
         """Test handling of feature names with multiple underscores."""

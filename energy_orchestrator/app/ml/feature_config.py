@@ -247,6 +247,7 @@ CORE_FEATURES: list[FeatureMetadata] = [
 # =============================================================================
 
 EXPERIMENTAL_FEATURES: list[FeatureMetadata] = [
+    # Reduced feature set for faster optimizer testing (4 features = 2^4 = 16 combinations)
     # Weather - additional aggregations
     FeatureMetadata(
         name="pressure",
@@ -266,37 +267,8 @@ EXPERIMENTAL_FEATURES: list[FeatureMetadata] = [
         is_core=False,
         enabled=False,
     ),
-    FeatureMetadata(
-        name="outdoor_temp_avg_7d",
-        category=FeatureCategory.WEATHER,
-        description="7-day outdoor temperature average (last 2016 samples)",
-        unit="°C",
-        time_window=TimeWindow.DAY_7,
-        is_core=False,
-        enabled=False,
-    ),
     
-    # Control - additional aggregation
-    FeatureMetadata(
-        name="target_temp_avg_24h",
-        category=FeatureCategory.CONTROL,
-        description="24-hour average heating target setpoint (last 288 samples)",
-        unit="°C",
-        time_window=TimeWindow.HOUR_24,
-        is_core=False,
-        enabled=False,
-    ),
-    
-    # Usage - 7-day window
-    FeatureMetadata(
-        name="heating_kwh_last_7d",
-        category=FeatureCategory.USAGE,
-        description="Heating energy consumption in the last 7 days (last 2016 samples)",
-        unit="kWh",
-        time_window=TimeWindow.DAY_7,
-        is_core=False,
-        enabled=False,
-    ),
+    # Usage - 24-hour window
     FeatureMetadata(
         name="heating_degree_hours_24h",
         category=FeatureCategory.USAGE,
@@ -306,40 +278,13 @@ EXPERIMENTAL_FEATURES: list[FeatureMetadata] = [
         is_core=False,
         enabled=False,
     ),
-    FeatureMetadata(
-        name="heating_degree_hours_7d",
-        category=FeatureCategory.USAGE,
-        description="Heating degree hours over 7 days",
-        unit="°C·h",
-        time_window=TimeWindow.DAY_7,
-        is_core=False,
-        enabled=False,
-    ),
     
-    # Time - additional calendar features
+    # Time - calendar feature
     FeatureMetadata(
         name="day_of_week",
         category=FeatureCategory.TIME,
         description="Day of week (0=Monday, 6=Sunday)",
         unit="day",
-        time_window=TimeWindow.NONE,
-        is_core=False,
-        enabled=False,
-    ),
-    FeatureMetadata(
-        name="is_weekend",
-        category=FeatureCategory.TIME,
-        description="1 if Saturday or Sunday, else 0",
-        unit="boolean",
-        time_window=TimeWindow.NONE,
-        is_core=False,
-        enabled=False,
-    ),
-    FeatureMetadata(
-        name="is_night",
-        category=FeatureCategory.TIME,
-        description="1 if hour is 23:00-06:59, else 0",
-        unit="boolean",
         time_window=TimeWindow.NONE,
         is_core=False,
         enabled=False,

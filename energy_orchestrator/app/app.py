@@ -3248,15 +3248,17 @@ def _run_optimizer_in_thread():
             with _optimizer_lock:
                 _optimizer_progress = progress
         
-        # Run the optimization with parallel workers
+        # Run the optimization with adaptive parallelism and memory throttling
+        # max_workers is now auto-calculated based on system resources
+        # max_memory_mb can be set via UI (TODO: add UI setting)
         progress = run_optimization(
             train_single_step_fn=train_heating_demand_model,
             train_two_step_fn=train_two_step_heating_demand_model,
             build_dataset_fn=build_heating_feature_dataset,
             progress_callback=progress_callback,
             min_samples=50,
-            max_workers=1,  # Reduced to 1 worker to prevent high RAM usage / OOM kills
             include_derived_features=True,  # Include derived features in optimization
+            max_memory_mb=None,  # None = auto-detect (75% of available RAM)
         )
         
         with _optimizer_lock:

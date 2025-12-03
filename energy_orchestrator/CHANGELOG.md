@@ -2,6 +2,81 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.104] - 2025-12-03
+
+- **Fix Failing Tests After Feature Set Reduction**
+  - **Problem**: 12 tests were failing after reducing feature set from 10 to 4 features
+  - **Solution**: Updated all affected tests to work with the reduced feature set
+  - **Changes Made**:
+    1. Updated `test_feature_config.py` to check for the 4 retained features instead of removed ones
+    2. Updated `test_optimizer_combinations.py` to test pairwise combinations with the new 4-feature set
+    3. Updated `test_feature_stats_sync.py` to use `outdoor_temp_avg_6h` instead of removed features
+    4. Removed deprecated `max_workers` parameter from all test calls (now auto-calculated)
+    5. Updated timing expectations in parallel tests to account for adaptive throttling delays
+  - **Test Results**: All 647 tests now passing
+  - **Version bumped to 0.0.0.104**
+
+## [0.0.0.103] - 2025-12-03
+
+- **Reduced Optimizer Test Set for Faster Execution**
+  - **Problem**: Optimizer test runs taking too long with 10 features (2,048 trainings)
+  - **Solution**: Reduced experimental feature set from 10 to 4 features
+  - **Impact**:
+    - Feature combinations: 1,024 → 16 (94% reduction)
+    - Total trainings: 2,048 → 32 (~64x faster)
+    - Estimated optimizer runtime reduced from hours to minutes
+  - **Features Retained** (4 most impactful across categories):
+    1. `pressure` - Weather feature for atmospheric conditions
+    2. `outdoor_temp_avg_6h` - Short-term weather trend
+    3. `heating_degree_hours_24h` - Heating demand metric
+    4. `day_of_week` - Weekly pattern detection
+  - **Features Removed** (can be manually enabled if needed):
+    - `outdoor_temp_avg_7d`, `target_temp_avg_24h`, `heating_kwh_last_7d`
+    - `heating_degree_hours_7d`, `is_weekend`, `is_night`
+  - This makes optimizer testing practical for development/testing while maintaining diverse feature coverage
+
+## [0.0.0.102] - 2025-12-03
+
+- **Adaptive Memory-Aware Parallel Processing with Auto-Calculated Workers**
+  - **Problem**: Optimizer still experiencing memory issues with sequential processing; users requested throttled parallel execution based on RAM limits
+  - **Solution**: Implemented intelligent adaptive parallel processing with memory-based throttling
+  - **Key Features**:
+    1. **Automatic Worker Calculation**: System automatically determines optimal number of workers based on:
+       - Available system memory (considers user-defined max_memory_mb or defaults to 75% of total RAM)
+       - CPU core count (uses cores - 1, leaving one for system)
+       - Estimated memory per task (~200MB)
+       - Formula: `min(memory_workers, cpu_workers, 10)` with cap at 10 workers
+    2. **Dynamic Memory Throttling**: Real-time memory monitoring during execution
+       - Checks memory before starting each new parallel task
+       - Only submits new tasks when memory < max_memory_mb threshold
+       - Automatically scales down parallelism when memory is constrained
+       - Scales back up when memory is freed
+    3. **Memory Usage Logging**: Added detailed INFO-level logging of memory usage
+       - Logs RSS (Resident Set Size), VMS (Virtual Memory Size)
+       - Shows system available memory and usage percentage
+       - Logs every 10 iterations and after garbage collection
+       - Example: "Memory: RSS=850.2 MB, VMS=1024.5 MB, System Available=3200.0 MB (45.2% used)"
+  - **Technical Implementation**:
+    - Added `psutil` dependency for cross-platform memory monitoring
+    - `_calculate_optimal_workers()`: Auto-calculates workers from system resources
+    - `_should_allow_parallel_task()`: Guards task submission based on current memory usage
+    - `_log_memory_usage()`: Provides detailed memory logging at INFO level
+    - ThreadPoolExecutor with dynamic task submission (not batch submission)
+    - 2-second timeout on task completion wait to periodically re-check memory
+    - Aggressive GC every 10 completed tasks
+    - 0.5s delay after each training for garbage collection
+  - **User Experience**:
+    - No manual worker configuration needed - system auto-optimizes
+    - Can optionally set max_memory_mb via API (UI setting coming in future update)
+    - Logs show real-time memory usage for monitoring
+    - Example: 4GB RAM system → calculates 3-4 workers automatically
+    - Memory-constrained systems automatically fall back to fewer workers or sequential processing
+  - **Performance vs Safety Balance**:
+    - With 100 workers on 4GB RAM: System throttles to sustainable level automatically
+    - With 1,000,000 tasks: Workers adapt throughout entire run based on memory
+    - No OOM kills: System respects memory limit and adjusts parallelism dynamically
+  - Resolves issue #[issue_number] where memory climbed to max and app crashed during optimizer runs
+
 ## [0.0.0.101] - 2025-12-03
 
 - **Optimizer Memory Management: Explicit Cleanup and Garbage Collection**

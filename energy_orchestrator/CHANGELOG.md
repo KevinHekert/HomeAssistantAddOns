@@ -2,6 +2,27 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.92] - 2025-12-02
+
+- **Fixed Sensor Statistics Configuration Overwrite Bug**
+  - **Issue**: When toggling ML features for model training in the configuration panel, the sensor statistics configuration was being overwritten, causing all derived features to disappear from sensor cards
+  - **User Experience**: 
+    1. User configured sensor statistics (e.g., wind with avg_1h, avg_6h, avg_24h, and avg_7d enabled)
+    2. User toggled a feature card to enable/disable it for model training
+    3. **Bug**: All sensor statistics configuration was overwritten to match only what was needed by active ML features
+    4. **Expected**: Sensor statistics configuration should remain independent from ML feature selection
+  - **Root Cause**: The `/api/features/toggle` endpoint was calling `sync_stats_config_with_features()` after every feature toggle, which overwrote the user's sensor statistics configuration
+  - **Fix**: 
+    - Removed the automatic sync call from the feature toggle endpoint
+    - Sensor statistics configuration now remains independent from ML feature configuration
+    - Users can configure which statistics to collect separately from which features to use for training
+  - **Behavior**: 
+    - Toggling ML features only updates which features are used for model training
+    - Sensor statistics configuration persists unchanged
+    - No more disappearing derived features from sensor cards
+  - Added comprehensive test coverage in `test_sensor_stats_independence.py` with 3 test cases
+  - All existing tests continue to pass
+
 ## [0.0.0.91] - 2025-12-02
 
 - **Fixed Feature Toggle for Derived Sensor Features**

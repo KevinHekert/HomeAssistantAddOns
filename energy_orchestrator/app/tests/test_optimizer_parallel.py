@@ -349,6 +349,7 @@ class TestParallelExecution:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
 
             )
             elapsed = time.time() - start_time
@@ -401,6 +402,7 @@ class TestParallelExecution:
                 build_dataset_fn=mock_build_dataset,
                 progress_callback=progress_callback,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
 
             )
         
@@ -498,6 +500,7 @@ class TestParallelExecution:
                 train_two_step_fn=mock_train_two,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=3,  # Limit combinations for fast test execution
 
             )
         
@@ -547,6 +550,7 @@ class TestProgressReporting:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
 
             )
         
@@ -587,6 +591,7 @@ class TestProgressReporting:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=1,  # Limit combinations for fast test execution
 
             )
         

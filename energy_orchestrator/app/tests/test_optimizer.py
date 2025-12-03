@@ -140,6 +140,7 @@ class TestOptimizerModule:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
             )
         
         assert progress.phase == "complete"
@@ -175,6 +176,7 @@ class TestOptimizerModule:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
             )
         
         # Two-step has lower MAPE (8%) than single-step (10%)
@@ -224,6 +226,7 @@ class TestOptimizerModule:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
             )
         
         assert progress.original_settings is not None
@@ -254,6 +257,7 @@ class TestOptimizerModule:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
             )
         
         assert progress.phase == "complete"
@@ -294,6 +298,7 @@ class TestOptimizerModule:
                 build_dataset_fn=mock_build_dataset,
                 progress_callback=progress_callback,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
             )
         
         # Callback should be called multiple times

@@ -210,6 +210,7 @@ class TestConfiguredMaxWorkers:
                     include_derived_features=False,
                     max_memory_mb=None,
                     configured_max_workers=5,
+                    configured_max_combinations=2,  # Limit combinations for fast test execution
                 )
             except Exception:
                 # Expected to fail due to mocking, but we just want to check the logger call
@@ -256,6 +257,7 @@ class TestConfiguredMaxWorkers:
                     include_derived_features=False,
                     max_memory_mb=None,
                     configured_max_workers=None,
+                    configured_max_combinations=2,  # Limit combinations for fast test execution
                 )
             except Exception:
                 # Expected to fail due to mocking, but we just want to check calc was called
@@ -301,6 +303,7 @@ class TestConfiguredMaxWorkers:
                     include_derived_features=False,
                     max_memory_mb=None,
                     configured_max_workers=0,
+                    configured_max_combinations=2,  # Limit combinations for fast test execution
                 )
             except Exception:
                 # Expected to fail due to mocking, but we just want to check calc was called

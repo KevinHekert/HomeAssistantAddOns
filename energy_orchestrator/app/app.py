@@ -3255,7 +3255,7 @@ def _run_optimizer_in_thread():
             build_dataset_fn=build_heating_feature_dataset,
             progress_callback=progress_callback,
             min_samples=50,
-            max_workers=3,  # Use 3 parallel workers as requested
+            max_workers=1,  # Reduced to 1 worker to prevent high RAM usage / OOM kills
             include_derived_features=True,  # Include derived features in optimization
         )
         

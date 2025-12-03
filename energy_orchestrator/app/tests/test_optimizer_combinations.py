@@ -13,6 +13,7 @@ from unittest.mock import patch, MagicMock
 import pandas as pd
 from collections import Counter
 from math import comb
+from itertools import combinations as iter_combinations
 
 from ml.optimizer import (
     _get_experimental_feature_combinations,
@@ -129,7 +130,6 @@ class TestCombinationGeneration:
         feature_names = [f.name for f in EXPERIMENTAL_FEATURES]
         
         # Generate all possible 3-feature combinations
-        from itertools import combinations as iter_combinations
         all_3_combos = list(iter_combinations(feature_names, 3))
         
         # Check that all 3-feature combinations are in the generated combos
@@ -150,7 +150,6 @@ class TestCombinationGeneration:
         feature_names = [f.name for f in EXPERIMENTAL_FEATURES]
         
         # Generate all possible 4-feature combinations
-        from itertools import combinations as iter_combinations
         all_4_combos = list(iter_combinations(feature_names, 4))
         
         # Check that all 4-feature combinations are in the generated combos

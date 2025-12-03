@@ -40,9 +40,6 @@ _progress_lock = threading.Lock()
 # This ensures that feature config changes and dataset building happen atomically
 _config_lock = threading.Lock()
 
-# Minimum number of features required to create a logical group combination
-MIN_FEATURES_FOR_GROUP = 2
-
 
 @dataclass
 class OptimizationResult:

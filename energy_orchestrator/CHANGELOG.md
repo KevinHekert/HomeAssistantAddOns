@@ -2,6 +2,35 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.98] - 2025-12-03
+
+- **Comprehensive Optimizer: Test ALL Feature Combinations**
+  - **Full Combinatorial Testing**:
+    - Optimizer now tests ALL possible feature combinations (2^N) instead of limited subset
+    - For 10 experimental features: 1024 combinations × 2 models = 2048 total trainings
+    - Tests every possible subset: 0 features (baseline), 1 feature, 2 features, ..., N features (all enabled)
+    - Distribution: C(10,0)=1, C(10,1)=10, C(10,2)=45, C(10,3)=120, ..., C(10,10)=1
+    - Addresses issue where important feature interactions were missed (e.g., target_temp_avg_24h + heating_degree_hours_7d)
+  - **Memory Optimization**:
+    - Log tail limited to last 10 messages to prevent memory issues with 2000+ trainings
+    - Added `add_log_message()` method to OptimizerProgress that maintains tail limit
+    - Configurable via `max_log_messages` parameter (default: 10)
+  - **Top Results Display**:
+    - Added `get_top_results(n=20)` method to retrieve top N configurations
+    - Returns results sorted by validation MAPE (lower is better)
+    - Filters out failed results automatically
+    - UI can display top 20 results without overwhelming users
+  - **Thread Safety Verified**:
+    - Existing `_config_lock` ensures atomic feature configuration and dataset building
+    - Each parallel worker applies correct feature settings before training
+    - Comprehensive tests verify correct behavior with parallel execution
+  - **Testing**:
+    - 16 new tests added for full combination generation, log tailing, and top results
+    - All 35 optimizer tests pass (19 existing + 16 new)
+    - Verified all C(N,k) combinations are generated for each size k
+    - Verified specific combinations from issue are included
+  - **Performance**: Expected runtime depends on data and hardware (e.g., ~35 min if 1s/training, ~3 hours if 5s/training)
+
 ## [0.0.0.97] - 2025-12-03
 
 - **Fix: Enable virtual sensor derived features in configuration page**

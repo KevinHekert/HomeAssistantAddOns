@@ -525,6 +525,7 @@
             <button class="tab-btn active" onclick="switchTab('configuration')">⚙️ Configuration</button>
             <button class="tab-btn" onclick="switchTab('sensorConfig')">📡 Sensor Configuration</button>
             <button class="tab-btn" onclick="switchTab('training')">🤖 Model Training</button>
+            <button class="tab-btn" onclick="switchTab('optimizer')">🔍 Optimizer</button>
             <button class="tab-btn" onclick="switchTab('sensors')">📊 Sensor Information</button>
         </div>
     </div>
@@ -759,6 +760,45 @@
         </div>
 
         <div class="card">
+            <h3>🌡️ Scenario-Based Prediction (Simplified)</h3>
+            <p class="example-description">Predict heating demand using simple, human-readable inputs. No need to calculate model features - just provide weather forecast and setpoint schedule.</p>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem;">
+                <button class="action-btn secondary" id="loadScenarioExampleBtn" onclick="loadScenarioExample()">Load Example (24h)</button>
+                <button class="action-btn warning" id="loadWeatherForecastBtn" onclick="loadWeatherForecast()">🌤️ Load Weather (24h)</button>
+                <span style="color: var(--text-secondary);">or load from historical data:</span>
+                <select id="historicalDaySelect" onchange="loadHistoricalDay()" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); padding: 0.5rem; cursor: pointer;">
+                    <option value="">Select historical day...</option>
+                </select>
+                <button class="action-btn secondary" id="refreshDaysBtn" onclick="loadAvailableDays()" style="padding: 0.5rem 1rem;">↻</button>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem;">
+                <label style="color: var(--text-secondary);">Target Temperature:</label>
+                <input type="number" id="targetTempInput" value="20.0" step="0.5" min="15" max="25"
+                    style="width: 80px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem; font-size: 0.9rem;">
+                <span style="color: var(--text-secondary);">°C</span>
+            </div>
+            <button class="action-btn success" id="runScenarioPredictionBtn" onclick="runScenarioPrediction()">Run Prediction</button>
+            <button class="action-btn" id="storePredictionBtn" onclick="storePrediction()" style="display: none;">💾 Store Prediction</button>
+            <p class="example-description" style="margin-top: 0.5rem;">Required per timeslot: timestamp (future), outdoor_temperature, wind_speed, humidity, pressure, target_temperature. Optional: indoor_temperature</p>
+            <textarea id="scenarioInput" placeholder='{"timeslots": [{"timestamp": "2024-01-15T14:00:00", "outdoor_temperature": 5.0, "wind_speed": 3.0, "humidity": 75.0, "pressure": 1013.0, "target_temperature": 20.0}, ...]}'></textarea>
+            <div id="scenarioStatus" class="status-message"></div>
+            <div id="scenarioResult"></div>
+        </div>
+
+        <div class="card">
+            <h3>📊 Stored Predictions</h3>
+            <p class="example-description">View and compare stored predictions with actual sensor data.</p>
+            <button class="action-btn secondary" id="loadStoredPredictionsBtn" onclick="loadStoredPredictions()">Load Stored Predictions</button>
+            <div id="storedPredictionsStatus" class="status-message"></div>
+            <div id="storedPredictionsList"></div>
+            <div id="comparisonResult"></div>
+        </div>
+
+    </div>
+
+    <!-- Optimizer Tab -->
+    <div id="tab-optimizer" class="tab-content">
+        <div class="card">
             <h3>🔍 Settings Optimizer</h3>
             <p class="example-description">
                 Automatically find the best model configuration by testing different feature combinations. 
@@ -795,74 +835,66 @@
                 </p>
             </div>
             
+            <!-- Run Optimizer Controls -->
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
                 <button class="action-btn success" id="runOptimizerBtn" onclick="runOptimizer()">🔍 Start Optimization</button>
-                <button class="action-btn secondary" id="optimizerStatusBtn" onclick="getOptimizerStatus()">Check Status</button>
-                <button class="action-btn" id="applyOptimizerBtn" onclick="applyOptimizerResult()" style="display: none;">✓ Apply Best Settings</button>
             </div>
             
-            <div id="optimizerBestResult" style="display: none; margin-bottom: 1rem;">
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-label">Best Configuration</div>
-                        <div class="stat-value" id="optimizerBestConfig" style="font-size: 1rem;">-</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Best Model Type</div>
-                        <div class="stat-value" id="optimizerBestModel">-</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-label">Best Val MAPE</div>
-                        <div class="stat-value" id="optimizerBestMape" style="color: var(--accent-green);">-</div>
-                    </div>
+            <!-- Progress Display (never overwritten by status checks) -->
+            <div id="optimizerProgress" style="display: none; margin-bottom: 1rem;">
+                <h4 style="margin-bottom: 0.5rem;">⏳ Optimization Progress</h4>
+                <div id="optimizerProgressContent" class="status-message loading"></div>
+                <div id="optimizerLog" style="margin-top: 1rem;">
+                    <h4 style="margin-bottom: 0.5rem;">📋 Optimization Log</h4>
+                    <div id="optimizerLogContent" style="background: var(--bg-tertiary); border-radius: 8px; padding: 1rem; max-height: 300px; overflow-y: auto; font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; font-size: 0.8rem; white-space: pre-wrap;"></div>
                 </div>
             </div>
             
-            <div id="optimizerStatus" class="status-message"></div>
-            
-            <div id="optimizerLog" style="display: none; margin-top: 1rem;">
-                <h4 style="margin-bottom: 0.5rem;">📋 Optimization Log</h4>
-                <div id="optimizerLogContent" style="background: var(--bg-tertiary); border-radius: 8px; padding: 1rem; max-height: 300px; overflow-y: auto; font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; font-size: 0.8rem; white-space: pre-wrap;"></div>
+            <!-- Status Check Display (separate from progress) -->
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                <button class="action-btn secondary" id="optimizerStatusBtn" onclick="checkOptimizerStatus()">📊 Check Status</button>
             </div>
-            
-            <div id="optimizerResults" style="display: none; margin-top: 1rem;"></div>
+            <div id="optimizerStatusDisplay" class="status-message" style="display: none;"></div>
         </div>
 
+        <!-- Best Result Card (always visible if exists) -->
+        <div class="card" id="optimizerBestResultCard" style="display: none;">
+            <h3>🏆 Best Configuration</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-label">Configuration</div>
+                    <div class="stat-value" id="optimizerBestConfig" style="font-size: 1rem;">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Model Type</div>
+                    <div class="stat-value" id="optimizerBestModel">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Val MAPE</div>
+                    <div class="stat-value" id="optimizerBestMape" style="color: var(--accent-green);">-</div>
+                </div>
+            </div>
+            <button class="action-btn" id="applyOptimizerBtn" onclick="applyOptimizerResult()" style="margin-top: 1rem;">✓ Apply Best Settings</button>
+        </div>
+
+        <!-- Results Table (always visible, shows top 30) -->
         <div class="card">
-            <h3>🌡️ Scenario-Based Prediction (Simplified)</h3>
-            <p class="example-description">Predict heating demand using simple, human-readable inputs. No need to calculate model features - just provide weather forecast and setpoint schedule.</p>
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem;">
-                <button class="action-btn secondary" id="loadScenarioExampleBtn" onclick="loadScenarioExample()">Load Example (24h)</button>
-                <button class="action-btn warning" id="loadWeatherForecastBtn" onclick="loadWeatherForecast()">🌤️ Load Weather (24h)</button>
-                <span style="color: var(--text-secondary);">or load from historical data:</span>
-                <select id="historicalDaySelect" onchange="loadHistoricalDay()" style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); padding: 0.5rem; cursor: pointer;">
-                    <option value="">Select historical day...</option>
-                </select>
-                <button class="action-btn secondary" id="refreshDaysBtn" onclick="loadAvailableDays()" style="padding: 0.5rem 1rem;">↻</button>
-            </div>
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem;">
-                <label style="color: var(--text-secondary);">Target Temperature:</label>
-                <input type="number" id="targetTempInput" value="20.0" step="0.5" min="15" max="25"
-                    style="width: 80px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem; font-size: 0.9rem;">
-                <span style="color: var(--text-secondary);">°C</span>
-            </div>
-            <button class="action-btn success" id="runScenarioPredictionBtn" onclick="runScenarioPrediction()">Run Prediction</button>
-            <button class="action-btn" id="storePredictionBtn" onclick="storePrediction()" style="display: none;">💾 Store Prediction</button>
-            <p class="example-description" style="margin-top: 0.5rem;">Required per timeslot: timestamp (future), outdoor_temperature, wind_speed, humidity, pressure, target_temperature. Optional: indoor_temperature</p>
-            <textarea id="scenarioInput" placeholder='{"timeslots": [{"timestamp": "2024-01-15T14:00:00", "outdoor_temperature": 5.0, "wind_speed": 3.0, "humidity": 75.0, "pressure": 1013.0, "target_temperature": 20.0}, ...]}'></textarea>
-            <div id="scenarioStatus" class="status-message"></div>
-            <div id="scenarioResult"></div>
+            <h3>📊 Optimization Results (Top 30)</h3>
+            <p class="example-description">Click on a row to view features used in training. Results are automatically loaded from the last optimizer run.</p>
+            <div id="optimizerResultsTable"></div>
         </div>
 
+        <!-- Re-train with specific configuration -->
         <div class="card">
-            <h3>📊 Stored Predictions</h3>
-            <p class="example-description">View and compare stored predictions with actual sensor data.</p>
-            <button class="action-btn secondary" id="loadStoredPredictionsBtn" onclick="loadStoredPredictions()">Load Stored Predictions</button>
-            <div id="storedPredictionsStatus" class="status-message"></div>
-            <div id="storedPredictionsList"></div>
-            <div id="comparisonResult"></div>
+            <h3>🔄 Re-train Model with Selected Configuration</h3>
+            <p class="example-description">After selecting a configuration from the results table, you can re-train the model with that exact feature set.</p>
+            <div style="margin-bottom: 1rem;">
+                <label for="selectedResultId" style="color: var(--text-secondary); display: block; margin-bottom: 0.5rem;">Selected Result ID:</label>
+                <input type="number" id="selectedResultId" placeholder="Enter result ID" style="width: 150px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem;">
+            </div>
+            <button class="action-btn success" id="retrainFromResultBtn" onclick="retrainFromResult()">🔄 Re-train with Selected Configuration</button>
+            <div id="retrainStatus" class="status-message"></div>
         </div>
-
     </div>
 
     <!-- Sensor Information Tab -->
@@ -931,9 +963,14 @@
                 loadFeatureConfigAuto();
             }
             
+            // Auto-load latest optimizer results for Optimizer tab
+            if (tabName === 'optimizer') {
+                loadLatestOptimizerResults();
+            }
+            
             // Auto-load latest optimizer results for Training tab
             if (tabName === 'training') {
-                loadLatestOptimizerResults();
+                // No longer load optimizer results here since it's moved to optimizer tab
             }
         }
         
@@ -3009,20 +3046,21 @@
 
         async function runOptimizer() {
             const btn = document.getElementById('runOptimizerBtn');
-            const statusDiv = document.getElementById('optimizerStatus');
+            const progressDiv = document.getElementById('optimizerProgress');
+            const progressContent = document.getElementById('optimizerProgressContent');
             const logDiv = document.getElementById('optimizerLog');
             const logContent = document.getElementById('optimizerLogContent');
-            const resultsDiv = document.getElementById('optimizerResults');
-            const bestResultDiv = document.getElementById('optimizerBestResult');
+            const resultsTable = document.getElementById('optimizerResultsTable');
+            const bestResultCard = document.getElementById('optimizerBestResultCard');
             const applyBtn = document.getElementById('applyOptimizerBtn');
             
             btn.disabled = true;
-            statusDiv.className = 'status-message loading';
-            statusDiv.textContent = 'Starting optimization... This will run in the background.';
-            logDiv.style.display = 'block';
+            progressDiv.style.display = 'block';
+            progressContent.className = 'status-message loading';
+            progressContent.textContent = 'Starting optimization... This will run in the background.';
             logContent.textContent = 'Initializing optimizer...\n';
-            resultsDiv.style.display = 'none';
-            bestResultDiv.style.display = 'none';
+            resultsTable.innerHTML = '<p style="color: var(--text-secondary);">Optimization in progress...</p>';
+            bestResultCard.style.display = 'none';
             applyBtn.style.display = 'none';
             
             try {
@@ -3033,7 +3071,7 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    statusDiv.textContent = '⏳ Optimization running in background... Polling for updates.';
+                    progressContent.textContent = '⏳ Optimization running in background... Polling for updates.';
                     
                     // Start polling for status
                     const pollInterval = setInterval(async () => {
@@ -3050,95 +3088,34 @@
                                     logContent.scrollTop = logContent.scrollHeight;
                                 }
                                 
-                                // Update status
+                                // Update progress
                                 if (statusData.running) {
-                                    statusDiv.className = 'status-message loading';
-                                    statusDiv.textContent = `⏳ Progress: ${p.completed_configurations}/${p.total_configurations}`;
+                                    progressContent.className = 'status-message loading';
+                                    progressContent.textContent = `⏳ Progress: ${p.completed_configurations}/${p.total_configurations}`;
                                     if (p.current_configuration) {
-                                        statusDiv.textContent += `\nCurrent: ${p.current_configuration} (${p.current_model_type})`;
+                                        progressContent.textContent += `\nCurrent: ${p.current_configuration} (${p.current_model_type})`;
                                     }
                                 } else if (p.phase === 'complete' || p.phase === 'error') {
                                     clearInterval(pollInterval);
                                     btn.disabled = false;
                                     
                                     if (p.phase === 'complete') {
+                                        progressContent.className = 'status-message success';
+                                        progressContent.textContent = '✓ Optimization complete!';
+                                        
                                         // Show best result
                                         if (p.best_result) {
-                                            bestResultDiv.style.display = 'block';
+                                            bestResultCard.style.display = 'block';
                                             document.getElementById('optimizerBestConfig').textContent = p.best_result.config_name;
                                             document.getElementById('optimizerBestModel').textContent = p.best_result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step';
                                             document.getElementById('optimizerBestMape').textContent = p.best_result.val_mape_pct !== null ? p.best_result.val_mape_pct + '%' : 'N/A';
-                                            applyBtn.style.display = 'inline-block';
-                                            
-                                            statusDiv.className = 'status-message success';
-                                            statusDiv.textContent = '✓ Optimization complete! Best Val MAPE: ' + 
-                                                (p.best_result.val_mape_pct !== null ? p.best_result.val_mape_pct + '%' : 'N/A');
-                                        } else {
-                                            statusDiv.className = 'status-message info';
-                                            statusDiv.textContent = 'ℹ️ Optimization complete but no valid results found.';
                                         }
                                         
-                                        // Build results table with Apply buttons
-                                        if (p.results && p.results.length > 0) {
-                                            const maxResults = 30;
-                                            const totalResults = p.results.length;
-                                            let html = '<h4 style="margin-bottom: 0.5rem;">Top ' + Math.min(maxResults, totalResults) + ' Results';
-                                            if (totalResults > maxResults) {
-                                                html += ' <span style="color: var(--text-secondary); font-size: 0.85rem;">(showing ' + maxResults + ' of ' + totalResults + ')</span>';
-                                            }
-                                            html += '</h4>';
-                                            html += '<p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">Click on a row to view features used</p>';
-                                            html += '<table class="results-table"><thead><tr>';
-                                            html += '<th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th><th>Action</th>';
-                                            html += '</tr></thead><tbody>';
-                                            
-                                            // Sort by Val MAPE ascending
-                                            const sortedResults = [...p.results].sort((a, b) => {
-                                                if (a.val_mape_pct === null) return 1;
-                                                if (b.val_mape_pct === null) return -1;
-                                                return a.val_mape_pct - b.val_mape_pct;
-                                            });
-                                            
-                                            // Limit to top 30 results
-                                            const limitedResults = sortedResults.slice(0, maxResults);
-                                            
-                                            limitedResults.forEach((result, idx) => {
-                                                const isBest = p.best_result && 
-                                                    result.config_name === p.best_result.config_name && 
-                                                    result.model_type === p.best_result.model_type;
-                                                // Light green background for winner
-                                                const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
-                                                
-                                                // Store features for click handler - escape for HTML attribute
-                                                const escapedFeatures = JSON.stringify(result.experimental_features || {}).replace(/'/g, "\\'");
-                                                const escapedFirstRow = JSON.stringify(result.first_row_data || null).replace(/'/g, "\\'");
-                                                const escapedLastRow = JSON.stringify(result.last_row_data || null).replace(/'/g, "\\'");
-                                                
-                                                html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(event, ${result.id}, JSON.parse('${escapedFeatures}'), ${result.train_samples || 0}, ${result.val_samples || 0}, JSON.parse('${escapedFirstRow}'), JSON.parse('${escapedLastRow}'))">`;
-                                                html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
-                                                html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
-                                                html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
-                                                html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
-                                                html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
-                                                html += `<td>${result.success ? '✓' : '✗ ' + (result.error_message || 'Failed')}</td>`;
-                                                
-                                                // Add apply button for successful results (stop propagation to prevent row click)
-                                                if (result.success && result.id) {
-                                                    html += `<td><button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" onclick="event.stopPropagation(); applyResultById(${result.id})">Apply</button></td>`;
-                                                } else {
-                                                    html += `<td>-</td>`;
-                                                }
-                                                
-                                                html += '</tr>';
-                                            });
-                                            
-                                            html += '</tbody></table>';
-                                            resultsDiv.innerHTML = html;
-                                            resultsDiv.style.display = 'block';
-                                        }
+                                        // Load results table
+                                        await loadOptimizerResultsTable();
                                     } else {
-                                        statusDiv.className = 'status-message error';
-                                        statusDiv.textContent = '✗ Error: ' + (p.error || 'Unknown error');
+                                        progressContent.className = 'status-message error';
+                                        progressContent.textContent = '✗ Error: ' + (p.error || 'Unknown error');
                                     }
                                 }
                             }
@@ -3147,13 +3124,214 @@
                         }
                     }, 2000);  // Poll every 2 seconds
                 } else {
-                    statusDiv.className = 'status-message error';
-                    statusDiv.textContent = '✗ ' + (data.message || 'Failed to start optimizer');
+                    progressContent.className = 'status-message error';
+                    progressContent.textContent = '✗ ' + (data.message || 'Failed to start optimizer');
                     btn.disabled = false;
+                }
+            } catch (error) {
+                progressContent.className = 'status-message error';
+                progressContent.textContent = '✗ Error: ' + error.message;
+                btn.disabled = false;
+            }
+        }
+
+
+        async function checkOptimizerStatus() {
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
+            const btn = document.getElementById('optimizerStatusBtn');
+            
+            btn.disabled = true;
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Checking optimizer status...';
+            
+            try {
+                const response = await fetch('api/optimizer/status');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (data.progress) {
+                        const p = data.progress;
+                        let message = `Phase: ${p.phase}\n`;
+                        message += `Progress: ${p.completed_configurations}/${p.total_configurations} configurations\n`;
+                        if (p.current_configuration) {
+                            message += `Current: ${p.current_configuration} (${p.current_model_type})\n`;
+                        }
+                        if (p.best_result) {
+                            message += `\nBest so far: ${p.best_result.config_name} (${p.best_result.model_type})\n`;
+                            message += `Best Val MAPE: ${p.best_result.val_mape_pct}%`;
+                        }
+                        
+                        statusDiv.className = 'status-message ' + (data.running ? 'loading' : 'info');
+                        statusDiv.textContent = message;
+                    } else {
+                        statusDiv.className = 'status-message info';
+                        statusDiv.textContent = 'ℹ️ ' + (data.message || 'No optimization has been run yet');
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
                 }
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function loadOptimizerResultsTable() {
+            const resultsTable = document.getElementById('optimizerResultsTable');
+            
+            try {
+                const response = await fetch('api/optimizer/latest');
+                const data = await response.json();
+                
+                if (response.ok && data.run && data.run.results && data.run.results.length > 0) {
+                    const results = data.run.results;
+                    const maxResults = 30;
+                    
+                    // Sort by Val MAPE ascending
+                    const sortedResults = [...results].sort((a, b) => {
+                        if (a.val_mape_pct === null) return 1;
+                        if (b.val_mape_pct === null) return -1;
+                        return a.val_mape_pct - b.val_mape_pct;
+                    });
+                    
+                    // Limit to top 30 results
+                    const limitedResults = sortedResults.slice(0, maxResults);
+                    
+                    let html = '<table class="results-table"><thead><tr>';
+                    html += '<th>Rank</th><th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th><th>Actions</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    limitedResults.forEach((result, idx) => {
+                        const isBest = data.run.best_result && 
+                            result.config_name === data.run.best_result.config_name && 
+                            result.model_type === data.run.best_result.model_type;
+                        const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
+                        
+                        // Escape JSON for HTML attribute
+                        const escapedFeatures = JSON.stringify(result.experimental_features || {}).replace(/'/g, "\\'");
+                        const escapedFirstRow = JSON.stringify(result.first_row_data || null).replace(/'/g, "\\'");
+                        const escapedLastRow = JSON.stringify(result.last_row_data || null).replace(/'/g, "\\'");
+                        
+                        html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(event, ${result.id}, JSON.parse('${escapedFeatures}'), ${result.train_samples || 0}, ${result.val_samples || 0}, JSON.parse('${escapedFirstRow}'), JSON.parse('${escapedLastRow}'))">`;
+                        html += `<td>${idx + 1}${isBest ? ' 👑' : ''}</td>`;
+                        html += `<td>${result.config_name}</td>`;
+                        html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
+                        html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
+                        html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
+                        html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
+                        html += `<td>${result.success ? '✓' : '✗'}</td>`;
+                        
+                        // Add apply and select buttons
+                        html += `<td onclick="event.stopPropagation();">`;
+                        if (result.success && result.id) {
+                            html += `<button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; margin: 0.1rem;" onclick="applyResultById(${result.id})">Apply</button>`;
+                            html += `<button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; margin: 0.1rem;" onclick="selectForRetrain(${result.id})">Select</button>`;
+                        } else {
+                            html += '-';
+                        }
+                        html += `</td>`;
+                        
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table>';
+                    resultsTable.innerHTML = html;
+                } else {
+                    resultsTable.innerHTML = '<p style="color: var(--text-secondary);">No optimization results available yet. Run the optimizer to generate results.</p>';
+                }
+            } catch (error) {
+                resultsTable.innerHTML = '<p style="color: var(--error-text);">Error loading results: ' + error.message + '</p>';
+            }
+        }
+
+        function selectForRetrain(resultId) {
+            document.getElementById('selectedResultId').value = resultId;
+            // Scroll to retrain section
+            document.querySelector('#selectedResultId').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        async function retrainFromResult() {
+            const resultIdInput = document.getElementById('selectedResultId');
+            const statusDiv = document.getElementById('retrainStatus');
+            const btn = document.getElementById('retrainFromResultBtn');
+            
+            const resultId = parseInt(resultIdInput.value);
+            
+            if (!resultId || isNaN(resultId)) {
+                statusDiv.className = 'status-message error';
+                statusDiv.style.display = 'block';
+                statusDiv.textContent = '✗ Please select a valid result ID';
+                return;
+            }
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.style.display = 'block';
+            statusDiv.textContent = 'Re-training model with selected configuration...';
+            
+            try {
+                // First, get the result details
+                const resultResponse = await fetch(`api/optimizer/runs/${resultId}`);
+                if (!resultResponse.ok) {
+                    throw new Error('Failed to fetch result details');
+                }
+                
+                const resultData = await resultResponse.json();
+                
+                // Apply the configuration first
+                const applyResponse = await fetch(`api/optimizer/apply/${resultId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enable_two_step: true })
+                });
+                
+                const applyData = await applyResponse.json();
+                
+                if (!applyResponse.ok) {
+                    throw new Error(applyData.message || 'Failed to apply configuration');
+                }
+                
+                statusDiv.textContent = '✓ Configuration applied. Now training model...\n';
+                
+                // Now train the model based on the model type
+                const isTwoStep = resultData.run && resultData.run.results && 
+                    resultData.run.results.find(r => r.id === resultId)?.model_type === 'two_step';
+                
+                const trainEndpoint = isTwoStep ? 'api/train/two_step_heating_demand' : 'api/train/heating_demand';
+                
+                const trainResponse = await fetch(trainEndpoint, {
+                    method: 'POST'
+                });
+                
+                const trainData = await trainResponse.json();
+                
+                if (trainResponse.ok) {
+                    statusDiv.className = 'status-message success';
+                    let message = '✓ Model re-trained successfully!\n\n';
+                    
+                    if (isTwoStep) {
+                        message += 'Two-Step Model:\n';
+                        message += `- Classifier Accuracy: ${trainData.classifier_metrics?.accuracy ? (trainData.classifier_metrics.accuracy * 100).toFixed(1) + '%' : 'N/A'}\n`;
+                        message += `- Regressor Val MAPE: ${trainData.regressor_metrics?.val_mape_pct !== null ? trainData.regressor_metrics.val_mape_pct + '%' : 'N/A'}\n`;
+                    } else {
+                        message += 'Single-Step Model:\n';
+                        message += `- Val MAPE: ${trainData.metrics?.val_mape_pct !== null ? trainData.metrics.val_mape_pct + '%' : 'N/A'}\n`;
+                        message += `- Val MAE: ${trainData.metrics?.val_mae_kwh !== null ? trainData.metrics.val_mae_kwh.toFixed(4) + ' kWh' : 'N/A'}\n`;
+                    }
+                    
+                    statusDiv.textContent = message;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Training failed: ' + (trainData.message || 'Unknown error');
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
                 btn.disabled = false;
             }
         }

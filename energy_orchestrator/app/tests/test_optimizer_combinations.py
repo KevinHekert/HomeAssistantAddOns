@@ -16,7 +16,7 @@ from math import comb
 from itertools import combinations as iter_combinations
 
 from ml.optimizer import (
-    _get_experimental_feature_combinations,
+    _generate_experimental_feature_combinations,
     run_optimization,
     _train_single_configuration,
     OptimizerProgress,
@@ -29,8 +29,14 @@ class TestCombinationGeneration:
     """Test the combination generation logic."""
 
     def test_generates_all_combinations(self):
-        """Verify that ALL combinations (2^N) are generated."""
-        combos = _get_experimental_feature_combinations(include_derived=False)
+        """Verify that ALL combinations (2^N) are generated with limit."""
+        # For tests, we use include_derived=False to only test EXPERIMENTAL_FEATURES (4 features)
+        combos_gen = _generate_experimental_feature_combinations(
+        combos = list(combos_gen)
+            include_derived=False,
+            max_combinations=None,  # No limit for this test
+        )
+        combos = list(combos_gen)
         
         n_features = len(EXPERIMENTAL_FEATURES)
         expected_count = 2 ** n_features
@@ -39,7 +45,12 @@ class TestCombinationGeneration:
     
     def test_combination_distribution(self):
         """Verify the distribution of combinations by size."""
-        combos = _get_experimental_feature_combinations(include_derived=False)
+        combos_gen = _generate_experimental_feature_combinations(
+        combos = list(combos_gen)
+            include_derived=False,
+            max_combinations=None,
+        )
+        combos = list(combos_gen)
         
         # Count combinations by number of enabled features
         enabled_counts = Counter()
@@ -57,7 +68,8 @@ class TestCombinationGeneration:
     
     def test_specific_pairwise_combinations_exist(self):
         """Verify specific 2-feature combinations exist with reduced feature set."""
-        combos = _get_experimental_feature_combinations(include_derived=False)
+        combos_gen = _generate_experimental_feature_combinations(include_derived=False, max_combinations=None)
+        combos = list(combos_gen)
         
         # Updated for 4-feature set: pressure, outdoor_temp_avg_6h, heating_degree_hours_24h, day_of_week
         required_pairs = [
@@ -78,7 +90,8 @@ class TestCombinationGeneration:
     
     def test_individual_features_exist(self):
         """Verify individual features are tested separately with reduced feature set."""
-        combos = _get_experimental_feature_combinations(include_derived=False)
+        combos_gen = _generate_experimental_feature_combinations(include_derived=False, max_combinations=None)
+        combos = list(combos_gen)
         
         # Updated for 4-feature set
         individual_features = ['pressure', 'outdoor_temp_avg_6h', 'heating_degree_hours_24h', 'day_of_week']
@@ -92,9 +105,37 @@ class TestCombinationGeneration:
                     break
             assert found, f"Individual feature {feature} not found in combinations"
     
+    def test_max_combinations_limit(self):
+        """Verify that max_combinations properly limits generation."""
+        # Test with limit of 10
+        combos_gen = _generate_experimental_feature_combinations(
+            include_derived=False,
+            max_combinations=10,
+        )
+        combos = list(combos_gen)
+        
+        # Should only get 10 combinations, not all 2^4 = 16
+        assert len(combos) == 10, f"Expected 10 combinations (limited), got {len(combos)}"
+    
+    def test_max_combinations_exceeds_total(self):
+        """Verify behavior when max_combinations exceeds total possible."""
+        n_features = len(EXPERIMENTAL_FEATURES)
+        total_possible = 2 ** n_features
+        
+        # Request more than possible
+        combos_gen = _generate_experimental_feature_combinations(
+            include_derived=False,
+            max_combinations=total_possible + 100,
+        )
+        combos = list(combos_gen)
+        
+        # Should get all possible combinations, not more
+        assert len(combos) == total_possible, f"Expected {total_possible} combinations (all possible), got {len(combos)}"
+    
     def test_baseline_and_all_enabled_exist(self):
         """Verify baseline and all-enabled combinations exist."""
-        combos = _get_experimental_feature_combinations(include_derived=False)
+        combos_gen = _generate_experimental_feature_combinations(include_derived=False, max_combinations=None)
+        combos = list(combos_gen)
         
         # Baseline (all disabled)
         found_baseline = any(
@@ -112,7 +153,8 @@ class TestCombinationGeneration:
     
     def test_no_duplicate_combinations(self):
         """Verify no duplicate combinations are generated."""
-        combos = _get_experimental_feature_combinations(include_derived=False)
+        combos_gen = _generate_experimental_feature_combinations(include_derived=False, max_combinations=None)
+        combos = list(combos_gen)
         
         # Convert each combo to a frozenset of enabled features for comparison
         combo_sets = set(
@@ -125,7 +167,8 @@ class TestCombinationGeneration:
     
     def test_all_size_3_combinations_exist(self):
         """Verify all 3-feature combinations exist (not just logical groups)."""
-        combos = _get_experimental_feature_combinations(include_derived=False)
+        combos_gen = _generate_experimental_feature_combinations(include_derived=False, max_combinations=None)
+        combos = list(combos_gen)
         
         feature_names = [f.name for f in EXPERIMENTAL_FEATURES]
         
@@ -145,7 +188,8 @@ class TestCombinationGeneration:
     
     def test_all_size_4_combinations_exist(self):
         """Verify all 4-feature combinations exist."""
-        combos = _get_experimental_feature_combinations(include_derived=False)
+        combos_gen = _generate_experimental_feature_combinations(include_derived=False, max_combinations=None)
+        combos = list(combos_gen)
         
         feature_names = [f.name for f in EXPERIMENTAL_FEATURES]
         
@@ -411,9 +455,13 @@ class TestThreadSafety:
             mock_get_config.return_value = mock_config
             
             # Run optimization with limited combinations (first 2 for faster test)
-            with patch("ml.optimizer._get_experimental_feature_combinations") as mock_combos:
-                combos = _get_experimental_feature_combinations(include_derived=False)
-                mock_combos.return_value = combos[:2]  # Use first 2 combinations
+            # Generate combinations first  
+            combos_gen = _generate_experimental_feature_combinations(include_derived=False, max_combinations=None)
+            combos = list(combos_gen)
+            
+            # Mock to return only first 2 combinations
+            with patch("ml.optimizer._generate_experimental_feature_combinations") as mock_combos:
+                mock_combos.return_value = iter(combos[:2])  # Return generator of first 2
                 
                 progress = run_optimization(
                     train_single_step_fn=mock_train_single,

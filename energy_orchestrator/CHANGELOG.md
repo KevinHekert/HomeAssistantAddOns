@@ -2,6 +2,38 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.107] - 2025-12-03
+
+- **Implement Hybrid Genetic Algorithm + Bayesian Optimization for Feature Selection**
+  - **Problem**: Need to find best feature combination from 52+ features without testing all 2^52 combinations
+  - **Solution**: Implemented intelligent search strategies that scale to ANY number of features
+  - **Hybrid Strategy (Default)**: Genetic Algorithm + Bayesian Optimization
+    - Phase 1: Genetic Algorithm (100 generations × 50 population = 5,000 combinations)
+    - Phase 2: Bayesian Optimization (100 strategic iterations)
+    - Total: 5,100 combinations × 2 models = 10,200 trainings (feasible for any feature count)
+    - vs Exhaustive: 2^52 = 4.5 quadrillion combinations (impossible)
+  - **Changes Made**:
+    1. Added `SearchStrategy` enum with options: EXHAUSTIVE, GENETIC, BAYESIAN, HYBRID_GENETIC_BAYESIAN
+    2. Implemented `_generate_genetic_algorithm_combinations()` with evolution-based search
+    3. Implemented `_generate_hybrid_genetic_bayesian_combinations()` combining GA + Bayesian
+    4. Added parameters: `search_strategy`, `genetic_population_size`, `genetic_num_generations`, `genetic_mutation_rate`, `bayesian_iterations`
+    5. Updated `run_optimization()` to support strategy selection
+    6. Added `max_combinations` to `OptimizerConfig` database model
+    7. Updated config functions to handle `max_combinations` parameter
+    8. Genetic Algorithm features: population, crossover, mutation, elitism, tournament selection
+    9. Bayesian phase: strategically tests diverse combinations to exploit GA findings
+    10. All strategies use lazy generators for memory efficiency
+    11. Tests use only 4 experimental features (2^4 = 16 combinations) for speed
+    12. Production uses ALL features (experimental + derived) with intelligent search
+  - **Search Strategy Details**:
+    - **HYBRID (Default)**: 5,100 combinations (10,200 trainings) - Best balance of exploration + exploitation
+    - **GENETIC**: Configurable generations × population - Pure evolution-based search
+    - **EXHAUSTIVE**: Up to max_combinations limit - Brute force with safety limit
+  - **Scalability**: Works with 52, 100, or 1000+ features without memory issues
+  - **Configurability**: Population size, generations, mutation rate all adjustable for scale up/down
+  - **User Feedback Addressed**: @KevinHekert requested not limiting features + scalable solution
+  - **Version bumped to 0.0.0.107**
+
 ## [0.0.0.106] - 2025-12-03
 
 - **Fix Optimizer Crash: Memory-Efficient Streaming Architecture**

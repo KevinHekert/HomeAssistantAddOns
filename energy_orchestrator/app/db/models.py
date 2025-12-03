@@ -138,4 +138,5 @@ class OptimizerConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     max_workers: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None or 0 = auto-calculate
+    max_combinations: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None = default (1024), limits feature combination explosion
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)

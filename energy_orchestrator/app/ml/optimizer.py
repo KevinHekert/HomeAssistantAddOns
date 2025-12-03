@@ -192,15 +192,21 @@ class OptimizationResult:
 
 @dataclass
 class OptimizerProgress:
-    """Progress tracking for the optimization process."""
-    total_configurations: int
-    completed_configurations: int
-    current_configuration: str
-    current_model_type: str
-    phase: str  # "initializing", "training", "complete", "error"
+    """
+    Progress tracking for the optimization process.
+    
+    Note: Results are now stored in the database and NOT kept in memory.
+    Use run_id to query results from the database instead.
+    """
+    run_id: Optional[int] = None  # Database ID for streaming results
+    total_configurations: int = 0
+    completed_configurations: int = 0
+    current_configuration: str = ""
+    current_model_type: str = ""
+    phase: str = "initializing"  # "initializing", "training", "complete", "error"
     log_messages: list[str] = field(default_factory=list)
-    results: list[OptimizationResult] = field(default_factory=list)
     best_result: Optional[OptimizationResult] = None
+    best_result_db_id: Optional[int] = None  # Database ID of best result
     original_settings: Optional[dict] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
@@ -222,53 +228,29 @@ class OptimizerProgress:
         # Keep only the last N messages
         if len(self.log_messages) > self.max_log_messages:
             self.log_messages = self.log_messages[-self.max_log_messages:]
-    
-    def get_top_results(self, n: int = 20) -> list[OptimizationResult]:
-        """
-        Get the top N results sorted by validation MAPE (lower is better).
-        
-        Args:
-            n: Number of top results to return (default: 20)
-            
-        Returns:
-            List of top N OptimizationResult objects sorted by Val MAPE
-        """
-        # Filter successful results with valid MAPE
-        valid_results = [
-            r for r in self.results 
-            if r.success and r.val_mape_pct is not None
-        ]
-        
-        # Sort by MAPE (ascending - lower is better)
-        sorted_results = sorted(valid_results, key=lambda r: r.val_mape_pct)
-        
-        # Return top N
-        return sorted_results[:n]
 
 
 
 def _get_all_available_features() -> list[str]:
     """
-    Get all available features including experimental and derived features.
+    Get all available features for optimization.
     
-    This includes:
-    - All experimental features from EXPERIMENTAL_FEATURES
-    - All derived features currently defined in feature configuration
+    This includes ONLY experimental features from EXPERIMENTAL_FEATURES.
+    Derived features are excluded to keep the combination space manageable.
+    
+    For N experimental features, this generates 2^N combinations.
+    With 4 features: 2^4 = 16 combinations
+    With 10 features: 2^10 = 1024 combinations
     
     Returns:
-        List of all available feature names
+        List of experimental feature names only
     """
-    config = get_feature_config()
-    
-    # Start with experimental features
+    # Only use explicitly defined EXPERIMENTAL_FEATURES
+    # Do NOT include derived features from config.experimental_enabled
+    # This prevents the combination space from exploding (e.g., 2^52)
     feature_names = [f.name for f in EXPERIMENTAL_FEATURES]
     
-    # Add any derived features from experimental_enabled that aren't in EXPERIMENTAL_FEATURES
-    for feature_name, enabled in config.experimental_enabled.items():
-        if feature_name not in feature_names:
-            feature_names.append(feature_name)
-    
-    _Logger.info("Found %d total features for optimization (experimental + derived)", len(feature_names))
+    _Logger.info("Found %d experimental features for optimization (excluding derived features)", len(feature_names))
     return feature_names
 
 
@@ -507,9 +489,10 @@ def run_optimization(
     build_dataset_fn: Callable,
     progress_callback: Optional[Callable[[OptimizerProgress], None]] = None,
     min_samples: int = 50,
-    include_derived_features: bool = True,
+    include_derived_features: bool = False,  # Changed default to False to only use EXPERIMENTAL_FEATURES
     max_memory_mb: Optional[float] = None,
     configured_max_workers: Optional[int] = None,
+    batch_size: int = 20,  # Number of tasks per worker batch before recycling
 ) -> OptimizerProgress:
     """
     Run the settings optimizer to find the best configuration.
@@ -517,16 +500,16 @@ def run_optimization(
     This function:
     1. Saves current settings
     2. Determines number of workers (configured or auto-calculated)
-    3. Iterates through ALL feature combinations (2^N)
-    4. Trains both single-step and two-step models with adaptive parallelism
-    5. Compares Val MAPE to find the best configuration
-    6. Reports progress via callback
-    7. Logs memory usage at INFO level for monitoring
-    8. Reports per-worker memory usage before/after each training
-    
-    For 10 experimental features, this tests 1024 combinations × 2 models = 2048 trainings.
+    3. Iterates through experimental feature combinations (2^N, excluding derived features)
+    4. Trains both single-step and two-step models with batch worker recycling
+    5. Streams results directly to database (NOT kept in memory)
+    6. Compares Val MAPE to find the best configuration
+    7. Reports progress via callback
+    8. Logs memory usage at INFO level for monitoring
     
     Memory Management:
+    - **Streams results to database immediately (NOT kept in memory)**
+    - Uses batch worker recycling: workers are recreated every `batch_size` tasks
     - Auto-calculates optimal workers based on available memory and CPU cores (if not configured)
     - Uses adaptive parallelism based on real-time memory availability
     - Throttles parallel workers when memory exceeds max_memory_mb threshold
@@ -536,6 +519,12 @@ def run_optimization(
     - Forces garbage collection every 10 iterations
     - Logs memory usage every 10 iterations at INFO level
     - Explicitly deletes DataFrames and models after each training
+    
+    Worker Batch Recycling:
+    - Workers process `batch_size` tasks (default: 20) then are shut down
+    - New workers are created for the next batch
+    - This prevents memory accumulation in long-running workers
+    - Helps avoid OOM kills during large optimization runs (1024+ trainings)
     
     Worker Calculation:
     - If configured_max_workers is set (> 0), uses that value
@@ -550,16 +539,17 @@ def run_optimization(
         build_dataset_fn: Function to build feature dataset (min_samples) -> (df, stats)
         progress_callback: Optional callback for progress updates
         min_samples: Minimum samples required for training
-        include_derived_features: Whether to include derived features in combinations (default: True)
+        include_derived_features: Whether to include derived features (default: False, only EXPERIMENTAL_FEATURES)
         max_memory_mb: Maximum memory in MB before throttling parallel execution.
                        If None, defaults to 1536 MB (75% of 2GB limit).
                        Set via UI optimizer settings.
         configured_max_workers: Maximum number of workers to use (from UI config).
                                If None or 0, auto-calculates from system resources.
+        batch_size: Number of tasks per worker batch before recycling workers (default: 20)
         
     Returns:
-        OptimizerProgress with all results and the best configuration.
-        Use progress.get_top_results(20) to get the top 20 results for UI display.
+        OptimizerProgress with run_id for querying results from database.
+        Results are NOT kept in memory. Use db.optimizer_storage functions to retrieve them.
     """
     # Determine number of workers: use configured value or auto-calculate
     if configured_max_workers is not None and configured_max_workers > 0:
@@ -605,14 +595,34 @@ def run_optimization(
         f"[{datetime.now().strftime('%H:%M:%S')}] Memory limit: {mem_limit_str}, Max workers: {max_workers} ({worker_source})"
     )
     progress.add_log_message(
-        f"[{datetime.now().strftime('%H:%M:%S')}] Using adaptive parallelism with memory-based throttling and per-worker memory reporting"
+        f"[{datetime.now().strftime('%H:%M:%S')}] Using streaming database storage with batch worker recycling (batch_size={batch_size})"
     )
+    
+    # Import database storage functions
+    from db.optimizer_storage import (
+        create_optimizer_run,
+        save_optimizer_result,
+        update_optimizer_run_progress,
+        complete_optimizer_run,
+    )
+    
+    # Create database run record for streaming results
+    run_id = create_optimizer_run(progress.start_time, total_configs)
+    if run_id is None:
+        _Logger.error("Failed to create optimizer run in database")
+        progress.phase = "error"
+        progress.error_message = "Failed to create optimizer run in database"
+        return progress
+    
+    progress.run_id = run_id
+    _Logger.info("Created optimizer run %d in database", run_id)
     
     if progress_callback:
         progress_callback(progress)
     
     try:
         progress.phase = "training"
+        update_optimizer_run_progress(run_id, 0, "training")
         
         # Log initial memory state
         _log_memory_usage("Optimizer start")
@@ -624,113 +634,161 @@ def run_optimization(
             training_tasks.append((config_name, combo, "single_step", train_single_step_fn))
             training_tasks.append((config_name, combo, "two_step", train_two_step_fn))
         
-        # ADAPTIVE PARALLEL PROCESSING with memory throttling
-        # Uses ThreadPoolExecutor but limits active workers based on memory usage
-        # Falls back to sequential when memory is constrained
+        # BATCH WORKER RECYCLING with STREAMING DATABASE STORAGE
+        # Process tasks in batches, recycling workers between batches to prevent memory leaks
+        # Stream results directly to database instead of keeping them in memory
         _Logger.info(
-            "Processing %d training tasks with adaptive parallelism (max %d workers, memory limit %s)",
-            len(training_tasks), max_workers, mem_limit_str
+            "Processing %d training tasks with batch recycling (max %d workers, batch_size %d, memory limit %s)",
+            len(training_tasks), max_workers, batch_size, mem_limit_str
         )
         
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Track active futures and pending tasks
-            active_futures = {}
-            pending_tasks = list(enumerate(training_tasks, start=1))
-            pending_tasks.reverse()  # Use as a stack (pop from end)
+        task_index = 0
+        batch_number = 0
+        
+        while task_index < len(training_tasks):
+            batch_number += 1
+            batch_start = task_index
+            batch_end = min(task_index + batch_size, len(training_tasks))
+            batch_tasks = training_tasks[batch_start:batch_end]
             
-            # Process tasks with memory-aware throttling
-            while pending_tasks or active_futures:
-                # Submit new tasks if memory allows and we have capacity
-                while (
-                    len(active_futures) < max_workers 
-                    and pending_tasks 
-                    and _should_allow_parallel_task(max_memory_mb)
-                ):
-                    idx, (config_name, combo, model_type, train_fn) = pending_tasks.pop()
-                    
-                    future = executor.submit(
-                        _train_single_configuration,
-                        config_name,
-                        combo,
-                        model_type,
-                        train_fn,
-                        build_dataset_fn,
-                        min_samples,
-                    )
-                    active_futures[future] = (idx, config_name, model_type)
-                    _Logger.debug("Submitted task %d/%d: %s (%s)", idx, total_configs, config_name, model_type)
+            _Logger.info(
+                "Starting batch %d: tasks %d-%d (of %d total)",
+                batch_number, batch_start + 1, batch_end, len(training_tasks)
+            )
+            _log_memory_usage(f"Before batch {batch_number}")
+            
+            # Create a NEW ThreadPoolExecutor for this batch
+            # This ensures workers are fresh and don't accumulate memory
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Track active futures for this batch
+                active_futures = {}
+                pending_batch_tasks = list(enumerate(batch_tasks, start=batch_start + 1))
+                pending_batch_tasks.reverse()  # Use as a stack
                 
-                # Wait for at least one task to complete if we have any active
-                if active_futures:
-                    # Use timeout to periodically check memory even if no tasks complete
-                    done, _ = wait(
-                        active_futures.keys(),
-                        timeout=2.0,
-                        return_when=FIRST_COMPLETED
-                    )
-                    
-                    # Process completed tasks
-                    for future in done:
-                        idx, config_name, model_type = active_futures.pop(future)
+                # Process tasks in this batch with memory-aware throttling
+                while pending_batch_tasks or active_futures:
+                    # Submit new tasks if memory allows and we have capacity
+                    while (
+                        len(active_futures) < max_workers 
+                        and pending_batch_tasks 
+                        and _should_allow_parallel_task(max_memory_mb)
+                    ):
+                        idx, (config_name, combo, model_type, train_fn) = pending_batch_tasks.pop()
                         
-                        try:
-                            result = future.result()
+                        future = executor.submit(
+                            _train_single_configuration,
+                            config_name,
+                            combo,
+                            model_type,
+                            train_fn,
+                            build_dataset_fn,
+                            min_samples,
+                        )
+                        active_futures[future] = (idx, config_name, model_type)
+                        _Logger.debug("Submitted task %d/%d: %s (%s)", idx, total_configs, config_name, model_type)
+                    
+                    # Wait for at least one task to complete if we have any active
+                    if active_futures:
+                        # Use timeout to periodically check memory even if no tasks complete
+                        done, _ = wait(
+                            active_futures.keys(),
+                            timeout=2.0,
+                            return_when=FIRST_COMPLETED
+                        )
+                        
+                        # Process completed tasks
+                        for future in done:
+                            idx, config_name, model_type = active_futures.pop(future)
                             
-                            # Log memory periodically
-                            if idx % 10 == 1:
-                                _log_memory_usage(f"After task {idx}/{total_configs}")
-                            
-                            # Update progress
-                            with _progress_lock:
-                                progress.results.append(result)
-                                progress.completed_configurations += 1
-                                progress.current_configuration = config_name
-                                progress.current_model_type = model_type
+                            try:
+                                result = future.result()
                                 
-                                # Log the result
-                                if result.success:
-                                    mape_str = f"{result.val_mape_pct:.2f}%" if result.val_mape_pct is not None else "N/A"
-                                    progress.add_log_message(
-                                        f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Val MAPE = {mape_str}"
-                                    )
-                                else:
-                                    progress.add_log_message(
-                                        f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Failed - {result.error_message}"
-                                    )
+                                # STREAM result to database immediately (do NOT keep in memory)
+                                result_db_id = save_optimizer_result(run_id, result)
                                 
-                                # Update best result if this is better
-                                if result.success and result.val_mape_pct is not None:
-                                    if (
-                                        progress.best_result is None
-                                        or progress.best_result.val_mape_pct is None
-                                        or result.val_mape_pct < progress.best_result.val_mape_pct
-                                    ):
-                                        progress.best_result = result
+                                # Update progress
+                                with _progress_lock:
+                                    progress.completed_configurations += 1
+                                    progress.current_configuration = config_name
+                                    progress.current_model_type = model_type
+                                    
+                                    # Log the result
+                                    if result.success:
+                                        mape_str = f"{result.val_mape_pct:.2f}%" if result.val_mape_pct is not None else "N/A"
                                         progress.add_log_message(
-                                            f"[{datetime.now().strftime('%H:%M:%S')}] 🏆 New best: {config_name} ({model_type}) with Val MAPE = {result.val_mape_pct:.2f}%"
+                                            f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Val MAPE = {mape_str}"
                                         )
-                            
-                            # Call progress callback outside the lock to avoid deadlocks
-                            if progress_callback:
-                                progress_callback(progress)
-                            
-                            # Garbage collection every 10 completed tasks
-                            if progress.completed_configurations % 10 == 0:
-                                gc.collect()
-                                _log_memory_usage(f"After GC at {progress.completed_configurations}/{total_configs}")
-                                _Logger.info("Garbage collection completed at %d/%d", progress.completed_configurations, total_configs)
+                                    else:
+                                        progress.add_log_message(
+                                            f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Failed - {result.error_message}"
+                                        )
+                                    
+                                    # Update best result if this is better
+                                    if result.success and result.val_mape_pct is not None:
+                                        if (
+                                            progress.best_result is None
+                                            or progress.best_result.val_mape_pct is None
+                                            or result.val_mape_pct < progress.best_result.val_mape_pct
+                                        ):
+                                            progress.best_result = result
+                                            progress.best_result_db_id = result_db_id
+                                            progress.add_log_message(
+                                                f"[{datetime.now().strftime('%H:%M:%S')}] 🏆 New best: {config_name} ({model_type}) with Val MAPE = {result.val_mape_pct:.2f}%"
+                                            )
+                                            # Update database with new best result
+                                            update_optimizer_run_progress(
+                                                run_id,
+                                                progress.completed_configurations,
+                                                "training",
+                                                result_db_id
+                                            )
                                 
-                        except Exception as e:
-                            _Logger.error("Error processing result for %s (%s): %s", config_name, model_type, e)
-                            with _progress_lock:
-                                progress.add_log_message(
-                                    f"[{datetime.now().strftime('%H:%M:%S')}] Error processing result: {str(e)}"
-                                )
-                
-                # If memory is high and no tasks completed, wait a bit before checking again
-                elif pending_tasks:
-                    _Logger.debug("Memory limit reached, waiting for tasks to complete...")
-                    time.sleep(1.0)
+                                # Log memory periodically
+                                if progress.completed_configurations % 10 == 0:
+                                    _log_memory_usage(f"After task {progress.completed_configurations}/{total_configs}")
+                                    # Update database progress
+                                    update_optimizer_run_progress(
+                                        run_id,
+                                        progress.completed_configurations,
+                                        "training",
+                                        progress.best_result_db_id
+                                    )
+                                
+                                # Call progress callback outside the lock to avoid deadlocks
+                                if progress_callback:
+                                    progress_callback(progress)
+                                
+                                # Garbage collection every 10 completed tasks
+                                if progress.completed_configurations % 10 == 0:
+                                    gc.collect()
+                                    _log_memory_usage(f"After GC at {progress.completed_configurations}/{total_configs}")
+                                    _Logger.info("Garbage collection completed at %d/%d", progress.completed_configurations, total_configs)
+                                    
+                            except Exception as e:
+                                _Logger.error("Error processing result for %s (%s): %s", config_name, model_type, e)
+                                with _progress_lock:
+                                    progress.add_log_message(
+                                        f"[{datetime.now().strftime('%H:%M:%S')}] Error processing result: {str(e)}"
+                                    )
+                    
+                    # If memory is high and no tasks completed, wait a bit before checking again
+                    elif pending_batch_tasks:
+                        _Logger.debug("Memory limit reached, waiting for tasks to complete...")
+                        time.sleep(1.0)
+            
+            # Batch complete - executor is shut down and workers are recycled
+            _Logger.info(
+                "Batch %d complete: processed tasks %d-%d (of %d total)",
+                batch_number, batch_start + 1, batch_end, len(training_tasks)
+            )
+            _log_memory_usage(f"After batch {batch_number}")
+            
+            # Force garbage collection after each batch to clean up worker memory
+            gc.collect()
+            time.sleep(1.0)  # Give GC time to complete
+            _log_memory_usage(f"After GC batch {batch_number}")
+            
+            task_index = batch_end
         
         # Final memory log
         _log_memory_usage("Optimizer complete")
@@ -738,6 +796,7 @@ def run_optimization(
         # Optimization complete
         progress.phase = "complete"
         progress.end_time = datetime.now()
+        complete_optimizer_run(run_id, progress.end_time, "complete")
         
         with _progress_lock:
             if progress.best_result:
@@ -754,6 +813,9 @@ def run_optimization(
                 progress.add_log_message(
                     f"[{datetime.now().strftime('%H:%M:%S')}] Best Val MAPE: {mape_str}"
                 )
+                progress.add_log_message(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] Results saved to database (run_id={run_id})"
+                )
             else:
                 progress.add_log_message(
                     f"[{datetime.now().strftime('%H:%M:%S')}] Optimization complete (no valid results)"
@@ -763,11 +825,15 @@ def run_optimization(
         _Logger.error("Optimizer error: %s", e, exc_info=True)
         progress.phase = "error"
         progress.error_message = str(e)
+        progress.end_time = datetime.now()
+        
+        # Save error to database
+        complete_optimizer_run(run_id, progress.end_time, "error", str(e))
+        
         with _progress_lock:
             progress.add_log_message(
                 f"[{datetime.now().strftime('%H:%M:%S')}] Error: {str(e)}"
             )
-        progress.end_time = datetime.now()
     
     finally:
         # Restore original settings (handles both experimental and derived features)

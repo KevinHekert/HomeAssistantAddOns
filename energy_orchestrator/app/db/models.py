@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Double, Float, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Double, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 
 
@@ -92,3 +92,36 @@ class FeatureStatistic(Base):
     __table_args__ = (
         UniqueConstraint("slot_start", "sensor_name", "stat_type", name="uq_feature_stat"),
     )
+
+
+class OptimizerRun(Base):
+    """Stores optimization run metadata and overall status."""
+    __tablename__ = "optimizer_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    phase: Mapped[str] = mapped_column(String(32), nullable=False)  # "initializing", "training", "complete", "error"
+    total_configurations: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed_configurations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    best_result_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class OptimizerResult(Base):
+    """Stores individual optimizer configuration test results."""
+    __tablename__ = "optimizer_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    config_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    model_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "single_step" or "two_step"
+    experimental_features_json: Mapped[str] = mapped_column(Text, nullable=False)  # JSON dict
+    val_mape_pct: Mapped[float | None] = mapped_column(Double, nullable=True)
+    val_mae_kwh: Mapped[float | None] = mapped_column(Double, nullable=True)
+    val_r2: Mapped[float | None] = mapped_column(Double, nullable=True)
+    train_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    val_samples: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    training_timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

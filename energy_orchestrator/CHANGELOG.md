@@ -2,6 +2,42 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.95] - 2025-12-03
+
+- **Optimizer Improvements: Async Execution, Result Storage, and Enhanced UI**
+  - **Database Storage for Optimization Results**:
+    - Created `OptimizerRun` and `OptimizerResult` database models to persist optimization history
+    - Implemented `optimizer_storage.py` module with functions to save/load optimizer runs and results
+    - All optimization results are now saved to database automatically after completion
+  - **Async Optimization with Polling**:
+    - Optimizer now runs asynchronously in a background thread instead of blocking the UI
+    - Added `_run_optimizer_in_thread()` function for background execution
+    - Status is set to "busy" when starting a run, allowing UI to poll for progress
+    - `/api/optimizer/run` endpoint now returns immediately and starts background optimization
+    - `/api/optimizer/status` endpoint enhanced to return full results when complete
+  - **New API Endpoints**:
+    - `POST /api/optimizer/apply/<result_id>` - Apply any specific result from the results table by its database ID
+    - `GET /api/optimizer/runs` - List recent optimizer runs (summary view)
+    - `GET /api/optimizer/runs/<run_id>` - Get detailed information about a specific run
+    - `GET /api/optimizer/latest` - Get the most recent optimizer run with all results
+  - **UI Enhancements** (Partial - in progress):
+    - Results table now includes "Apply" button on each row for easy configuration application
+    - Winner row styling updated: crown icon (👑) instead of star (⭐)
+    - Winner row background changed to light green `rgba(76, 175, 80, 0.2)` instead of dark green
+    - UI prepared for polling-based status updates (full integration pending)
+  - **Feature Configuration**:
+    - Verified that derived/custom sensors created via ⚙️ Feature Configuration are properly picked up
+    - `_is_derived_sensor_stat_feature()` and `_create_derived_feature_metadata()` handle avatar and other derived features
+  - **Testing**:
+    - Added comprehensive test suite in `test_optimizer_storage.py`
+    - Tests cover database operations, async endpoint behavior, and result storage
+    - 14 new tests validating optimizer storage and API endpoints
+  - **Impact**:
+    - Users can now run optimizer in background without blocking the UI
+    - Historical optimization results are preserved in database
+    - Users can apply any configuration from results table, not just the best one
+    - Better visibility into past optimization runs
+
 ## [0.0.0.94] - 2025-12-03
 
 - **Fixed Feature Statistics Time Range Calculation Bug**

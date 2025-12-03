@@ -90,6 +90,8 @@ def save_optimizer_result(
                 success=result.success,
                 error_message=result.error_message,
                 training_timestamp=result.training_timestamp,
+                first_row_json=json.dumps(result.first_row_data) if result.first_row_data else None,
+                last_row_json=json.dumps(result.last_row_data) if result.last_row_data else None,
             )
             session.add(result_record)
             session.commit()
@@ -467,4 +469,6 @@ def _result_to_dict(result: OptimizerResult) -> dict:
         "success": result.success,
         "error_message": result.error_message,
         "training_timestamp": result.training_timestamp.isoformat() if result.training_timestamp else None,
+        "first_row_data": json.loads(result.first_row_json) if result.first_row_json else None,
+        "last_row_data": json.loads(result.last_row_json) if result.last_row_json else None,
     }

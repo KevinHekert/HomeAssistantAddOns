@@ -2901,7 +2901,7 @@
             }
         }
 
-        function toggleFeatureDetails(resultId, features, trainSamples, valSamples) {
+        function toggleFeatureDetails(resultId, features, trainSamples, valSamples, firstRowData, lastRowData) {
             // Check if details row already exists
             const detailsRowId = `features-${resultId}`;
             const existingRow = document.getElementById(detailsRowId);
@@ -2973,14 +2973,35 @@
             
             html += `<p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0.75rem 0 0 0; font-style: italic;">Total: ${coreFeatures.length} core + ${Object.values(features || {}).filter(v => v === true).length} experimental features = ${coreFeatures.length + Object.values(features || {}).filter(v => v === true).length} features used</p>`;
             
-            // Add note about viewing training data details
-            html += '<div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 6px; border-left: 3px solid var(--accent-blue);">';
-            html += '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary);">';
-            html += '<strong style="color: var(--text-primary);">💡 Tip:</strong> To view detailed training data (first/last row values for each sensor), ';
-            html += 'click <strong>Apply</strong> to use this configuration, then go to the <strong>Model Training</strong> tab and train the model. ';
-            html += 'The training results will show the complete training data range for all sensors.';
-            html += '</p>';
-            html += '</div>';
+            // Display actual training data (first and last rows)
+            if (firstRowData || lastRowData) {
+                html += '<div style="margin-top: 1rem;">';
+                html += '<h6 style="margin: 0 0 0.5rem 0; color: var(--text-primary); font-size: 0.9rem;">📊 Training Dataset Samples:</h6>';
+                
+                if (firstRowData) {
+                    html += '<div style="margin-bottom: 0.75rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px; border-left: 3px solid var(--accent-green);">';
+                    html += '<strong style="color: var(--accent-green);">First Row:</strong>';
+                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.25rem; margin-top: 0.25rem; font-size: 0.8rem;">';
+                    for (const [key, value] of Object.entries(firstRowData)) {
+                        const displayValue = value !== null && value !== undefined ? (typeof value === 'number' ? value.toFixed(4) : value) : 'null';
+                        html += `<span style="color: var(--text-secondary);"><strong>${key}:</strong> ${displayValue}</span>`;
+                    }
+                    html += '</div></div>';
+                }
+                
+                if (lastRowData) {
+                    html += '<div style="padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px; border-left: 3px solid var(--accent-blue);">';
+                    html += '<strong style="color: var(--accent-blue);">Last Row:</strong>';
+                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.25rem; margin-top: 0.25rem; font-size: 0.8rem;">';
+                    for (const [key, value] of Object.entries(lastRowData)) {
+                        const displayValue = value !== null && value !== undefined ? (typeof value === 'number' ? value.toFixed(4) : value) : 'null';
+                        html += `<span style="color: var(--text-secondary);"><strong>${key}:</strong> ${displayValue}</span>`;
+                    }
+                    html += '</div></div>';
+                }
+                
+                html += '</div>';
+            }
             
             html += '</div>';
             detailsCell.innerHTML = html;
@@ -3095,7 +3116,7 @@
                                                 // Store features for click handler
                                                 const featuresJson = JSON.stringify(result.experimental_features || {}).replace(/"/g, '&quot;');
                                                 
-                                                html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(${result.id}, ${JSON.stringify(result.experimental_features || {})}, ${result.train_samples || 0}, ${result.val_samples || 0})">`;
+                                                html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(${result.id}, ${JSON.stringify(result.experimental_features || {})}, ${result.train_samples || 0}, ${result.val_samples || 0}, ${JSON.stringify(result.first_row_data || null)}, ${JSON.stringify(result.last_row_data || null)})">`;
                                                 html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
                                                 html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
                                                 html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
@@ -3345,13 +3366,13 @@
                             // Light green background for winner
                             const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
                             
-                            html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(${result.id}, ${JSON.stringify(result.experimental_features || {})}, ${result.train_samples || 0}, ${result.val_samples || 0})">`;
+                            html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(${result.id}, ${JSON.stringify(result.experimental_features || {})}, ${result.train_samples || 0}, ${result.val_samples || 0}, ${JSON.stringify(result.first_row_data || null)}, ${JSON.stringify(result.last_row_data || null)})">`;
                             html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
                             html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
                             html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
                             html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
                             html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
-                            html += `<td>${result.success ? '✓' : '✗ ' + (result.error_message || 'Failed')}</td>`;
+                            html += `<td>${result.success ? '✓' : '✗' + (result.error_message || 'Failed')}</td>`;
                             
                             // Add apply button for successful results (stop propagation to prevent row click)
                             if (result.success && result.id) {

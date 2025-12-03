@@ -121,7 +121,8 @@ class OptimizerResult(Base):
     run_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     config_name: Mapped[str] = mapped_column(String(256), nullable=False)
     model_type: Mapped[str] = mapped_column(String(32), nullable=False)  # "single_step" or "two_step"
-    experimental_features_json: Mapped[str] = mapped_column(Text, nullable=False)  # JSON dict
+    experimental_features_json: Mapped[str] = mapped_column(Text, nullable=False)  # JSON dict (legacy - only tested features)
+    complete_feature_config_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON dict of ALL feature states
     val_mape_pct: Mapped[float | None] = mapped_column(Double, nullable=True)
     val_mae_kwh: Mapped[float | None] = mapped_column(Double, nullable=True)
     val_r2: Mapped[float | None] = mapped_column(Double, nullable=True)

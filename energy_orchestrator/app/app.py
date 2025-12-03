@@ -3629,6 +3629,7 @@ def apply_optimizer_result_by_id(result_id: int):
             config_name=result_dict["config_name"],
             model_type=result_dict["model_type"],
             experimental_features=result_dict["experimental_features"],
+            complete_feature_config=result_dict.get("complete_feature_config"),  # New field
             val_mape_pct=result_dict["val_mape_pct"],
             val_mae_kwh=result_dict["val_mae_kwh"],
             val_r2=result_dict["val_r2"],

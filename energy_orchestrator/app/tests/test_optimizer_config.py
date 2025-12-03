@@ -76,13 +76,20 @@ class TestOptimizerConfig:
         """Set optimizer config converts 0 to None for consistency."""
         with patch('db.optimizer_config.Session') as mock_session:
             mock_sess = mock_session.return_value.__enter__.return_value
-            mock_config = MagicMock()
+            # Create a simple object that allows attribute assignment
+            class MockConfig:
+                def __init__(self):
+                    self.max_workers = 5
+                    self.max_combinations = None
+                    self.updated_at = None
+            
+            mock_config = MockConfig()
             mock_sess.scalars.return_value.first.return_value = mock_config
             
             result = set_optimizer_config(max_workers=0)
             
             assert result is True
-            assert mock_config.max_workers is None
+            assert mock_config.max_workers is None  # Should be converted to None
     
     def test_set_optimizer_config_rejects_negative_value(self):
         """Set optimizer config rejects negative max_workers."""

@@ -20,8 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 import copy
-import concurrent.futures
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 import threading
 from itertools import combinations
 import gc
@@ -77,8 +76,8 @@ def _calculate_optimal_workers(max_memory_mb: Optional[float] = None) -> int:
             available_for_optimizer = total_mb * 0.75
         
         # Estimate memory per training task
-        # Typical: 100-200 MB per task (DataFrame + model + overhead)
-        # Conservative estimate: 200 MB
+        # Conservative estimate: 200 MB per task (DataFrame + model + overhead)
+        # Typical range is 100-200 MB, using 200 MB to avoid OOM risks
         estimated_memory_per_task = 200
         
         # Calculate max workers based on memory
@@ -627,10 +626,10 @@ def run_optimization(
                 # Wait for at least one task to complete if we have any active
                 if active_futures:
                     # Use timeout to periodically check memory even if no tasks complete
-                    done, _ = concurrent.futures.wait(
+                    done, _ = wait(
                         active_futures.keys(),
                         timeout=2.0,
-                        return_when=concurrent.futures.FIRST_COMPLETED
+                        return_when=FIRST_COMPLETED
                     )
                     
                     # Process completed tasks

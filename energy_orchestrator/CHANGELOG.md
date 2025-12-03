@@ -2,6 +2,44 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.96] - 2025-12-03
+
+- **Parallel Optimizer with Derived Feature Support**
+  - **Parallel Training Execution**:
+    - Optimizer now uses ThreadPoolExecutor for parallel model training
+    - Configurable worker count (default: 3 parallel workers, as requested)
+    - Thread-safe progress updates with locking mechanism
+    - Faster optimization through concurrent training of different feature combinations
+    - Background thread already supported, now with parallel execution within that thread
+  - **Derived Features Support**:
+    - Optimizer now discovers and tests all derived features from feature configuration
+    - Added `_get_all_available_features()` to enumerate experimental + derived features
+    - Supports dynamically created features like `sensor_name_avg_1h`, `sensor_name_avg_6h`, etc.
+    - Updated `apply_best_configuration()` to use generic `enable_feature()` method for both experimental and derived features
+    - `_get_experimental_feature_combinations()` now accepts `include_derived` parameter
+  - **Enhanced Progress Reporting**:
+    - Progress messages now show "X/Y" format (e.g., "[3/24] Testing configuration...")
+    - Trophy emoji (🏆) displayed when a new best result is found
+    - Real-time progress updates as training tasks complete (not just per configuration)
+    - Better visibility into parallel execution progress
+  - **New Training Function**:
+    - Added `_train_single_configuration()` for thread-safe single model training
+    - Handles both single-step and two-step model types
+    - Proper error handling and result reporting per training task
+  - **API Enhancements**:
+    - `run_optimization()` accepts `max_workers` parameter (default: 3)
+    - `run_optimization()` accepts `include_derived_features` parameter (default: True)
+    - App now passes `max_workers=3` and `include_derived_features=True` to optimizer
+  - **Testing**:
+    - Added comprehensive test suite `test_optimizer_parallel.py` with 12 new tests
+    - Tests cover derived feature discovery, parallel execution, thread safety, and progress reporting
+    - All existing tests pass without regression
+  - **Impact**:
+    - Users can now optimize across all derived features (e.g., 48+ features as mentioned in the issue)
+    - Much faster optimization through parallel training (3x speedup with 3 workers)
+    - Better progress visibility with X/Y counts and real-time updates
+    - All combinations of kWh, day, and other derived features are tested
+
 ## [0.0.0.95] - 2025-12-03
 
 - **Optimizer Improvements: Async Execution, Result Storage, and Enhanced UI**

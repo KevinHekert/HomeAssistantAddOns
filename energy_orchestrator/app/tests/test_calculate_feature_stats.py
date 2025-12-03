@@ -25,7 +25,7 @@ from db.calculate_feature_stats import (
     flush_feature_statistics,
     STAT_TYPE_WINDOWS,
 )
-from db.feature_stats import StatType, FeatureStatsConfiguration, SensorStatsConfig
+from db.feature_stats import StatType, FeatureStatsConfiguration, SensorStatsConfig, reload_feature_stats_config, reset_feature_stats_config
 from db.virtual_sensors import (
     VirtualSensorDefinition,
     VirtualSensorOperation,
@@ -78,8 +78,10 @@ def patch_all(test_engine, temp_config_dir, monkeypatch):
     monkeypatch.setattr(virtual_sensors_module, "VIRTUAL_SENSORS_CONFIG_FILE",
                        temp_config_dir / "virtual_sensors_config.json")
     
-    # Reset configurations
+    # Reset configurations and global singletons
     reset_virtual_sensors_config()
+    # Reset feature stats config global cache (will reload on next access)
+    reset_feature_stats_config()
     
     return test_engine
 
@@ -236,6 +238,9 @@ class TestFeatureStatisticsCalculation:
         sensor_stats.enabled_stats = set()  # No stats enabled
         stats_config.save()
         
+        # Reload config to ensure the saved config is used
+        reload_feature_stats_config()
+        
         # Add resampled data
         base_time = datetime(2024, 1, 15, 10, 0)
         with Session(patch_all) as session:
@@ -250,7 +255,7 @@ class TestFeatureStatisticsCalculation:
             session.commit()
         
         # Calculate feature statistics
-        result = calculate_feature_statistics()
+        result = calculate_feature_statistics(sync_with_feature_config=False)
         
         # Should not save any stats for indoor_temp (none enabled)
         with Session(patch_all) as session:

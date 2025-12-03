@@ -93,8 +93,12 @@ class SensorStatsConfig:
     @classmethod
     def from_dict(cls, data: dict) -> "SensorStatsConfig":
         """Create from dictionary."""
-        enabled_stats = {StatType(s) for s in data.get("enabled_stats", [])}
-        if not enabled_stats:
+        # Only apply defaults if 'enabled_stats' key is completely missing
+        # If the key exists (even as empty list), respect that explicit choice
+        if "enabled_stats" in data:
+            enabled_stats = {StatType(s) for s in data["enabled_stats"]}
+        else:
+            # Key missing - apply defaults for backward compatibility
             enabled_stats = set(DEFAULT_ENABLED_STATS)
         
         return cls(
@@ -242,6 +246,16 @@ def reload_feature_stats_config() -> FeatureStatsConfiguration:
     global _config
     _config = FeatureStatsConfiguration.load()
     return _config
+
+
+def reset_feature_stats_config() -> None:
+    """
+    Reset the global feature statistics configuration cache.
+    
+    This is useful for testing to ensure a fresh config is loaded on next access.
+    """
+    global _config
+    _config = None
 
 
 def derive_stats_from_feature_config() -> dict[str, set[StatType]]:

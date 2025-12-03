@@ -2,6 +2,30 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.94] - 2025-12-03
+
+- **Fixed Feature Statistics Time Range Calculation Bug**
+  - **Issue**: Feature statistics were not being generated (0 calculated, 0 saved) even when data was available
+  - **Root Cause**: The time range calculation had a critical bug:
+    1. When auto-determining start_time, it added the maximum window size to db_start
+    2. If data span was shorter than the max window (e.g., 3 days of data but 7d window enabled), calculated start_time would be AFTER end_time
+    3. Example from issue: start_time = 2025-12-07, end_time = 2025-12-03 → 0 stats calculated
+  - **Fixes Applied**:
+    1. Removed global max-window-based start_time calculation
+    2. Each stat type (avg_1h, avg_6h, avg_24h, avg_7d) now calculates with its own time range
+    3. avg_1h can now work with just 1 hour of data, even if avg_7d is also enabled
+    4. Added validation and warning when data span is insufficient
+    5. Fixed `SensorStatsConfig.from_dict()` to respect explicitly empty enabled_stats
+    6. Fixed calculation loop to not auto-create default configs for unconfigured sensors
+  - **Impact**: 
+    - Feature statistics now generate correctly regardless of data span
+    - Each stat type is independent - short windows work even when long windows can't
+    - More informative logging shows which sensors/stats are processed vs skipped
+  - Added 3 comprehensive test suites:
+    - `test_feature_stats_time_range_fix.py`: Tests for the backwards time range bug fix
+    - `test_per_stat_type_time_ranges.py`: Tests for independent per-stat-type calculations
+    - All 16 tests passing, demonstrating correct behavior with various data spans
+
 ## [0.0.0.93] - 2025-12-03
 
 - **Fixed Feature Statistics Not Being Generated**

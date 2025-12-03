@@ -1,0 +1,132 @@
+name: Integration Tests
+
+# Run integration tests with MariaDB
+# These tests verify the complete system with a real database
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'energy_orchestrator/**'
+      - 'docker-compose.test.yml'
+      - 'tests/mock_homeassistant/**'
+      - '.github/workflows/integration-tests.yml'
+  pull_request:
+    paths:
+      - 'energy_orchestrator/**'
+      - 'docker-compose.test.yml'
+      - 'tests/mock_homeassistant/**'
+      - '.github/workflows/integration-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    
+    services:
+      # MariaDB service for integration testing
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: test_root_password
+          MYSQL_DATABASE: energy_orchestrator_test
+          MYSQL_USER: energy_orchestrator
+          MYSQL_PASSWORD: test_password
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -ptest_root_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-timeout
+          pip install -r energy_orchestrator/requirements.txt
+
+      - name: Wait for MariaDB to be ready
+        run: |
+          echo "Waiting for MariaDB to be ready..."
+          for i in {1..30}; do
+            if mysqladmin ping -h 127.0.0.1 -P 3307 -u root -ptest_root_password &> /dev/null; then
+              echo "MariaDB is ready!"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+
+      - name: Verify MariaDB connection
+        run: |
+          mysql -h 127.0.0.1 -P 3307 -u energy_orchestrator -ptest_password energy_orchestrator_test -e "SELECT 'Connection successful' AS status;"
+
+      - name: Display MariaDB version
+        run: |
+          mysql -h 127.0.0.1 -P 3307 -u root -ptest_root_password -e "SELECT VERSION();"
+
+      - name: Run integration tests
+        working-directory: energy_orchestrator/app
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3307
+          DB_USER: energy_orchestrator
+          DB_PASSWORD: test_password
+          DB_NAME: energy_orchestrator_test
+          PYTHONPATH: /home/runner/work/HomeAssistantAddOns/HomeAssistantAddOns/energy_orchestrator/app
+        run: |
+          python -m pytest tests/integration/ \
+            -v \
+            -m integration \
+            --tb=short \
+            --timeout=300 \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-report=html
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-coverage-report
+          path: |
+            energy_orchestrator/app/coverage.xml
+            energy_orchestrator/app/htmlcov/
+          retention-days: 7
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: energy_orchestrator/app/.pytest_cache/
+          retention-days: 7
+
+      - name: Display test summary
+        if: always()
+        run: |
+          echo "## Integration Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Integration tests completed with MariaDB 10.6" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f energy_orchestrator/app/coverage.xml ]; then
+            echo "Coverage report generated successfully" >> $GITHUB_STEP_SUMMARY
+          fi

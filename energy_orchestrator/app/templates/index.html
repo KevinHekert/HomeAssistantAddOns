@@ -1778,44 +1778,14 @@
             tableDiv.innerHTML = '';
             
             try {
-                // Get unique categories from resampled data
-                // Note: Limit set to 1000 to balance between data coverage and performance
-                const RESAMPLED_DATA_LIMIT = 1000;
-                const response = await fetch(`api/resampled_data?limit=${RESAMPLED_DATA_LIMIT}`);
+                // Use the new dedicated API endpoint that aggregates data at the database level
+                const response = await fetch('api/resampled_sensors/info');
                 const data = await response.json();
                 
-                if (response.ok && data.data && data.data.length > 0) {
-                    // Group by category and find first/last timestamps
-                    const sensorStats = {};
-                    
-                    data.data.forEach(sample => {
-                        if (!sensorStats[sample.category]) {
-                            sensorStats[sample.category] = {
-                                category: sample.category,
-                                unit: sample.unit,
-                                is_derived: sample.is_derived,
-                                first_timestamp: sample.slot_start,
-                                last_timestamp: sample.slot_start,
-                                count: 0
-                            };
-                        }
-                        
-                        const stats = sensorStats[sample.category];
-                        stats.count++;
-                        
-                        // Track min and max timestamps across all samples
-                        // This works regardless of the API sort order
-                        if (sample.slot_start < stats.first_timestamp) {
-                            stats.first_timestamp = sample.slot_start;
-                        }
-                        if (sample.slot_start > stats.last_timestamp) {
-                            stats.last_timestamp = sample.slot_start;
-                        }
-                    });
-                    
-                    const sensorList = Object.values(sensorStats);
+                if (response.ok && data.sensors && data.sensors.length > 0) {
+                    const sensorList = data.sensors;
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = `✓ Found ${sensorList.length} resampled sensor categories (from up to ${RESAMPLED_DATA_LIMIT} total samples)`;
+                    statusDiv.textContent = `✓ Found ${sensorList.length} resampled sensor categories (from ${sensorList.reduce((sum, s) => sum + s.sample_count, 0).toLocaleString()} total samples)`;
                     
                     let html = '<table class="sensor-table"><thead><tr>';
                     html += '<th>Category</th><th>Unit</th><th>Type</th><th>First Timestamp</th><th>Last Timestamp</th><th>Sample Count</th>';
@@ -1832,7 +1802,7 @@
                         html += `<td>${typeBadge}</td>`;
                         html += `<td>${sensor.first_timestamp || 'N/A'}</td>`;
                         html += `<td>${sensor.last_timestamp || 'N/A'}</td>`;
-                        html += `<td>${sensor.count.toLocaleString()}</td>`;
+                        html += `<td>${sensor.sample_count.toLocaleString()}</td>`;
                         html += `</tr>`;
                     });
                     

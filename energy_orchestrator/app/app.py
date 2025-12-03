@@ -28,7 +28,7 @@ from db.resample import (
 from db.core import init_db_schema, engine
 from db import ResampledSample, FeatureStatistic
 from db.sensor_config import sync_sensor_mappings
-from db.samples import get_sensor_info
+from db.samples import get_sensor_info, get_resampled_sensor_info
 from db.sync_config import (
     get_sync_config,
     set_sync_config,
@@ -1079,6 +1079,21 @@ def get_sensors_info():
         })
     except Exception as e:
         _Logger.error("Error getting sensor info: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/resampled_sensors/info")
+def get_resampled_sensors_info():
+    """Get information about all resampled sensors (first and last timestamp per category)."""
+    try:
+        sensors = get_resampled_sensor_info()
+        return jsonify({
+            "status": "success",
+            "sensors": sensors,
+            "count": len(sensors),
+        })
+    except Exception as e:
+        _Logger.error("Error getting resampled sensor info: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

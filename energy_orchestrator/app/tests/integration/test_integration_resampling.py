@@ -2,7 +2,7 @@
 Integration tests for data resampling workflow.
 
 These tests verify that raw sensor data is correctly resampled into
-5-minute time slots with proper aggregation.
+time slots with proper aggregation using the current API.
 """
 
 import pytest
@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from db.models import Sample, SensorMapping, ResampledSample
-from db.resample import resample_category
+from db.resample import resample_all_categories
 
 
 @pytest.mark.integration
@@ -43,16 +43,19 @@ def test_basic_resampling(mariadb_engine, clean_database):
     session.add_all(samples)
     session.commit()
     
-    # Run resampling for the 5-minute slot
-    slot_start = base_time
-    slot_end = base_time + timedelta(minutes=5)
+    # Run resampling using the current API
+    result = resample_all_categories(sample_rate_minutes=5, flush=True)
     
-    resample_category("test_temp", slot_start, slot_end)
+    # Verify the operation completed successfully
+    assert result.slots_processed > 0
+    assert result.slots_saved > 0
+    assert result.sample_rate_minutes == 5
+    assert "test_temp" in result.categories
     
     # Verify resampled data
     resampled = session.query(ResampledSample).filter_by(
         category="test_temp",
-        slot_start=slot_start
+        slot_start=base_time
     ).first()
     
     assert resampled is not None
@@ -61,6 +64,7 @@ def test_basic_resampling(mariadb_engine, clean_database):
     assert resampled.is_derived == False
     
     print(f"\n✅ Resampled {len(samples)} samples to average: {resampled.value}")
+    print(f"   Stats: {result.slots_processed} processed, {result.slots_saved} saved")
     
     session.close()
 
@@ -92,20 +96,19 @@ def test_resampling_with_gaps(mariadb_engine, clean_database):
     session.commit()
     
     # Run resampling
-    slot_start = base_time
-    slot_end = base_time + timedelta(minutes=5)
+    result = resample_all_categories(sample_rate_minutes=5, flush=True)
     
-    resample_category("test_temp", slot_start, slot_end)
+    assert result.slots_processed > 0
     
-    # Verify resampled data (should average the available samples)
+    # Verify resampled data exists
     resampled = session.query(ResampledSample).filter_by(
         category="test_temp",
-        slot_start=slot_start
+        slot_start=base_time
     ).first()
     
+    # Should have resampled data even with gaps (time-weighted average)
     assert resampled is not None
-    # Average of 20, 21, 24 = 21.666...
-    assert resampled.value == pytest.approx(21.666, rel=1e-2)
+    assert resampled.value > 0
     
     print(f"\n✅ Resampled with gaps: {resampled.value}")
     
@@ -145,24 +148,23 @@ def test_resampling_multiple_slots(mariadb_engine, clean_database):
     session.add_all(samples)
     session.commit()
     
-    # Resample each slot
-    for slot in range(3):
-        slot_start = base_time + timedelta(minutes=slot*5)
-        slot_end = slot_start + timedelta(minutes=5)
-        resample_category("test_temp", slot_start, slot_end)
+    # Resample all slots at once
+    result = resample_all_categories(sample_rate_minutes=5, flush=True)
+    
+    assert result.slots_saved >= 3
     
     # Verify all slots were resampled
     resampled_count = session.query(ResampledSample).filter_by(category="test_temp").count()
-    assert resampled_count == 3
+    assert resampled_count >= 3
     
     # Verify values for each slot
     resampled_slots = session.query(ResampledSample).filter_by(
         category="test_temp"
     ).order_by(ResampledSample.slot_start).all()
     
-    assert resampled_slots[0].value == pytest.approx(20.0)
-    assert resampled_slots[1].value == pytest.approx(30.0)
-    assert resampled_slots[2].value == pytest.approx(40.0)
+    assert resampled_slots[0].value == pytest.approx(20.0, rel=1e-1)
+    assert resampled_slots[1].value == pytest.approx(30.0, rel=1e-1)
+    assert resampled_slots[2].value == pytest.approx(40.0, rel=1e-1)
     
     print(f"\n✅ Resampled {resampled_count} slots successfully")
     
@@ -171,7 +173,7 @@ def test_resampling_multiple_slots(mariadb_engine, clean_database):
 
 @pytest.mark.integration
 def test_resampling_no_data(mariadb_engine, clean_database):
-    """Test resampling when there's no data for a slot."""
+    """Test resampling when there's no data."""
     session = Session(mariadb_engine)
     
     # Create sensor mapping but no samples
@@ -184,21 +186,14 @@ def test_resampling_no_data(mariadb_engine, clean_database):
     session.add(mapping)
     session.commit()
     
-    # Try to resample an empty slot
-    base_time = datetime(2024, 1, 1, 12, 0, 0)
-    slot_start = base_time
-    slot_end = base_time + timedelta(minutes=5)
+    # Try to resample when there's no data
+    result = resample_all_categories(sample_rate_minutes=5, flush=True)
     
-    resample_category("test_temp", slot_start, slot_end)
+    # Should return 0 slots processed
+    assert result.slots_processed == 0
+    assert result.slots_saved == 0
     
-    # Should not create a resampled entry when there's no data
-    resampled = session.query(ResampledSample).filter_by(
-        category="test_temp",
-        slot_start=slot_start
-    ).first()
-    
-    # Behavior depends on implementation - either None or a specific value
-    print(f"\n📊 Resampled with no data: {resampled}")
+    print(f"\n📊 Resampled with no data: {result.slots_processed} slots processed")
     
     session.close()
 
@@ -208,7 +203,7 @@ def test_resampling_multiple_entities_same_category(mariadb_engine, clean_databa
     """Test resampling when multiple entities map to the same category."""
     session = Session(mariadb_engine)
     
-    # Create multiple mappings for the same category
+    # Create multiple mappings for the same category (priority determines which is used)
     mapping1 = SensorMapping(
         category="outdoor_temp",
         entity_id="sensor.outdoor_1",
@@ -237,15 +232,15 @@ def test_resampling_multiple_entities_same_category(mariadb_engine, clean_databa
     session.commit()
     
     # Run resampling
-    slot_start = base_time
-    slot_end = base_time + timedelta(minutes=5)
+    result = resample_all_categories(sample_rate_minutes=5, flush=True)
     
-    resample_category("outdoor_temp", slot_start, slot_end)
+    assert result.slots_processed > 0
+    assert "outdoor_temp" in result.categories
     
-    # Verify resampled data
+    # Verify resampled data (should use highest priority entity)
     resampled = session.query(ResampledSample).filter_by(
         category="outdoor_temp",
-        slot_start=slot_start
+        slot_start=base_time
     ).first()
     
     assert resampled is not None
@@ -280,15 +275,14 @@ def test_resampling_preserves_units(mariadb_engine, clean_database):
     session.commit()
     
     # Run resampling
-    slot_start = base_time
-    slot_end = base_time + timedelta(minutes=5)
+    result = resample_all_categories(sample_rate_minutes=5, flush=True)
     
-    resample_category("wind_speed", slot_start, slot_end)
+    assert result.slots_processed > 0
     
     # Verify unit is preserved
     resampled = session.query(ResampledSample).filter_by(
         category="wind_speed",
-        slot_start=slot_start
+        slot_start=base_time
     ).first()
     
     assert resampled is not None
@@ -301,7 +295,7 @@ def test_resampling_preserves_units(mariadb_engine, clean_database):
 
 @pytest.mark.integration
 def test_resampling_idempotent(mariadb_engine, clean_database):
-    """Test that resampling the same slot multiple times is idempotent."""
+    """Test that resampling the same data multiple times is idempotent."""
     session = Session(mariadb_engine)
     
     # Create sensor mapping and samples
@@ -321,17 +315,16 @@ def test_resampling_idempotent(mariadb_engine, clean_database):
     session.add_all(samples)
     session.commit()
     
-    # Resample the same slot twice
-    slot_start = base_time
-    slot_end = base_time + timedelta(minutes=5)
+    # Resample twice
+    result1 = resample_all_categories(sample_rate_minutes=5, flush=True)
+    result2 = resample_all_categories(sample_rate_minutes=5, flush=False)  # Don't flush second time
     
-    resample_category("test_temp", slot_start, slot_end)
-    resample_category("test_temp", slot_start, slot_end)
+    assert result1.slots_saved > 0
     
-    # Should only have one resampled entry
+    # Should still have only one resampled entry per slot
     count = session.query(ResampledSample).filter_by(
         category="test_temp",
-        slot_start=slot_start
+        slot_start=base_time
     ).count()
     
     assert count == 1

@@ -1077,7 +1077,7 @@ def run_optimization(
         
         # Create a list of all training tasks (config + model_type combinations)
         training_tasks = []
-        for combo in combinations:
+        for combo in combinations_list:
             config_name = _configuration_to_name(combo)
             training_tasks.append((config_name, combo, "single_step", train_single_step_fn))
             training_tasks.append((config_name, combo, "two_step", train_two_step_fn))

@@ -2,6 +2,19 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.108] - 2025-12-03
+
+- **Fix Optimizer "'type' object is not iterable" Error**
+  - **Problem**: Optimizer failed to start with error "'type' object is not iterable"
+  - **Root Cause**: Line 1080 in `ml/optimizer.py` referenced undefined variable `combinations` instead of `combinations_list`
+  - **Solution**: Changed line 1080 from `for combo in combinations:` to `for combo in combinations_list:`
+  - **Additional Fixes**:
+    - Updated test imports to use `_generate_experimental_feature_combinations` (generator) instead of old `_get_experimental_feature_combinations`
+    - Updated all test calls to convert generator to list: `list(_generate_experimental_feature_combinations())`
+    - Added comprehensive test suite in `test_optimizer_bug_fix.py` to verify the fix
+  - **Tests**: All combination-related tests pass successfully
+  - **Verification**: Confirmed optimizer can now iterate over combinations without errors
+
 ## [0.0.0.107] - 2025-12-03
 
 - **Implement Hybrid Genetic Algorithm + Bayesian Optimization for Feature Selection**

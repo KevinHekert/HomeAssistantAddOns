@@ -14,7 +14,7 @@ from ml.optimizer import (
     apply_best_configuration,
     OptimizerProgress,
     OptimizationResult,
-    _get_experimental_feature_combinations,
+    _generate_experimental_feature_combinations,
     _configuration_to_name,
 )
 
@@ -67,7 +67,7 @@ class TestOptimizerModule:
 
     def test_get_experimental_feature_combinations_returns_list(self):
         """Get feature combinations returns a non-empty list."""
-        combos = _get_experimental_feature_combinations()
+        combos = list(_generate_experimental_feature_combinations())
         
         assert isinstance(combos, list)
         assert len(combos) > 0
@@ -76,7 +76,7 @@ class TestOptimizerModule:
     
     def test_get_experimental_feature_combinations_includes_baseline(self):
         """Get feature combinations includes baseline (all disabled)."""
-        combos = _get_experimental_feature_combinations()
+        combos = list(_generate_experimental_feature_combinations())
         
         # Check baseline is first
         baseline = combos[0]
@@ -84,7 +84,7 @@ class TestOptimizerModule:
     
     def test_get_experimental_feature_combinations_includes_all_enabled(self):
         """Get feature combinations includes all features enabled."""
-        combos = _get_experimental_feature_combinations()
+        combos = list(_generate_experimental_feature_combinations())
         
         # Last combination should be all enabled
         all_enabled = combos[-1]

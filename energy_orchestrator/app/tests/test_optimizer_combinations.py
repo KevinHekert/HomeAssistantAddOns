@@ -32,7 +32,6 @@ class TestCombinationGeneration:
         """Verify that ALL combinations (2^N) are generated with limit."""
         # For tests, we use include_derived=False to only test EXPERIMENTAL_FEATURES (4 features)
         combos_gen = _generate_experimental_feature_combinations(
-        combos = list(combos_gen)
             include_derived=False,
             max_combinations=None,  # No limit for this test
         )
@@ -46,7 +45,6 @@ class TestCombinationGeneration:
     def test_combination_distribution(self):
         """Verify the distribution of combinations by size."""
         combos_gen = _generate_experimental_feature_combinations(
-        combos = list(combos_gen)
             include_derived=False,
             max_combinations=None,
         )

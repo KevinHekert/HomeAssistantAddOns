@@ -177,7 +177,7 @@ class TestConfiguredMaxWorkers:
     def test_run_optimization_uses_configured_max_workers(self):
         """Optimizer uses configured max_workers when provided."""
         with patch('ml.optimizer.get_feature_config') as mock_get_config, \
-             patch('ml.optimizer._get_experimental_feature_combinations') as mock_combos, \
+             patch('ml.optimizer._generate_experimental_feature_combinations') as mock_combos, \
              patch('ml.optimizer.ThreadPoolExecutor') as mock_executor, \
              patch('ml.optimizer._log_memory_usage'), \
              patch('ml.optimizer._Logger') as mock_logger:
@@ -222,7 +222,7 @@ class TestConfiguredMaxWorkers:
     def test_run_optimization_auto_calculates_when_max_workers_is_none(self):
         """Optimizer auto-calculates workers when configured_max_workers is None."""
         with patch('ml.optimizer.get_feature_config') as mock_get_config, \
-             patch('ml.optimizer._get_experimental_feature_combinations') as mock_combos, \
+             patch('ml.optimizer._generate_experimental_feature_combinations') as mock_combos, \
              patch('ml.optimizer._calculate_optimal_workers') as mock_calc, \
              patch('ml.optimizer.ThreadPoolExecutor') as mock_executor, \
              patch('ml.optimizer._log_memory_usage'):
@@ -267,7 +267,7 @@ class TestConfiguredMaxWorkers:
     def test_run_optimization_auto_calculates_when_max_workers_is_zero(self):
         """Optimizer auto-calculates workers when configured_max_workers is 0."""
         with patch('ml.optimizer.get_feature_config') as mock_get_config, \
-             patch('ml.optimizer._get_experimental_feature_combinations') as mock_combos, \
+             patch('ml.optimizer._generate_experimental_feature_combinations') as mock_combos, \
              patch('ml.optimizer._calculate_optimal_workers') as mock_calc, \
              patch('ml.optimizer.ThreadPoolExecutor') as mock_executor, \
              patch('ml.optimizer._log_memory_usage'):

@@ -25,7 +25,7 @@ from db.calculate_feature_stats import (
     flush_feature_statistics,
     STAT_TYPE_WINDOWS,
 )
-from db.feature_stats import StatType, FeatureStatsConfiguration, SensorStatsConfig, reload_feature_stats_config
+from db.feature_stats import StatType, FeatureStatsConfiguration, SensorStatsConfig, reload_feature_stats_config, reset_feature_stats_config
 from db.virtual_sensors import (
     VirtualSensorDefinition,
     VirtualSensorOperation,
@@ -80,8 +80,8 @@ def patch_all(test_engine, temp_config_dir, monkeypatch):
     
     # Reset configurations and global singletons
     reset_virtual_sensors_config()
-    # Reset feature stats config global
-    feature_stats_module._config = None
+    # Reset feature stats config global cache (will reload on next access)
+    reset_feature_stats_config()
     
     return test_engine
 

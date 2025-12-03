@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from db import Base, FeatureStatistic, ResampledSample
 from db.calculate_feature_stats import calculate_feature_statistics
 from db.feature_stats import StatType, FeatureStatsConfiguration
+from db.feature_stats import reset_feature_stats_config
 import db.core as core_module
 import db.calculate_feature_stats as calc_module
 import db.feature_stats as feature_stats_module
@@ -67,8 +68,8 @@ def patch_all(test_engine, temp_config_dir, monkeypatch):
     monkeypatch.setattr(virtual_sensors_module, "VIRTUAL_SENSORS_CONFIG_FILE",
                        temp_config_dir / "virtual_sensors_config.json")
     
-    # Reset config global
-    feature_stats_module._config = None
+    # Reset config global by clearing the cache (will reload on next access)
+    reset_feature_stats_config()
     
     return test_engine
 

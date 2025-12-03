@@ -248,6 +248,16 @@ def reload_feature_stats_config() -> FeatureStatsConfiguration:
     return _config
 
 
+def reset_feature_stats_config() -> None:
+    """
+    Reset the global feature statistics configuration cache.
+    
+    This is useful for testing to ensure a fresh config is loaded on next access.
+    """
+    global _config
+    _config = None
+
+
 def derive_stats_from_feature_config() -> dict[str, set[StatType]]:
     """
     Determine which statistics should be enabled based on ML feature configuration.

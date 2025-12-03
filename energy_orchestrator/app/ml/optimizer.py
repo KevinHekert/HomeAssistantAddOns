@@ -1471,6 +1471,11 @@ def apply_best_configuration(
     If complete_feature_config is available (new format), it applies ALL feature states.
     Otherwise, it falls back to only applying experimental_features (legacy format).
     
+    When enabling derived features (e.g., wind_avg_1h), this function also ensures
+    the corresponding stat is enabled in feature_stats_config so the feature is available.
+    This prevents confusion where the optimizer enables a feature for training but it's
+    not available because the stat wasn't enabled in Sensor Configuration.
+    
     Note: This relies on FeatureConfiguration.enable_feature() and disable_feature()
     methods which support both experimental and derived features (see ml/feature_config.py).
     
@@ -1482,7 +1487,13 @@ def apply_best_configuration(
         True if successfully applied and saved
     """
     try:
+        from db.feature_stats import get_feature_stats_config, StatType
+        
         config = get_feature_config()
+        stats_config = get_feature_stats_config()
+        
+        # Track which derived features need stats enabled
+        derived_features_to_enable = []
         
         # Prefer complete_feature_config if available (new format)
         # This ensures ALL features (core + experimental) are restored to the exact state
@@ -1491,6 +1502,9 @@ def apply_best_configuration(
             for feature_name, enabled in best_result.complete_feature_config.items():
                 if enabled:
                     config.enable_feature(feature_name)
+                    # Track if this is a derived feature that needs stats enabled
+                    if config._is_derived_sensor_stat_feature(feature_name):
+                        derived_features_to_enable.append(feature_name)
                 else:
                     config.disable_feature(feature_name)
         else:
@@ -1499,8 +1513,40 @@ def apply_best_configuration(
             for feature_name, enabled in best_result.experimental_features.items():
                 if enabled:
                     config.enable_feature(feature_name)
+                    # Track if this is a derived feature that needs stats enabled
+                    if config._is_derived_sensor_stat_feature(feature_name):
+                        derived_features_to_enable.append(feature_name)
                 else:
                     config.disable_feature(feature_name)
+        
+        # Enable stats for derived features in feature_stats_config
+        # This ensures the features are available (collected during resampling)
+        if derived_features_to_enable:
+            _Logger.info("Ensuring stats are enabled for %d derived features", len(derived_features_to_enable))
+            for feature_name in derived_features_to_enable:
+                # Parse feature name to extract sensor and stat type
+                # Format: sensor_name_avg_XXh (e.g., wind_avg_1h, outdoor_temp_avg_6h)
+                if "_avg_" in feature_name:
+                    parts = feature_name.rsplit("_avg_", 1)
+                    if len(parts) == 2:
+                        sensor_name, time_window = parts
+                        # Map time window to StatType
+                        stat_type_map = {
+                            "1h": StatType.AVG_1H,
+                            "6h": StatType.AVG_6H,
+                            "24h": StatType.AVG_24H,
+                            "7d": StatType.AVG_7D,
+                        }
+                        stat_type = stat_type_map.get(time_window)
+                        if stat_type:
+                            # Enable the stat if not already enabled
+                            enabled_stats = stats_config.get_enabled_stats_for_sensor(sensor_name)
+                            if stat_type not in enabled_stats:
+                                _Logger.info("Enabling stat %s for sensor %s (required by optimizer)", stat_type.value, sensor_name)
+                                stats_config.set_stat_enabled(sensor_name, stat_type, True)
+            
+            # Save stats config
+            stats_config.save()
         
         # Optionally enable two-step prediction
         if enable_two_step and best_result.model_type == "two_step":

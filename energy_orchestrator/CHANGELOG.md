@@ -2,6 +2,24 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.101] - 2025-12-03
+
+- **Optimizer Memory Management: Explicit Cleanup and Garbage Collection**
+  - **Problem**: Optimizer was being killed by the system during long runs (2048 trainings), even with max_workers=1
+  - **Root Cause**: DataFrames and model objects were accumulating in memory faster than Python's garbage collector could free them
+  - **Fixes Applied**:
+    1. Added explicit `del df` and `del model` after each training iteration to immediately free large objects
+    2. Added `gc.collect()` call after each training to force garbage collection
+    3. Added periodic garbage collection every 50 iterations during long optimization runs
+    4. Imported `gc` module for explicit memory management
+  - **Impact**: Optimizer should now complete full runs without OOM kills by proactively managing memory
+  - **Technical Details**:
+    - Each training iteration now explicitly deletes DataFrame (~10-100MB) and model object (~1-5MB)
+    - Garbage collection is forced after cleanup to return memory to the OS
+    - Periodic GC every 50 iterations prevents gradual memory accumulation
+    - These changes work together with existing max_workers=1 and resource limits
+  - Fixes issue where app was killed with "Killed" message during optimizer runs
+
 ## [0.0.0.100] - 2025-12-03
 
 - **Reduce Optimizer Memory Usage**

@@ -23,6 +23,7 @@ import copy
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from itertools import combinations
+import gc
 
 from ml.feature_config import (
     FeatureConfiguration,
@@ -263,13 +264,19 @@ def _train_single_configuration(
         # Train model
         model, metrics = train_fn(df)
         
+        # Explicitly delete DataFrame and model to free memory immediately
+        # This is critical for long-running optimizations (2048 trainings)
+        # to prevent memory accumulation and OOM kills
+        del df
+        del model
+        
         # Extract metrics based on model type
         if model_type == "single_step":
             val_mape_pct = None
             if metrics.val_mape is not None and not math.isnan(metrics.val_mape):
                 val_mape_pct = metrics.val_mape * 100
             
-            return OptimizationResult(
+            result = OptimizationResult(
                 config_name=config_name,
                 model_type=model_type,
                 experimental_features=combo.copy(),
@@ -286,7 +293,7 @@ def _train_single_configuration(
             if metrics.regressor_val_mape is not None and not math.isnan(metrics.regressor_val_mape):
                 val_mape_pct = metrics.regressor_val_mape * 100
             
-            return OptimizationResult(
+            result = OptimizationResult(
                 config_name=config_name,
                 model_type=model_type,
                 experimental_features=combo.copy(),
@@ -298,6 +305,11 @@ def _train_single_configuration(
                 success=True,
                 training_timestamp=datetime.now(),
             )
+        
+        # Force garbage collection to free memory immediately
+        gc.collect()
+        
+        return result
             
     except Exception as e:
         _Logger.error("Error training %s model for %s: %s", model_type, config_name, e)
@@ -425,7 +437,7 @@ def run_optimization(
                 future_to_task[future] = (config_name, model_type)
             
             # Process completed tasks as they finish
-            for future in as_completed(future_to_task):
+            for idx, future in enumerate(as_completed(future_to_task), start=1):
                 config_name, model_type = future_to_task[future]
                 
                 try:
@@ -464,6 +476,12 @@ def run_optimization(
                     # Call progress callback outside the lock to avoid deadlocks
                     if progress_callback:
                         progress_callback(progress)
+                    
+                    # Periodically force garbage collection every 50 iterations
+                    # This helps prevent memory accumulation during long optimization runs
+                    if idx % 50 == 0:
+                        gc.collect()
+                        _Logger.debug("Periodic garbage collection at iteration %d", idx)
                         
                 except Exception as e:
                     _Logger.error("Error processing result for %s (%s): %s", config_name, model_type, e)

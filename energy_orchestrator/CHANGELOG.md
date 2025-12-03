@@ -1,7 +1,6 @@
 # Changelog
 
 All notable changes to this add-on will be documented in this file.
-
 ## [0.0.0.112] - 2025-12-03
 
 - **Fix Training Data Popup - Display Correct First and Last Rows of Training Split**
@@ -21,6 +20,27 @@ All notable changes to this add-on will be documented in this file.
     - `energy_orchestrator/app/ml/optimizer.py` (lines 864-897): Fixed row capture logic
     - `energy_orchestrator/app/tests/test_optimizer_parallel.py`: Added 2 new tests
   - **Why This Matters**: Users can now see the actual training data boundaries to understand what time ranges were used for model training
+
+## [0.0.0.111] - 2025-12-03
+
+- **Extensive Testing Infrastructure Improvements**
+  - **Added comprehensive test database configuration** (`tests/conftest.py`)
+    - All tests now use in-memory SQLite database instead of production MariaDB
+    - Automatic database engine patching for all test modules
+    - Ensures complete test isolation and prevents production data corruption
+  - **Created test documentation** (`TEST_SUMMARY.md`)
+    - Comprehensive test execution summary
+    - Detailed findings and recommendations
+    - Instructions for running tests (fast, full, with coverage)
+  - **Added test runner script** (`run_tests.sh`)
+    - Convenient script for running different test suites
+    - Supports fast mode (skips slow optimizer tests), full mode, and coverage mode
+  - **Test Results**: 
+    - 678 total tests across 36 test files
+    - ~90% passing rate (600+ tests passing)
+    - Identified 5 test failures requiring investigation
+    - Identified 4 test files that timeout (optimizer tests with heavy ML training)
+  - **Impact**: Developers can now run comprehensive tests safely without risk to production data
 
 ## [0.0.0.111] - 2025-12-03
 

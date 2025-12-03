@@ -32,8 +32,13 @@ class TestVirtualSensorDerivedFeatures:
         # Clean up - reset virtual sensors configuration after each test
         reset_virtual_sensors_config()
     
-    def test_is_derived_sensor_stat_feature_for_virtual_sensor(self):
-        """Test that _is_derived_sensor_stat_feature recognizes virtual sensor features."""
+    def _setup_temp_delta_virtual_sensor(self) -> VirtualSensorDefinition:
+        """
+        Helper method to set up a temp_delta virtual sensor in the global config.
+        
+        Returns:
+            The created VirtualSensorDefinition
+        """
         # Create a virtual sensor in the global config
         virtual_config = VirtualSensorsConfiguration()
         temp_delta = VirtualSensorDefinition(
@@ -49,8 +54,18 @@ class TestVirtualSensorDerivedFeatures:
         virtual_config.add_sensor(temp_delta)
         
         # Make this the global config by setting the module-level variable
+        # This is necessary because the feature config methods call get_virtual_sensors_config()
+        # which returns the singleton. In a production environment, the singleton would be
+        # properly initialized through normal application flow.
         import db.virtual_sensors
         db.virtual_sensors._config = virtual_config
+        
+        return temp_delta
+    
+    def test_is_derived_sensor_stat_feature_for_virtual_sensor(self):
+        """Test that _is_derived_sensor_stat_feature recognizes virtual sensor features."""
+        # Set up virtual sensor using helper
+        self._setup_temp_delta_virtual_sensor()
         
         # Get feature config
         feature_config = FeatureConfiguration()
@@ -68,23 +83,8 @@ class TestVirtualSensorDerivedFeatures:
     
     def test_enable_virtual_sensor_derived_feature(self):
         """Test enabling a derived feature from a virtual sensor."""
-        # Create a virtual sensor in the global config
-        virtual_config = VirtualSensorsConfiguration()
-        temp_delta = VirtualSensorDefinition(
-            name="temp_delta",
-            display_name="Temperature Delta",
-            description="Target - Indoor temperature",
-            source_sensor1="target_temp",
-            source_sensor2="indoor_temp",
-            operation=VirtualSensorOperation.SUBTRACT,
-            unit="°C",
-            enabled=True,
-        )
-        virtual_config.add_sensor(temp_delta)
-        
-        # Make this the global config
-        import db.virtual_sensors
-        db.virtual_sensors._config = virtual_config
+        # Set up virtual sensor using helper
+        self._setup_temp_delta_virtual_sensor()
         
         # Get feature config
         feature_config = FeatureConfiguration()
@@ -104,23 +104,8 @@ class TestVirtualSensorDerivedFeatures:
     
     def test_disable_virtual_sensor_derived_feature(self):
         """Test disabling a derived feature from a virtual sensor."""
-        # Create a virtual sensor in the global config
-        virtual_config = VirtualSensorsConfiguration()
-        temp_delta = VirtualSensorDefinition(
-            name="temp_delta",
-            display_name="Temperature Delta",
-            description="Target - Indoor temperature",
-            source_sensor1="target_temp",
-            source_sensor2="indoor_temp",
-            operation=VirtualSensorOperation.SUBTRACT,
-            unit="°C",
-            enabled=True,
-        )
-        virtual_config.add_sensor(temp_delta)
-        
-        # Make this the global config
-        import db.virtual_sensors
-        db.virtual_sensors._config = virtual_config
+        # Set up virtual sensor using helper
+        self._setup_temp_delta_virtual_sensor()
         
         # Get feature config
         feature_config = FeatureConfiguration()
@@ -144,23 +129,8 @@ class TestVirtualSensorDerivedFeatures:
     
     def test_create_derived_feature_metadata_for_virtual_sensor(self):
         """Test that metadata can be created for virtual sensor derived features."""
-        # Create a virtual sensor in the global config
-        virtual_config = VirtualSensorsConfiguration()
-        temp_delta = VirtualSensorDefinition(
-            name="temp_delta",
-            display_name="Temperature Delta",
-            description="Target - Indoor temperature",
-            source_sensor1="target_temp",
-            source_sensor2="indoor_temp",
-            operation=VirtualSensorOperation.SUBTRACT,
-            unit="°C",
-            enabled=True,
-        )
-        virtual_config.add_sensor(temp_delta)
-        
-        # Make this the global config
-        import db.virtual_sensors
-        db.virtual_sensors._config = virtual_config
+        # Set up virtual sensor using helper
+        self._setup_temp_delta_virtual_sensor()
         
         # Get feature config
         feature_config = FeatureConfiguration()
@@ -180,23 +150,8 @@ class TestVirtualSensorDerivedFeatures:
     
     def test_virtual_sensor_derived_features_in_all_features(self):
         """Test that enabled virtual sensor derived features appear in get_all_features."""
-        # Create a virtual sensor in the global config
-        virtual_config = VirtualSensorsConfiguration()
-        temp_delta = VirtualSensorDefinition(
-            name="temp_delta",
-            display_name="Temperature Delta",
-            description="Target - Indoor temperature",
-            source_sensor1="target_temp",
-            source_sensor2="indoor_temp",
-            operation=VirtualSensorOperation.SUBTRACT,
-            unit="°C",
-            enabled=True,
-        )
-        virtual_config.add_sensor(temp_delta)
-        
-        # Make this the global config
-        import db.virtual_sensors
-        db.virtual_sensors._config = virtual_config
+        # Set up virtual sensor using helper
+        self._setup_temp_delta_virtual_sensor()
         
         # Get feature config
         feature_config = FeatureConfiguration()

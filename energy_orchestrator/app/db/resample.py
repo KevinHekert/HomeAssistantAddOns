@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Resampling logic for aggregating raw sensor samples into configurable time slots.
 
@@ -7,8 +9,6 @@ This module provides functionality to:
 3. Resample raw samples into uniform time slots (configurable, default 5 minutes)
 4. Calculate virtual (derived) sensor values from raw sensor data
 """
-
-from __future__ import annotations
 
 import json
 import logging

@@ -180,6 +180,13 @@ def _train_single_configuration(
     
     This function is designed to be run in parallel by multiple workers.
     
+    Thread Safety:
+        - Uses _config_lock to ensure atomic config modification and dataset building
+        - Modifies the global feature config singleton (by design)
+        - Lock ensures each thread's config state is consistent during dataset building
+        - Training happens outside the lock and uses the built dataset
+        - Original config is restored after all parallel tasks complete
+    
     Args:
         config_name: Human-readable name for this configuration
         combo: Feature enable/disable dictionary
@@ -194,7 +201,12 @@ def _train_single_configuration(
     try:
         # Use lock to ensure feature configuration and dataset building are atomic
         # This prevents race conditions where Thread A's config could be overwritten
-        # by Thread B before Thread A finishes building its dataset
+        # by Thread B before Thread A finishes building its dataset.
+        # Note: We intentionally mutate the global config (singleton pattern) and
+        # serialize access to it. This is acceptable because:
+        # 1. Parallel speedup comes from concurrent training, not dataset building
+        # 2. Dataset building is typically fast compared to training
+        # 3. Original config is restored after optimization completes
         with _config_lock:
             config = get_feature_config()
             # Apply this thread's feature configuration
@@ -492,7 +504,11 @@ def apply_best_configuration(
     """
     Apply the best configuration found by the optimizer.
     
-    This function handles both experimental features and derived features.
+    This function handles both experimental features and derived features
+    using the generic enable_feature()/disable_feature() API from FeatureConfiguration.
+    
+    Note: This relies on FeatureConfiguration.enable_feature() and disable_feature()
+    methods which support both experimental and derived features (see ml/feature_config.py).
     
     Args:
         best_result: The best OptimizationResult from optimization
@@ -504,7 +520,8 @@ def apply_best_configuration(
     try:
         config = get_feature_config()
         
-        # Apply feature settings (works for both experimental and derived features)
+        # Apply feature settings using generic enable_feature()/disable_feature()
+        # These methods work for both experimental and derived features
         for feature_name, enabled in best_result.experimental_features.items():
             if enabled:
                 config.enable_feature(feature_name)

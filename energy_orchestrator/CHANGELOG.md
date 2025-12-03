@@ -2,6 +2,16 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.120] - 2025-12-03
+
+- **Fix: Check Resample Status Button Not Working**
+  - **Fix**: Corrected API fetch path in `checkResampleStatus()` function
+  - **Issue**: The "Check Status" button for resampling was returning 404 errors when clicked
+  - **Root Cause**: The fetch call used `/api/resample/status` (with leading slash) while all other API calls (49 instances) use relative paths like `api/sample_rate` (without leading slash). This inconsistency caused path resolution issues, especially when running through Home Assistant ingress.
+  - **Impact**: Users can now successfully check resampling progress by clicking the "Check Status" button
+  - **Files Changed**: `energy_orchestrator/app/templates/index.html` (line 1503)
+  - **Pattern**: Changed from `fetch('/api/resample/status')` to `fetch('api/resample/status')` to match all other API calls in the application
+
 ## [0.0.0.119] - 2025-12-03
 
 - **Critical Fix: Python 3.9 Compatibility for Type Hints**

@@ -1500,7 +1500,7 @@
 
         async function checkResampleStatus() {
             try {
-                const response = await fetch('/api/resample/status');
+                const response = await fetch('api/resample/status');
                 const data = await response.json();
                 
                 if (response.ok && data.progress) {

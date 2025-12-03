@@ -327,8 +327,9 @@ class TestApplyBestConfiguration:
             result = apply_best_configuration(best_result)
         
         assert result is True
-        mock_config.enable_experimental_feature.assert_called_once_with("pressure")
-        mock_config.disable_experimental_feature.assert_called_once_with("outdoor_temp_avg_6h")
+        # Updated to use enable_feature/disable_feature (handles both experimental and derived)
+        mock_config.enable_feature.assert_called_once_with("pressure")
+        mock_config.disable_feature.assert_called_once_with("outdoor_temp_avg_6h")
         mock_config.save.assert_called_once()
     
     def test_apply_best_configuration_enables_two_step(self):
@@ -476,49 +477,53 @@ class TestOptimizerEndpoints:
     
     def test_apply_optimizer_success(self, client):
         """Apply optimizer returns success after run."""
-        mock_df = pd.DataFrame({
-            "outdoor_temp": [10.0, 11.0],
-            "target_heating_kwh_1h": [1.0, 1.5],
-        })
-        mock_stats = MagicMock()
-        mock_model = MagicMock()
-        mock_metrics = MagicMock()
-        mock_metrics.val_mape = 0.10
-        mock_metrics.val_mae = 0.15
-        mock_metrics.val_r2 = 0.85
-        mock_metrics.train_samples = 60
-        mock_metrics.val_samples = 20
-        mock_metrics.features = ["outdoor_temp"]
+        import app as app_module
+        from ml.optimizer import OptimizerProgress, OptimizationResult
         
-        mock_two_step_metrics = MagicMock()
-        mock_two_step_metrics.regressor_val_mape = 0.08
-        mock_two_step_metrics.regressor_val_mae = 0.18
-        mock_two_step_metrics.regressor_val_r2 = 0.85
-        mock_two_step_metrics.regressor_train_samples = 200
-        mock_two_step_metrics.regressor_val_samples = 50
-        mock_two_step_metrics.features = ["outdoor_temp"]
+        # Set up completed progress with best result
+        result = OptimizationResult(
+            config_name="Test",
+            model_type="two_step",
+            experimental_features={"pressure": True},
+            val_mape_pct=8.0,
+            val_mae_kwh=0.18,
+            val_r2=0.85,
+            train_samples=200,
+            val_samples=50,
+            success=True,
+        )
         
-        with patch("app.build_heating_feature_dataset") as mock_build, \
-             patch("app.train_heating_demand_model") as mock_train, \
-             patch("app.train_two_step_heating_demand_model") as mock_train_two:
-            mock_build.return_value = (mock_df, mock_stats)
-            mock_train.return_value = (mock_model, mock_metrics)
-            mock_train_two.return_value = (mock_model, mock_two_step_metrics)
+        progress = OptimizerProgress(
+            total_configurations=2,
+            completed_configurations=2,
+            current_configuration="",
+            current_model_type="",
+            phase="complete",
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+        )
+        progress.results = [result]
+        progress.best_result = result
+        
+        # Set the optimizer progress in the app module so apply can access it
+        app_module._optimizer_progress = progress
+        app_module._optimizer_running = False
+        
+        try:
+            # Now apply
+            with patch("app.apply_best_configuration") as mock_apply:
+                mock_apply.return_value = True
+                
+                response = client.post(
+                    "/api/optimizer/apply",
+                    json={"enable_two_step": True},
+                    content_type="application/json",
+                )
             
-            # Run optimizer first
-            client.post("/api/optimizer/run")
-        
-        # Now apply
-        with patch("app.apply_best_configuration") as mock_apply:
-            mock_apply.return_value = True
-            
-            response = client.post(
-                "/api/optimizer/apply",
-                json={"enable_two_step": True},
-                content_type="application/json",
-            )
-        
-        assert response.status_code == 200
-        data = response.get_json()
-        assert data["status"] == "success"
-        assert "applied_settings" in data
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["status"] == "success"
+            assert "applied_settings" in data
+        finally:
+            # Clean up
+            app_module._optimizer_progress = None

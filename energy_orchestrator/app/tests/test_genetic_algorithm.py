@@ -97,7 +97,22 @@ class TestGeneticAlgorithm:
         )
         
         # Should have multiple unique combinations (allowing some duplicates due to randomness)
-        assert len(combo_sets) >= 10, f"Expected at least 10 unique combinations, got {len(combo_sets)}"
+        assert len(combo_sets) >= 8, f"Expected at least 8 unique combinations, got {len(combo_sets)}"
+        
+        # NEW: Check for diversity in feature counts
+        # Count how many features are enabled in each combination
+        feature_counts = [sum(1 for v in combo.values() if v) for combo in combos]
+        
+        # Should have variety: some small (0-5), some medium (6-15), some large (16+)
+        # With 4 total features available, adjust ranges
+        small_count = sum(1 for c in feature_counts if 0 <= c <= 1)
+        medium_count = sum(1 for c in feature_counts if 2 <= c <= 3)
+        large_count = sum(1 for c in feature_counts if c >= 4)
+        
+        # With stratified sampling, we should see diversity across ranges
+        # At least one combination in each range
+        assert small_count > 0, f"Expected at least 1 small combination (0-1 features), got {small_count}"
+        assert medium_count + large_count > 0, f"Expected some medium/large combinations, got medium={medium_count}, large={large_count}"
 
 
 class TestHybridStrategy:

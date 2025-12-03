@@ -465,11 +465,28 @@ def _generate_genetic_algorithm_combinations(
     # Ensure baseline (all False) is in initial population
     population.append({name: False for name in feature_names})
     
-    # Add random individuals
-    for _ in range(population_size - 1):
-        # Random probability for each feature being enabled
+    # Add random individuals with DIVERSE feature counts
+    # Strategy: Distribute individuals across different feature count ranges
+    # This ensures exploration of small, medium, and large feature sets
+    for i in range(population_size - 1):
+        # Divide population into thirds for diversity
+        third = (population_size - 1) // 3
+        
+        if i < third:
+            # First third: Small feature sets (1-10 features)
+            # Use low probability to get few features
+            prob = random.uniform(0.02, 0.2)  # 2-20% chance per feature
+        elif i < 2 * third:
+            # Middle third: Medium feature sets (10-25 features)
+            # Use medium probability
+            prob = random.uniform(0.2, 0.5)  # 20-50% chance per feature
+        else:
+            # Last third: Large feature sets (25+ features)
+            # Use high probability to get many features
+            prob = random.uniform(0.5, 0.8)  # 50-80% chance per feature
+        
         individual = {
-            name: random.random() < 0.3  # 30% chance of feature being enabled
+            name: random.random() < prob
             for name in feature_names
         }
         population.append(individual)

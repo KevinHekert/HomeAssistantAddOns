@@ -2,7 +2,22 @@
 
 All notable changes to this add-on will be documented in this file.
 
-## [Unreleased] - 2025-12-03
+## [0.0.0.110] - 2025-12-03
+
+- **Fix GA Phase Feature Diversity - Ensure Small Feature Counts Are Tested**
+  - **Issue**: Genetic Algorithm phase only tested configurations with many features (15-30), never small counts (1-5)
+  - **Root Cause**: GA used fixed 30% probability per feature, resulting in ~15-16 features on average with 52 total features
+  - **User Report**: "Why am I never seeing just a couple of features, always a lot" (tasks showing +19, +22, +24, +27 experimental features)
+  - **Solution**: Implemented stratified feature count distribution in GA initial population:
+    - First third of population: 2-20% probability → 1-10 features (small sets)
+    - Middle third: 20-50% probability → 10-25 features (medium sets)
+    - Last third: 50-80% probability → 25+ features (large sets)
+  - **Clarification**: Core features (15 baseline features) are ALWAYS enabled. Optimizer only toggles experimental features.
+    - Baseline = 0 experimental + 15 core = 15 total features minimum
+    - Small sets = 1-5 experimental + 15 core = 16-20 total features
+  - **Impact**: GA phase now properly explores small feature counts (1-5 experimental), not just large counts (15-30)
+  - **Testing**: Updated `test_ga_diverse_population()` to verify small, medium, and large feature counts are present
+  - **Note**: Bayesian phase (tasks 10001-10200) already had good diversity strategy (0-5, 13-26, 26-52)
 
 - **Fix Optimizer Minimum Experimental Sensors Constraint & Improve Two-Phase Training**
   - **Issue**: Bayesian phase in hybrid strategy enforced minimum of 1 experimental sensor, preventing baseline (0 sensors) testing

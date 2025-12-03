@@ -49,7 +49,13 @@ def temp_config_dirs(tmp_path, monkeypatch):
 
 def simulate_get_sensor_feature_cards():
     """
-    Simulate the logic from app.py's get_sensor_feature_cards endpoint.
+    Test helper that simulates the logic from app.py's get_sensor_feature_cards endpoint.
+    
+    This duplicates the production logic to enable isolated integration testing without
+    requiring a full Flask app context. The duplication is intentional to:
+    1. Test the integration logic in isolation
+    2. Avoid Flask app setup complexity in unit tests
+    3. Enable faster test execution
     
     This tests the integration between feature_stats_config and feature_config
     in determining which features appear in sensor cards.
@@ -179,28 +185,18 @@ class TestSensorCardsIntegration:
         Test: Checkbox state in sensor cards should reflect feature_config (training), not stats_config.
         
         Scenario:
-        1. Enable avg_6h for indoor_temp in stats config (makes it available)
-        2. Sensor card shows indoor_temp_avg_6h with checkbox unchecked (not enabled for training)
-        3. Enable indoor_temp_avg_6h in feature config (for training)
-        4. Sensor card shows indoor_temp_avg_6h with checkbox checked
+        1. Enable avg_6h for pressure in stats config (makes it available)
+        2. Sensor card shows pressure_avg_6h with checkbox unchecked (not enabled for training)
+        3. Enable pressure_avg_6h in feature config (for training)
+        4. Sensor card shows pressure_avg_6h with checkbox checked
+        
+        Note: Using pressure sensor because it's experimental and not enabled by default,
+        making the test behavior clearer than using core features like indoor_temp.
         """
         stats_config = FeatureStatsConfiguration()
         feature_config = FeatureConfiguration()
         
-        # Enable avg_6h in stats config
-        stats_config.set_stat_enabled("indoor_temp", StatType.AVG_6H, True)
-        stats_config.save()
-        
-        # Get sensor cards
-        sensor_cards = simulate_get_sensor_feature_cards()
-        indoor_temp_card = next((card for card in sensor_cards if card["sensor_name"] == "indoor_temp"), None)
-        
-        # Find indoor_temp_avg_6h feature
-        indoor_temp_avg_6h = next((f for f in indoor_temp_card["features"] if f["name"] == "indoor_temp_avg_6h"), None)
-        assert indoor_temp_avg_6h is not None
-        
-        # Initially should not be enabled for training (it's a CORE feature, so actually it IS enabled by default)
-        # Let's use a non-core sensor instead - pressure
+        # Enable avg_6h for pressure in stats config
         stats_config.set_stat_enabled("pressure", StatType.AVG_6H, True)
         stats_config.save()
         

@@ -56,17 +56,16 @@ class TestDerivedFeatureSeparation:
         
         User story:
         - User goes to Sensor Configuration tab
-        - User enables avg_1h for outdoor_temp (checkbox in Feature Stats Configuration)
-        - This makes outdoor_temp_avg_1h AVAILABLE as a derived feature
+        - User enables avg_1h for wind (checkbox in Feature Stats Configuration)
+        - This makes wind_avg_1h AVAILABLE as a derived feature
         - But it should NOT automatically enable it for model training
+        
+        Note: Using wind sensor because wind_avg_1h is not a core feature,
+        making the test behavior clearer than using features enabled by default.
         """
         # Get fresh configurations
         stats_config = FeatureStatsConfiguration()
         feature_config = FeatureConfiguration()
-        
-        # Initially, outdoor_temp_avg_1h should not be in feature config
-        # (it's a CORE feature, so it's enabled by default)
-        # Let's use a different sensor that's not core: wind_avg_1h
         
         # Enable the stat in feature stats config
         stats_config.set_stat_enabled("wind", StatType.AVG_1H, True)
@@ -211,10 +210,6 @@ class TestDerivedFeatureSeparation:
         # Make outdoor_temp_avg_6h available
         stats_config.set_stat_enabled("outdoor_temp", StatType.AVG_6H, True)
         stats_config.save()
-        
-        # Initially, it's not enabled for training (it's experimental)
-        # Note: outdoor_temp_avg_6h might be in EXPERIMENTAL_FEATURES
-        initial_active = feature_config.get_active_feature_names()
         
         # Enable it for training
         feature_config.enable_feature("outdoor_temp_avg_6h")

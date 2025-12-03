@@ -66,11 +66,8 @@ def mariadb_engine():
     Base.metadata.create_all(engine)
     print("✅ Database schema created")
     
-    # Patch db.core to use the test engine
-    original_engine = db.core.engine
-    db.core.engine = engine
-    
-    # Patch all db modules to use test engine
+    # Import all db modules before patching to avoid Python's UnboundLocalError
+    # (assignments to db.* attributes make Python think 'db' is local)
     import db.samples
     import db.resample
     import db.feature_stats
@@ -83,17 +80,36 @@ def mariadb_engine():
     import db.sync_state
     import db.virtual_sensors
     
-    db.samples.engine = engine
-    db.resample.engine = engine
-    db.feature_stats.engine = engine
-    db.optimizer_storage.engine = engine
-    db.prediction_storage.engine = engine
-    db.sensor_config.engine = engine
-    db.sensor_category_config.engine = engine
-    db.optimizer_config.engine = engine
-    db.sync_config.engine = engine
-    db.sync_state.engine = engine
-    db.virtual_sensors.engine = engine
+    # Store references to modules to avoid UnboundLocalError with db namespace
+    db_core = db.core
+    db_samples = db.samples
+    db_resample = db.resample
+    db_feature_stats = db.feature_stats
+    db_optimizer_storage = db.optimizer_storage
+    db_prediction_storage = db.prediction_storage
+    db_sensor_config = db.sensor_config
+    db_sensor_category_config = db.sensor_category_config
+    db_optimizer_config = db.optimizer_config
+    db_sync_config = db.sync_config
+    db_sync_state = db.sync_state
+    db_virtual_sensors = db.virtual_sensors
+    
+    # Save original engine from db.core for restoration later
+    original_engine = db_core.engine
+    
+    # Patch db.core and all db module engines to use the test engine
+    db_core.engine = engine
+    db_samples.engine = engine
+    db_resample.engine = engine
+    db_feature_stats.engine = engine
+    db_optimizer_storage.engine = engine
+    db_prediction_storage.engine = engine
+    db_sensor_config.engine = engine
+    db_sensor_category_config.engine = engine
+    db_optimizer_config.engine = engine
+    db_sync_config.engine = engine
+    db_sync_state.engine = engine
+    db_virtual_sensors.engine = engine
     
     yield engine
     
@@ -101,7 +117,7 @@ def mariadb_engine():
     print("\n🧹 Cleaning up database...")
     Base.metadata.drop_all(engine)
     engine.dispose()
-    db.core.engine = original_engine
+    db_core.engine = original_engine
     print("✅ Cleanup complete")
 
 

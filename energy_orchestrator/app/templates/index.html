@@ -896,13 +896,29 @@
                 </label>
             </div>
             <button class="action-btn" id="resampleBtn" onclick="triggerResample()">Resample Data</button>
+            <button class="action-btn" id="resampleStatusBtn" onclick="checkResampleStatus()" style="margin-left: 0.5rem;">Check Status</button>
             <div id="resampleStatus" class="status-message"></div>
+            <div id="resampleProgress" style="display: none; margin-top: 1rem;">
+                <div style="margin-bottom: 0.5rem;">
+                    <strong>Progress:</strong> <span id="resampleProgressText">0/0 hours</span>
+                </div>
+                <div style="margin-bottom: 0.5rem;">
+                    <strong>Phase:</strong> <span id="resamplePhase">-</span>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <strong>Recent Activity (last 15 lines):</strong>
+                    <pre id="resampleLog" style="background: var(--bg-secondary); padding: 0.5rem; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 0.85rem;"></pre>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
         // Store historical data when loaded for comparison in table
         let currentHistoricalData = null;
+        
+        // Resample polling state
+        let resamplePollingInterval = null;
         
         // Theme management
         function toggleTheme() {
@@ -1425,7 +1441,7 @@
             
             btn.disabled = true;
             statusDiv.className = 'status-message loading';
-            statusDiv.textContent = 'Resampling in progress...';
+            statusDiv.textContent = 'Starting resampling in background...';
             
             try {
                 const requestBody = {};
@@ -1442,35 +1458,118 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    const stats = data.stats || {};
-                    let message = '✓ ' + data.message + '\n\n';
-                    if (stats.table_flushed) {
-                        message += '⚠️ Existing resampled data was flushed\n';
-                    }
-                    message += 'Sample rate: ' + (stats.sample_rate_minutes || 5) + ' minutes\n';
-                    message += 'Slots processed: ' + (stats.slots_processed || 0) + '\n';
-                    message += 'Slots saved: ' + (stats.slots_saved || 0) + '\n';
-                    message += 'Slots skipped: ' + (stats.slots_skipped || 0) + '\n';
-                    if (stats.categories && stats.categories.length > 0) {
-                        message += 'Categories: ' + stats.categories.join(', ') + '\n';
-                    }
-                    if (stats.start_time) {
-                        message += 'Time range: ' + stats.start_time + ' to ' + stats.end_time;
-                    }
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = message;
+                    statusDiv.textContent = '✓ ' + data.message;
                     
-                    // Uncheck the flush checkbox after successful resample
+                    // Uncheck the flush checkbox after starting
                     flushCheckbox.checked = false;
+                    
+                    // Start polling for status
+                    startResamplePolling();
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ Error: ' + data.message;
+                    btn.disabled = false;
                 }
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
-            } finally {
                 btn.disabled = false;
+            }
+        }
+
+        function startResamplePolling() {
+            // Clear any existing polling interval
+            if (resamplePollingInterval) {
+                clearInterval(resamplePollingInterval);
+            }
+            
+            // Poll immediately
+            checkResampleStatus();
+            
+            // Poll every 2 seconds
+            resamplePollingInterval = setInterval(checkResampleStatus, 2000);
+        }
+
+        function stopResamplePolling() {
+            if (resamplePollingInterval) {
+                clearInterval(resamplePollingInterval);
+                resamplePollingInterval = null;
+            }
+        }
+
+        async function checkResampleStatus() {
+            try {
+                const response = await fetch('/api/resample/status');
+                const data = await response.json();
+                
+                if (response.ok && data.progress) {
+                    const progress = data.progress;
+                    const progressDiv = document.getElementById('resampleProgress');
+                    const progressText = document.getElementById('resampleProgressText');
+                    const phaseSpan = document.getElementById('resamplePhase');
+                    const logPre = document.getElementById('resampleLog');
+                    const statusDiv = document.getElementById('resampleStatus');
+                    const btn = document.getElementById('resampleBtn');
+                    
+                    // Show progress div
+                    progressDiv.style.display = 'block';
+                    
+                    // Update progress text
+                    const hoursProcessed = progress.hours_processed || 0;
+                    const hoursTotal = progress.hours_total || 0;
+                    const slotsProcessed = progress.slots_processed || 0;
+                    const slotsTotal = progress.slots_total || 0;
+                    progressText.textContent = `${hoursProcessed}/${hoursTotal} hours (${slotsProcessed}/${slotsTotal} slots)`;
+                    
+                    // Update phase
+                    phaseSpan.textContent = progress.phase || 'unknown';
+                    
+                    // Update log
+                    if (progress.log && progress.log.length > 0) {
+                        logPre.textContent = progress.log.join('\n');
+                        // Auto-scroll to bottom
+                        logPre.scrollTop = logPre.scrollHeight;
+                    }
+                    
+                    // Update status message based on phase
+                    if (progress.phase === 'complete') {
+                        statusDiv.className = 'status-message success';
+                        statusDiv.textContent = `✓ Resampling complete: ${progress.slots_saved} slots saved, ${progress.slots_skipped} skipped`;
+                        btn.disabled = false;
+                        stopResamplePolling();
+                    } else if (progress.phase === 'error') {
+                        statusDiv.className = 'status-message error';
+                        statusDiv.textContent = '✗ Error: ' + (progress.error || 'Unknown error');
+                        btn.disabled = false;
+                        stopResamplePolling();
+                    } else if (data.running) {
+                        statusDiv.className = 'status-message loading';
+                        let phaseText = progress.phase || 'running';
+                        if (progress.phase === 'resampling') {
+                            phaseText = 'resampling data';
+                        } else if (progress.phase === 'calculating_stats') {
+                            phaseText = 'calculating feature statistics';
+                        }
+                        statusDiv.textContent = `⏳ Running: ${phaseText}...`;
+                    } else {
+                        // Not running but has progress - probably completed
+                        btn.disabled = false;
+                        stopResamplePolling();
+                    }
+                } else if (response.ok && !data.progress) {
+                    // No resampling has been run yet
+                    document.getElementById('resampleProgress').style.display = 'none';
+                    const statusDiv = document.getElementById('resampleStatus');
+                    const btn = document.getElementById('resampleBtn');
+                    statusDiv.className = 'status-message';
+                    statusDiv.textContent = 'ℹ️ No resampling status available. Start a resample operation first.';
+                    btn.disabled = false;
+                    stopResamplePolling();
+                }
+            } catch (error) {
+                console.error('Error checking resample status:', error);
+                stopResamplePolling();
             }
         }
 

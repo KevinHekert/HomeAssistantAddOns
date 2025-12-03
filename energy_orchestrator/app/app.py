@@ -1749,9 +1749,10 @@ def toggle_feature():
         # Save configuration
         config.save()
         
-        # Sync feature stats configuration with updated ML feature config
-        from db.calculate_feature_stats import sync_stats_config_with_features
-        sync_stats_config_with_features()
+        # Note: We do NOT sync feature stats configuration here.
+        # Sensor stats configuration should remain independent from ML feature configuration.
+        # Users configure sensor stats separately to collect data, and ML features determine
+        # which features are used for training, not which stats are collected.
         
         status = "enabled" if enabled else "disabled"
         return jsonify({

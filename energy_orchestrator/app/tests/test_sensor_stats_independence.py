@@ -38,11 +38,17 @@ class TestSensorStatsIndependence:
             app.config['TESTING'] = True
             init_db_schema()
             
-            # Clear global configs
+            # Clear global configs and update DATA_DIR paths
             import db.feature_stats
             import ml.feature_config
             db.feature_stats._config = None
             ml.feature_config._config = None
+            
+            # Update module-level directory paths
+            db.feature_stats.DATA_DIR = tmp_path
+            db.feature_stats.FEATURE_STATS_CONFIG_FILE = tmp_path / "feature_stats_config.json"
+            ml.feature_config.CONFIG_DIR = tmp_path
+            ml.feature_config.CONFIG_FILENAME_PATH = tmp_path / ml.feature_config.CONFIG_FILENAME
             
             with app.test_client() as client:
                 yield client
@@ -151,10 +157,21 @@ class TestSensorStatsIndependence:
         """
         Test that multiple feature toggles don't corrupt sensor stats configuration.
         """
+        # Update the DATA_DIR for this test
+        import db.feature_stats
+        import ml.feature_config
+        db.feature_stats.DATA_DIR = tmp_path
+        db.feature_stats.FEATURE_STATS_CONFIG_FILE = tmp_path / "feature_stats_config.json"
+        ml.feature_config.CONFIG_DIR = tmp_path
+        ml.feature_config.CONFIG_FILENAME_PATH = tmp_path / ml.feature_config.CONFIG_FILENAME
+        
         # Configure wind sensor with specific stats
         stats_config = FeatureStatsConfiguration()
         stats_config.set_stat_enabled("wind", StatType.AVG_1H, True)
         stats_config.set_stat_enabled("wind", StatType.AVG_6H, True)
+        # Remove other defaults
+        stats_config.set_stat_enabled("wind", StatType.AVG_24H, False)
+        stats_config.set_stat_enabled("wind", StatType.AVG_7D, False)
         stats_config.save()
         
         # Toggle multiple features
@@ -169,4 +186,5 @@ class TestSensorStatsIndependence:
         
         assert StatType.AVG_1H in wind_stats
         assert StatType.AVG_6H in wind_stats
-        assert len(wind_stats) == 2, "Both configured stats should still be enabled"
+        assert StatType.AVG_24H not in wind_stats, "AVG_24H was disabled, should not be enabled"
+        assert len(wind_stats) == 2, "Only 2 configured stats should be enabled"

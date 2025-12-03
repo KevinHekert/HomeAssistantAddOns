@@ -2,6 +2,21 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.115] - 2025-12-03
+
+- **Fixed JavaScript Null Reference Error in Optimizer Tab**
+  - **Issue**: JavaScript error "Cannot read properties of null (reading 'style')" when loading optimizer results
+  - **Root Cause**: The `loadLatestOptimizerResults()` function was using incorrect DOM element IDs that didn't match the actual HTML elements
+    - Used `optimizerStatus` instead of `optimizerStatusDisplay`
+    - Used `optimizerResults` instead of `optimizerResultsTable`
+    - Used `optimizerBestResult` instead of `optimizerBestResultCard`
+  - **Solution**: 
+    - Corrected all DOM element ID references to match actual HTML IDs
+    - Added defensive null checks before accessing element properties to prevent future errors
+    - Function now fails gracefully if elements are missing
+  - **Impact**: Optimizer tab now loads properly without JavaScript errors when switching tabs
+  - **Files Changed**: `energy_orchestrator/app/templates/index.html`
+
 ## [0.0.0.114] - 2025-12-03
 
 - **Disabled Automatic Test Runs on PR Commits**

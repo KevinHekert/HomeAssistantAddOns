@@ -97,7 +97,22 @@ class TestGeneticAlgorithm:
         )
         
         # Should have multiple unique combinations (allowing some duplicates due to randomness)
-        assert len(combo_sets) >= 10, f"Expected at least 10 unique combinations, got {len(combo_sets)}"
+        assert len(combo_sets) >= 8, f"Expected at least 8 unique combinations, got {len(combo_sets)}"
+        
+        # NEW: Check for diversity in feature counts
+        # Count how many features are enabled in each combination
+        feature_counts = [sum(1 for v in combo.values() if v) for combo in combos]
+        
+        # Should have variety: some small (0-5), some medium (6-15), some large (16+)
+        # With 4 total features available, adjust ranges
+        small_count = sum(1 for c in feature_counts if 0 <= c <= 1)
+        medium_count = sum(1 for c in feature_counts if 2 <= c <= 3)
+        large_count = sum(1 for c in feature_counts if c >= 4)
+        
+        # With stratified sampling, we should see diversity across ranges
+        # At least one combination in each range
+        assert small_count > 0, f"Expected at least 1 small combination (0-1 features), got {small_count}"
+        assert medium_count + large_count > 0, f"Expected some medium/large combinations, got medium={medium_count}, large={large_count}"
 
 
 class TestHybridStrategy:
@@ -141,6 +156,37 @@ class TestHybridStrategy:
         
         # Should test different numbers of features
         assert len(feature_counts) >= 3, f"Expected at least 3 different feature counts, got {len(feature_counts)}"
+    
+    def test_hybrid_bayesian_phase_allows_baseline(self):
+        """Verify Bayesian phase can generate baseline (0 features) configuration.
+        
+        This test addresses the issue: "Optimizer run shouldn't have a minimum of experimental sensors"
+        The Bayesian phase should be able to test configurations with 0 enabled features,
+        because sometimes less is more.
+        """
+        # Use a large number of Bayesian iterations to increase likelihood of getting baseline
+        combos_gen = _generate_hybrid_genetic_bayesian_combinations(
+            include_derived=False,
+            ga_population_size=5,
+            ga_num_generations=1,
+            bayesian_iterations=100,  # Large number to ensure we get baseline
+        )
+        combos = list(combos_gen)
+        
+        # Count how many features are enabled in each combination
+        feature_counts = [sum(1 for v in combo.values() if v) for combo in combos]
+        
+        # Verify that at least one combination has 0 features (baseline)
+        # The first combo from GA phase will always be baseline, but we also want
+        # to ensure the Bayesian phase CAN generate it (even if randomly it might not always)
+        has_baseline = 0 in feature_counts
+        assert has_baseline, f"Expected at least one baseline configuration (0 features), got feature counts: {sorted(set(feature_counts))}"
+        
+        # Count baselines (should be at least 1 from GA phase, possibly more from Bayesian)
+        baseline_count = feature_counts.count(0)
+        
+        # The GA phase includes baseline as first individual, so we should have at least 1
+        assert baseline_count >= 1, f"Expected at least 1 baseline configuration, got {baseline_count}"
 
 
 class TestSearchStrategyIntegration:

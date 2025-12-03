@@ -881,6 +881,11 @@
             if (tabName === 'configuration') {
                 loadFeatureConfigAuto();
             }
+            
+            // Auto-load latest optimizer results for Training tab
+            if (tabName === 'training') {
+                loadLatestOptimizerResults();
+            }
         }
         
         // Load available days and sample rate on page load
@@ -2834,6 +2839,7 @@
                                 
                                 // Update status
                                 if (statusData.running) {
+                                    statusDiv.className = 'status-message loading';
                                     statusDiv.textContent = `⏳ Progress: ${p.completed_configurations}/${p.total_configurations}`;
                                     if (p.current_configuration) {
                                         statusDiv.textContent += `\nCurrent: ${p.current_configuration} (${p.current_model_type})`;
@@ -2914,15 +2920,12 @@
                     }, 2000);  // Poll every 2 seconds
                 } else {
                     statusDiv.className = 'status-message error';
-                    statusDiv.textContent = '✗ ' + (data.message || 'Optimization failed');
-                    if (data.log) {
-                        logContent.textContent = data.log.join('\n');
-                    }
+                    statusDiv.textContent = '✗ ' + (data.message || 'Failed to start optimizer');
+                    btn.disabled = false;
                 }
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
-            } finally {
                 btn.disabled = false;
             }
         }
@@ -3063,6 +3066,95 @@
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        async function loadLatestOptimizerResults() {
+            const statusDiv = document.getElementById('optimizerStatus');
+            const logDiv = document.getElementById('optimizerLog');
+            const logContent = document.getElementById('optimizerLogContent');
+            const resultsDiv = document.getElementById('optimizerResults');
+            const bestResultDiv = document.getElementById('optimizerBestResult');
+            const applyBtn = document.getElementById('applyOptimizerBtn');
+            
+            try {
+                const response = await fetch('api/optimizer/latest');
+                const data = await response.json();
+                
+                if (response.ok && data.run) {
+                    const run = data.run;
+                    
+                    // Show log if available
+                    if (run.start_time) {
+                        logDiv.style.display = 'block';
+                        const startTime = new Date(run.start_time).toLocaleString();
+                        const endTime = run.end_time ? new Date(run.end_time).toLocaleString() : 'In progress';
+                        logContent.textContent = `Previous run: Started ${startTime}, Ended ${endTime}\nPhase: ${run.phase}\n`;
+                    }
+                    
+                    // Show best result if available
+                    if (run.best_result) {
+                        bestResultDiv.style.display = 'block';
+                        document.getElementById('optimizerBestConfig').textContent = run.best_result.config_name;
+                        document.getElementById('optimizerBestModel').textContent = run.best_result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step';
+                        document.getElementById('optimizerBestMape').textContent = run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A';
+                        applyBtn.style.display = 'inline-block';
+                        
+                        statusDiv.className = 'status-message success';
+                        statusDiv.textContent = '✓ Previous optimization results loaded. Best Val MAPE: ' + 
+                            (run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A');
+                    }
+                    
+                    // Show results table
+                    if (run.results && run.results.length > 0) {
+                        let html = '<h4 style="margin-bottom: 0.5rem;">Results from Previous Run</h4>';
+                        html += '<table class="results-table"><thead><tr>';
+                        html += '<th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th><th>Action</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        // Sort by Val MAPE ascending
+                        const sortedResults = [...run.results].sort((a, b) => {
+                            if (a.val_mape_pct === null) return 1;
+                            if (b.val_mape_pct === null) return -1;
+                            return a.val_mape_pct - b.val_mape_pct;
+                        });
+                        
+                        sortedResults.forEach((result) => {
+                            const isBest = run.best_result && 
+                                result.config_name === run.best_result.config_name && 
+                                result.model_type === run.best_result.model_type;
+                            // Light green background for winner
+                            const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
+                            
+                            html += `<tr style="${rowStyle}">`;
+                            html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
+                            html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
+                            html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
+                            html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
+                            html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
+                            html += `<td>${result.success ? '✓' : '✗ ' + (result.error_message || 'Failed')}</td>`;
+                            
+                            // Add apply button for successful results
+                            if (result.success && result.id) {
+                                html += `<td><button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" onclick="applyResultById(${result.id})">Apply</button></td>`;
+                            } else {
+                                html += `<td>-</td>`;
+                            }
+                            
+                            html += '</tr>';
+                        });
+                        
+                        html += '</tbody></table>';
+                        resultsDiv.innerHTML = html;
+                        resultsDiv.style.display = 'block';
+                    }
+                } else {
+                    // No previous results
+                    statusDiv.className = 'status-message info';
+                    statusDiv.textContent = 'ℹ️ No previous optimization results found. Click "Run Optimizer" to start.';
+                }
+            } catch (error) {
+                console.error('Error loading latest optimizer results:', error);
             }
         }
 

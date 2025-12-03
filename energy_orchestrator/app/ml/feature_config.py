@@ -22,6 +22,11 @@ import json
 import os
 from zoneinfo import ZoneInfo
 
+# Import sensor configuration modules for derived feature detection
+# These are imported at module level to avoid repeated import overhead
+from db.sensor_category_config import get_sensor_category_config, get_sensor_definition
+from db.virtual_sensors import get_virtual_sensors_config
+
 _Logger = logging.getLogger(__name__)
 
 # Default timezone for time features (IANA identifier)
@@ -579,9 +584,6 @@ class FeatureConfiguration:
         
         # Check if this sensor exists in sensor category configuration (raw sensors)
         try:
-            from db.sensor_category_config import get_sensor_category_config
-            from db.virtual_sensors import get_virtual_sensors_config
-            
             sensor_config = get_sensor_category_config()
             if sensor_config.get_sensor_config(sensor_name) is not None:
                 return True
@@ -629,9 +631,6 @@ class FeatureConfiguration:
         
         # Try to get sensor configuration for unit and category
         try:
-            from db.sensor_category_config import get_sensor_category_config, get_sensor_definition
-            from db.virtual_sensors import get_virtual_sensors_config
-            
             sensor_config = get_sensor_category_config()
             sensor_conf = sensor_config.get_sensor_config(sensor_name)
             

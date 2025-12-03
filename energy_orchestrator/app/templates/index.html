@@ -2800,7 +2800,7 @@
             
             btn.disabled = true;
             statusDiv.className = 'status-message loading';
-            statusDiv.textContent = 'Starting optimization... This may take several minutes.';
+            statusDiv.textContent = 'Starting optimization... This will run in the background.';
             logDiv.style.display = 'block';
             logContent.textContent = 'Initializing optimizer...\n';
             resultsDiv.style.display = 'none';
@@ -2815,62 +2815,103 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    // Update log
-                    if (data.log && data.log.length > 0) {
-                        logContent.textContent = data.log.join('\n');
-                        logContent.scrollTop = logContent.scrollHeight;
-                    }
+                    statusDiv.textContent = '⏳ Optimization running in background... Polling for updates.';
                     
-                    // Show best result
-                    if (data.best_result) {
-                        bestResultDiv.style.display = 'block';
-                        document.getElementById('optimizerBestConfig').textContent = data.best_result.config_name;
-                        document.getElementById('optimizerBestModel').textContent = data.best_result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step';
-                        document.getElementById('optimizerBestMape').textContent = data.best_result.val_mape_pct !== null ? data.best_result.val_mape_pct + '%' : 'N/A';
-                        applyBtn.style.display = 'inline-block';
-                        
-                        statusDiv.className = 'status-message success';
-                        statusDiv.textContent = '✓ Optimization complete! Best Val MAPE: ' + 
-                            (data.best_result.val_mape_pct !== null ? data.best_result.val_mape_pct + '%' : 'N/A');
-                    } else {
-                        statusDiv.className = 'status-message info';
-                        statusDiv.textContent = 'ℹ️ Optimization complete but no valid results found.';
-                    }
-                    
-                    // Build results table
-                    if (data.results && data.results.length > 0) {
-                        let html = '<h4 style="margin-bottom: 0.5rem;">All Results</h4>';
-                        html += '<table class="results-table"><thead><tr>';
-                        html += '<th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th>';
-                        html += '</tr></thead><tbody>';
-                        
-                        // Sort by Val MAPE ascending
-                        const sortedResults = [...data.results].sort((a, b) => {
-                            if (a.val_mape_pct === null) return 1;
-                            if (b.val_mape_pct === null) return -1;
-                            return a.val_mape_pct - b.val_mape_pct;
-                        });
-                        
-                        sortedResults.forEach((result, idx) => {
-                            const isBest = data.best_result && 
-                                result.config_name === data.best_result.config_name && 
-                                result.model_type === data.best_result.model_type;
-                            const rowStyle = isBest ? 'background: var(--accent-green-dark);' : '';
+                    // Start polling for status
+                    const pollInterval = setInterval(async () => {
+                        try {
+                            const statusResponse = await fetch('api/optimizer/status');
+                            const statusData = await statusResponse.json();
                             
-                            html += `<tr style="${rowStyle}">`;
-                            html += `<td>${result.config_name}${isBest ? ' ⭐' : ''}</td>`;
-                            html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
-                            html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
-                            html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
-                            html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
-                            html += `<td>${result.success ? '✓' : '✗ ' + (result.error_message || 'Failed')}</td>`;
-                            html += '</tr>';
-                        });
-                        
-                        html += '</tbody></table>';
-                        resultsDiv.innerHTML = html;
-                        resultsDiv.style.display = 'block';
-                    }
+                            if (statusData.progress) {
+                                const p = statusData.progress;
+                                
+                                // Update log
+                                if (p.log && p.log.length > 0) {
+                                    logContent.textContent = p.log.join('\n');
+                                    logContent.scrollTop = logContent.scrollHeight;
+                                }
+                                
+                                // Update status
+                                if (statusData.running) {
+                                    statusDiv.textContent = `⏳ Progress: ${p.completed_configurations}/${p.total_configurations}`;
+                                    if (p.current_configuration) {
+                                        statusDiv.textContent += `\nCurrent: ${p.current_configuration} (${p.current_model_type})`;
+                                    }
+                                } else if (p.phase === 'complete' || p.phase === 'error') {
+                                    clearInterval(pollInterval);
+                                    btn.disabled = false;
+                                    
+                                    if (p.phase === 'complete') {
+                                        // Show best result
+                                        if (p.best_result) {
+                                            bestResultDiv.style.display = 'block';
+                                            document.getElementById('optimizerBestConfig').textContent = p.best_result.config_name;
+                                            document.getElementById('optimizerBestModel').textContent = p.best_result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step';
+                                            document.getElementById('optimizerBestMape').textContent = p.best_result.val_mape_pct !== null ? p.best_result.val_mape_pct + '%' : 'N/A';
+                                            applyBtn.style.display = 'inline-block';
+                                            
+                                            statusDiv.className = 'status-message success';
+                                            statusDiv.textContent = '✓ Optimization complete! Best Val MAPE: ' + 
+                                                (p.best_result.val_mape_pct !== null ? p.best_result.val_mape_pct + '%' : 'N/A');
+                                        } else {
+                                            statusDiv.className = 'status-message info';
+                                            statusDiv.textContent = 'ℹ️ Optimization complete but no valid results found.';
+                                        }
+                                        
+                                        // Build results table with Apply buttons
+                                        if (p.results && p.results.length > 0) {
+                                            let html = '<h4 style="margin-bottom: 0.5rem;">All Results</h4>';
+                                            html += '<table class="results-table"><thead><tr>';
+                                            html += '<th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th><th>Action</th>';
+                                            html += '</tr></thead><tbody>';
+                                            
+                                            // Sort by Val MAPE ascending
+                                            const sortedResults = [...p.results].sort((a, b) => {
+                                                if (a.val_mape_pct === null) return 1;
+                                                if (b.val_mape_pct === null) return -1;
+                                                return a.val_mape_pct - b.val_mape_pct;
+                                            });
+                                            
+                                            sortedResults.forEach((result, idx) => {
+                                                const isBest = p.best_result && 
+                                                    result.config_name === p.best_result.config_name && 
+                                                    result.model_type === p.best_result.model_type;
+                                                // Light green background for winner
+                                                const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
+                                                
+                                                html += `<tr style="${rowStyle}">`;
+                                                html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
+                                                html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
+                                                html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
+                                                html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
+                                                html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
+                                                html += `<td>${result.success ? '✓' : '✗ ' + (result.error_message || 'Failed')}</td>`;
+                                                
+                                                // Add apply button for successful results
+                                                if (result.success && result.id) {
+                                                    html += `<td><button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" onclick="applyResultById(${result.id})">Apply</button></td>`;
+                                                } else {
+                                                    html += `<td>-</td>`;
+                                                }
+                                                
+                                                html += '</tr>';
+                                            });
+                                            
+                                            html += '</tbody></table>';
+                                            resultsDiv.innerHTML = html;
+                                            resultsDiv.style.display = 'block';
+                                        }
+                                    } else {
+                                        statusDiv.className = 'status-message error';
+                                        statusDiv.textContent = '✗ Error: ' + (p.error || 'Unknown error');
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Polling error:', error);
+                        }
+                    }, 2000);  // Poll every 2 seconds
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ ' + (data.message || 'Optimization failed');
@@ -2981,6 +3022,47 @@
                 statusDiv.textContent = '✗ Error: ' + error.message;
             } finally {
                 btn.disabled = false;
+            }
+        }
+
+        async function applyResultById(resultId) {
+            if (!confirm('Apply this configuration? This will save the settings.')) {
+                return;
+            }
+            
+            const statusDiv = document.getElementById('optimizerStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Applying configuration...';
+            
+            try {
+                const response = await fetch(`api/optimizer/apply/${resultId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enable_two_step: true })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    let message = '✓ ' + data.message + '\n\n';
+                    message += 'Applied settings:\n';
+                    message += `- Configuration: ${data.applied_settings.config_name}\n`;
+                    message += `- Model type: ${data.applied_settings.model_type}\n`;
+                    message += `- Two-step enabled: ${data.applied_settings.two_step_enabled}\n`;
+                    message += `- Val MAPE: ${data.applied_settings.val_mape_pct}%`;
+                    statusDiv.textContent = message;
+                    
+                    // Reload feature config to reflect changes
+                    loadFeatureConfig();
+                    loadTwoStepPredictionStatus();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
             }
         }
 

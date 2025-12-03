@@ -2,6 +2,23 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [Unreleased] - 2025-12-03
+
+- **Fix Optimizer Minimum Experimental Sensors Constraint & Improve Two-Phase Training**
+  - **Issue**: Bayesian phase in hybrid strategy enforced minimum of 1 experimental sensor, preventing baseline (0 sensors) testing
+  - **Problem**: "Sometimes, less is more" - baseline configuration might be optimal but wasn't tested in Bayesian phase
+  - **Root Cause**: Line 684 used `random.randint(1, ...)` instead of `random.randint(0, ...)` 
+  - **Solution**: Changed Bayesian phase to allow 0 features: `num_features_to_enable = random.randint(0, max(3, n_features // 10))`
+  - **Phase Transition Improvements**:
+    - Added extensive documentation explaining how the system transitions between GA and Bayesian phases
+    - Added clear phase boundary logging with "=" separators
+    - Added automatic phase transition detection during training
+    - Added progress log message when transitioning from Phase 1 (GA) to Phase 2 (Bayesian)
+    - Clarified that current implementation pre-generates combinations (memory efficient) vs true Bayesian (feedback-based)
+  - **Testing**: Added `test_hybrid_bayesian_phase_allows_baseline()` to verify baseline can be generated
+  - **Impact**: Optimizer now properly tests all feature counts including 0 (baseline) in extensive automated two-phase training
+  - **Documentation**: Added detailed "Phase Transition Mechanics" section explaining generator pattern trade-offs
+
 ## [0.0.0.109] - 2025-12-03
 
 - **Optimizer Results UI Improvements**

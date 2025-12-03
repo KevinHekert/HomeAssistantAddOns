@@ -600,14 +600,34 @@ def _generate_hybrid_genetic_bayesian_combinations(
         For 52 features: 10,200 trainings vs 2^52 = 4.5 quadrillion (feasible vs impossible)
         For 100 features: 10,200 trainings vs 2^100 = 1.27 nonillion (still feasible!)
     
-    Note: Bayesian phase implementation is simplified for generator pattern.
-    For true Bayesian optimization, we'd need:
-    - Scikit-learn or similar for Gaussian Process
-    - Feedback loop to update surrogate model
-    - Acquisition function optimization
+    Phase Transition Mechanics:
+    ============================
+    The system transitions from GA to Bayesian phase using a GENERATOR pattern:
     
-    For now, we simulate Bayesian by generating diverse combinations
-    that complement GA results (different feature counts, patterns).
+    1. **Pre-Generation Phase** (before any training):
+       - This generator yields ALL combinations upfront (GA phase first, then Bayesian)
+       - run_optimization() consumes the generator into a list (line 1032)
+       - No training has happened yet
+    
+    2. **Training Phase** (after generation complete):
+       - Combinations are processed in batches with worker recycling
+       - Results are streamed to database
+       - Best configuration is tracked during training
+    
+    **IMPORTANT LIMITATION**: Because combinations are pre-generated, the Bayesian
+    phase CANNOT use feedback from GA phase results. This is a trade-off for:
+    - Memory efficiency (generator pattern)
+    - Parallel training (batch processing)
+    - Database streaming (results don't stay in memory)
+    
+    True Bayesian optimization would require:
+    - Sequential evaluation (slower, no parallelism)
+    - Feedback loop after each training
+    - Surrogate model (Gaussian Process) updated iteratively
+    - Acquisition function to select next combination
+    
+    Current implementation simulates Bayesian exploration by generating
+    strategic combinations that complement GA (diverse feature counts, patterns).
     """
     if include_derived:
         feature_names = _get_all_available_features()
@@ -637,7 +657,21 @@ def _generate_hybrid_genetic_bayesian_combinations(
     # ========================================
     # PHASE 1: GENETIC ALGORITHM EXPLORATION
     # ========================================
-    _Logger.info("Phase 1: Starting Genetic Algorithm exploration")
+    _Logger.info(
+        "=" * 80
+    )
+    _Logger.info(
+        "PHASE 1: GENETIC ALGORITHM EXPLORATION"
+    )
+    _Logger.info(
+        "Population: %d, Generations: %d, Total combinations: %d",
+        ga_population_size,
+        ga_num_generations,
+        ga_population_size * ga_num_generations
+    )
+    _Logger.info(
+        "=" * 80
+    )
     
     # Use the GA generator for Phase 1
     ga_generator = _generate_genetic_algorithm_combinations(
@@ -650,15 +684,34 @@ def _generate_hybrid_genetic_bayesian_combinations(
     )
     
     # Yield all GA combinations
+    ga_count = 0
     for individual in ga_generator:
+        ga_count += 1
         yield individual
+    
+    _Logger.info(
+        "Phase 1 complete: Generated %d GA combinations",
+        ga_count
+    )
     
     # =========================================
     # PHASE 2: BAYESIAN OPTIMIZATION EXPLOITATION
     # =========================================
     _Logger.info(
-        "Phase 2: Starting Bayesian Optimization exploitation (%d iterations)",
+        "=" * 80
+    )
+    _Logger.info(
+        "PHASE 2: BAYESIAN OPTIMIZATION EXPLOITATION"
+    )
+    _Logger.info(
+        "Strategic iterations: %d",
         bayesian_iterations
+    )
+    _Logger.info(
+        "Strategy: Test diverse feature counts (0 to N) to complement GA results"
+    )
+    _Logger.info(
+        "=" * 80
     )
     
     # In a full implementation, we would:
@@ -681,7 +734,7 @@ def _generate_hybrid_genetic_bayesian_combinations(
         # Strategy: Mix of different sizes and random selections
         if iteration < bayesian_iterations // 3:
             # First third: Test small feature sets (high specificity)
-            num_features_to_enable = random.randint(1, max(3, n_features // 10))
+            num_features_to_enable = random.randint(0, max(3, n_features // 10))
         elif iteration < 2 * bayesian_iterations // 3:
             # Middle third: Test medium feature sets (balanced)
             num_features_to_enable = random.randint(n_features // 4, n_features // 2)
@@ -1101,6 +1154,20 @@ def run_optimization(
         
         # Create a list of all training tasks (config + model_type combinations)
         training_tasks = []
+        
+        # Track phase boundaries for hybrid strategy
+        phase_1_end_index = 0
+        if search_strategy == SearchStrategy.HYBRID_GENETIC_BAYESIAN:
+            # Calculate where Phase 1 (GA) ends and Phase 2 (Bayesian) begins
+            ga_combinations = genetic_population_size * genetic_num_generations
+            phase_1_end_index = ga_combinations * 2  # × 2 for both model types
+            _Logger.info(
+                "Hybrid strategy: Phase 1 (GA) = tasks 1-%d, Phase 2 (Bayesian) = tasks %d-%d",
+                phase_1_end_index,
+                phase_1_end_index + 1,
+                num_combinations * 2
+            )
+        
         for combo in combinations_list:
             config_name = _configuration_to_name(combo)
             training_tasks.append((config_name, combo, "single_step", train_single_step_fn))
@@ -1183,6 +1250,31 @@ def run_optimization(
                                     progress.completed_configurations += 1
                                     progress.current_configuration = config_name
                                     progress.current_model_type = model_type
+                                    
+                                    # Check for phase transition (hybrid strategy only)
+                                    if (search_strategy == SearchStrategy.HYBRID_GENETIC_BAYESIAN 
+                                        and phase_1_end_index > 0 
+                                        and progress.completed_configurations == phase_1_end_index):
+                                        _Logger.info(
+                                            "=" * 80
+                                        )
+                                        _Logger.info(
+                                            "PHASE TRANSITION: GA Exploration Complete → Bayesian Exploitation Starting"
+                                        )
+                                        _Logger.info(
+                                            "Phase 1 complete: %d configurations trained",
+                                            phase_1_end_index
+                                        )
+                                        _Logger.info(
+                                            "Phase 2 starting: %d strategic combinations",
+                                            (num_combinations * 2) - phase_1_end_index
+                                        )
+                                        _Logger.info(
+                                            "=" * 80
+                                        )
+                                        progress.add_log_message(
+                                            f"[{datetime.now().strftime('%H:%M:%S')}] ✓ Phase 1 (GA) complete → Phase 2 (Bayesian) starting"
+                                        )
                                     
                                     # Log the result
                                     if result.success:

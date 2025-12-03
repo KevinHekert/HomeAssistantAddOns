@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 import pandas as pd
 
 from app import app
-from db.resample import ResampleStats
+from db.resample import ResampleStats, ResampleProgress
 from ml.heating_features import FeatureDatasetStats, TrainingDataRange
 
 
@@ -1221,12 +1221,9 @@ class TestResampleStatusEndpoint:
     def test_resample_status_with_progress(self, client):
         """Status endpoint returns progress when resampling is running."""
         # Simulate resampling in progress by setting global state
-        with patch("app._resample_progress") as mock_progress, \
-             patch("app._resample_running", True), \
-             patch("app._resample_lock"):
-            
-            from db.resample import ResampleProgress
-            from datetime import datetime
+        with (patch("app._resample_progress") as mock_progress,
+              patch("app._resample_running", True),
+              patch("app._resample_lock")):
             
             mock_progress.phase = "resampling"
             mock_progress.slots_processed = 60

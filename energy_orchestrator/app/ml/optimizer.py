@@ -109,7 +109,8 @@ def _get_experimental_feature_combinations(include_derived: bool = True) -> list
     we test:
     1. All features disabled (baseline)
     2. Each feature enabled individually
-    3. Logical groups of features together
+    3. All 2-feature combinations (pairwise testing)
+    4. Logical groups of 3+ features together
     
     Args:
         include_derived: If True, includes derived features in combinations
@@ -133,7 +134,16 @@ def _get_experimental_feature_combinations(include_derived: bool = True) -> list
         config[name] = True
         combinations.append(config)
     
-    # 3. Logical groups: time-related features together
+    # 3. All 2-feature combinations (pairwise testing)
+    # This significantly improves coverage of feature interactions
+    for i in range(len(feature_names)):
+        for j in range(i + 1, len(feature_names)):
+            config = {name: False for name in feature_names}
+            config[feature_names[i]] = True
+            config[feature_names[j]] = True
+            combinations.append(config)
+    
+    # 4. Logical groups: time-related features together (all 3)
     time_features = ["day_of_week", "is_weekend", "is_night"]
     matching_time = [f for f in feature_names if f in time_features]
     if len(matching_time) >= MIN_FEATURES_FOR_GROUP:
@@ -142,7 +152,7 @@ def _get_experimental_feature_combinations(include_derived: bool = True) -> list
             config[tf] = True
         combinations.append(config)
     
-    # 4. All weather aggregations
+    # 5. All weather aggregations
     weather_agg_features = ["pressure", "outdoor_temp_avg_6h", "outdoor_temp_avg_7d"]
     matching_weather = [f for f in feature_names if f in weather_agg_features]
     if len(matching_weather) >= MIN_FEATURES_FOR_GROUP:
@@ -151,7 +161,7 @@ def _get_experimental_feature_combinations(include_derived: bool = True) -> list
             config[wf] = True
         combinations.append(config)
     
-    # 5. Heating-related features
+    # 6. Heating-related features
     heating_features = ["heating_kwh_last_7d", "heating_degree_hours_24h", "heating_degree_hours_7d"]
     matching_heating = [f for f in feature_names if f in heating_features]
     if len(matching_heating) >= MIN_FEATURES_FOR_GROUP:
@@ -160,7 +170,7 @@ def _get_experimental_feature_combinations(include_derived: bool = True) -> list
             config[hf] = True
         combinations.append(config)
     
-    # 6. All experimental features enabled
+    # 7. All experimental features enabled
     combinations.append({name: True for name in feature_names})
     
     _Logger.info("Generated %d feature combinations to test", len(combinations))

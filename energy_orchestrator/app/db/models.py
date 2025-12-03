@@ -7,6 +7,11 @@ from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 Base = declarative_base()
 
 
+def _utcnow():
+    """Get current UTC timestamp."""
+    return datetime.now(timezone.utc)
+
+
 class Sample(Base):
     __tablename__ = "samples"
 
@@ -133,4 +138,4 @@ class OptimizerConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     max_workers: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None or 0 = auto-calculate
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)

@@ -211,7 +211,7 @@ class TestConfiguredMaxWorkers:
                     max_memory_mb=None,
                     configured_max_workers=5,
                 )
-            except:
+            except Exception:
                 # Expected to fail due to mocking, but we just want to check the logger call
                 pass
             
@@ -257,7 +257,7 @@ class TestConfiguredMaxWorkers:
                     max_memory_mb=None,
                     configured_max_workers=None,
                 )
-            except:
+            except Exception:
                 # Expected to fail due to mocking, but we just want to check calc was called
                 pass
             
@@ -302,7 +302,7 @@ class TestConfiguredMaxWorkers:
                     max_memory_mb=None,
                     configured_max_workers=0,
                 )
-            except:
+            except Exception:
                 # Expected to fail due to mocking, but we just want to check calc was called
                 pass
             

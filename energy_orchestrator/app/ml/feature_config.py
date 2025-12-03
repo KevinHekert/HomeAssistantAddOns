@@ -2,7 +2,7 @@
 Feature configuration for the heat pump consumption prediction model.
 
 This module defines:
-- The 13 core baseline features (always active, cannot be disabled)
+- The 15 core baseline features (always active, cannot be disabled)
 - Experimental/optional features (disabled by default, toggleable via UI)
 - Feature metadata (category, description, unit, time_window, is_core)
 - Time zone configuration for time-based features
@@ -21,6 +21,11 @@ from typing import Optional
 import json
 import os
 from zoneinfo import ZoneInfo
+
+# Import sensor configuration modules for derived feature detection
+# These are imported at module level to avoid repeated import overhead
+from db.sensor_category_config import get_sensor_category_config, get_sensor_definition
+from db.virtual_sensors import get_virtual_sensors_config
 
 _Logger = logging.getLogger(__name__)
 
@@ -99,17 +104,25 @@ class FeatureMetadata:
 
 
 # =============================================================================
-# CORE BASELINE FEATURES (13 features - always active, cannot be disabled)
+# CORE BASELINE FEATURES (15 features - always active, cannot be disabled)
 # =============================================================================
 
 CORE_FEATURES: list[FeatureMetadata] = [
-    # Weather / Outdoor (4 features)
+    # Weather / Outdoor (5 features)
     FeatureMetadata(
         name="outdoor_temp",
         category=FeatureCategory.WEATHER,
         description="Latest 5-minute outdoor temperature",
         unit="°C",
         time_window=TimeWindow.NONE,
+        is_core=True,
+    ),
+    FeatureMetadata(
+        name="outdoor_temp_avg_1h",
+        category=FeatureCategory.WEATHER,
+        description="1-hour outdoor temperature average (last 12 samples)",
+        unit="°C",
+        time_window=TimeWindow.HOUR_1,
         is_core=True,
     ),
     FeatureMetadata(
@@ -137,13 +150,21 @@ CORE_FEATURES: list[FeatureMetadata] = [
         is_core=True,
     ),
     
-    # Indoor Climate / Building Mass (2 features)
+    # Indoor Climate / Building Mass (3 features)
     FeatureMetadata(
         name="indoor_temp",
         category=FeatureCategory.INDOOR,
         description="Latest 5-minute indoor temperature",
         unit="°C",
         time_window=TimeWindow.NONE,
+        is_core=True,
+    ),
+    FeatureMetadata(
+        name="indoor_temp_avg_6h",
+        category=FeatureCategory.INDOOR,
+        description="6-hour average indoor temperature (last 72 samples)",
+        unit="°C",
+        time_window=TimeWindow.HOUR_6,
         is_core=True,
     ),
     FeatureMetadata(
@@ -226,6 +247,7 @@ CORE_FEATURES: list[FeatureMetadata] = [
 # =============================================================================
 
 EXPERIMENTAL_FEATURES: list[FeatureMetadata] = [
+    # Reduced feature set for faster optimizer testing (4 features = 2^4 = 16 combinations)
     # Weather - additional aggregations
     FeatureMetadata(
         name="pressure",
@@ -233,15 +255,6 @@ EXPERIMENTAL_FEATURES: list[FeatureMetadata] = [
         description="Latest 5-minute barometric pressure",
         unit="hPa",
         time_window=TimeWindow.NONE,
-        is_core=False,
-        enabled=False,
-    ),
-    FeatureMetadata(
-        name="outdoor_temp_avg_1h",
-        category=FeatureCategory.WEATHER,
-        description="1-hour outdoor temperature average (last 12 samples)",
-        unit="°C",
-        time_window=TimeWindow.HOUR_1,
         is_core=False,
         enabled=False,
     ),
@@ -254,48 +267,8 @@ EXPERIMENTAL_FEATURES: list[FeatureMetadata] = [
         is_core=False,
         enabled=False,
     ),
-    FeatureMetadata(
-        name="outdoor_temp_avg_7d",
-        category=FeatureCategory.WEATHER,
-        description="7-day outdoor temperature average (last 2016 samples)",
-        unit="°C",
-        time_window=TimeWindow.DAY_7,
-        is_core=False,
-        enabled=False,
-    ),
     
-    # Indoor - additional aggregation
-    FeatureMetadata(
-        name="indoor_temp_avg_6h",
-        category=FeatureCategory.INDOOR,
-        description="6-hour average indoor temperature (last 72 samples)",
-        unit="°C",
-        time_window=TimeWindow.HOUR_6,
-        is_core=False,
-        enabled=False,
-    ),
-    
-    # Control - additional aggregation
-    FeatureMetadata(
-        name="target_temp_avg_24h",
-        category=FeatureCategory.CONTROL,
-        description="24-hour average heating target setpoint (last 288 samples)",
-        unit="°C",
-        time_window=TimeWindow.HOUR_24,
-        is_core=False,
-        enabled=False,
-    ),
-    
-    # Usage - 7-day window
-    FeatureMetadata(
-        name="heating_kwh_last_7d",
-        category=FeatureCategory.USAGE,
-        description="Heating energy consumption in the last 7 days (last 2016 samples)",
-        unit="kWh",
-        time_window=TimeWindow.DAY_7,
-        is_core=False,
-        enabled=False,
-    ),
+    # Usage - 24-hour window
     FeatureMetadata(
         name="heating_degree_hours_24h",
         category=FeatureCategory.USAGE,
@@ -305,40 +278,13 @@ EXPERIMENTAL_FEATURES: list[FeatureMetadata] = [
         is_core=False,
         enabled=False,
     ),
-    FeatureMetadata(
-        name="heating_degree_hours_7d",
-        category=FeatureCategory.USAGE,
-        description="Heating degree hours over 7 days",
-        unit="°C·h",
-        time_window=TimeWindow.DAY_7,
-        is_core=False,
-        enabled=False,
-    ),
     
-    # Time - additional calendar features
+    # Time - calendar feature
     FeatureMetadata(
         name="day_of_week",
         category=FeatureCategory.TIME,
         description="Day of week (0=Monday, 6=Sunday)",
         unit="day",
-        time_window=TimeWindow.NONE,
-        is_core=False,
-        enabled=False,
-    ),
-    FeatureMetadata(
-        name="is_weekend",
-        category=FeatureCategory.TIME,
-        description="1 if Saturday or Sunday, else 0",
-        unit="boolean",
-        time_window=TimeWindow.NONE,
-        is_core=False,
-        enabled=False,
-    ),
-    FeatureMetadata(
-        name="is_night",
-        category=FeatureCategory.TIME,
-        description="1 if hour is 23:00-06:59, else 0",
-        unit="boolean",
         time_window=TimeWindow.NONE,
         is_core=False,
         enabled=False,
@@ -356,23 +302,34 @@ class FeatureConfiguration:
     - Feature metadata for UI display and documentation
     - Timezone settings for time-based features
     - Two-step prediction settings (experimental)
+    
+    Note: All features (core and experimental) can be enabled/disabled.
+    Core features are labeled as 'CORE' in UI but are not forced to be enabled.
     """
     timezone: str = DEFAULT_TIMEZONE
+    core_enabled: dict[str, bool] = field(default_factory=dict)
     experimental_enabled: dict[str, bool] = field(default_factory=dict)
     # Two-step prediction: first classify active/inactive, then regress for active hours only
     two_step_prediction_enabled: bool = False
     
     def __post_init__(self):
-        """Initialize experimental feature states from defaults if not provided."""
+        """Initialize feature states from defaults if not provided."""
+        # Initialize core feature states (default: enabled)
+        for feature in CORE_FEATURES:
+            if feature.name not in self.core_enabled:
+                self.core_enabled[feature.name] = True  # Core features enabled by default
+        
+        # Initialize experimental feature states (default: disabled)
         for feature in EXPERIMENTAL_FEATURES:
             if feature.name not in self.experimental_enabled:
-                self.experimental_enabled[feature.name] = feature.enabled
+                self.experimental_enabled[feature.name] = False
     
     def get_all_features(self) -> list[FeatureMetadata]:
-        """Get all features (core + experimental) with current enabled state."""
+        """Get all features (core + experimental + derived) with current enabled state."""
         features = []
+        seen_names = set()
         
-        # Core features are always enabled
+        # Core features use configured state (but enabled by default)
         for f in CORE_FEATURES:
             features.append(FeatureMetadata(
                 name=f.name,
@@ -381,8 +338,9 @@ class FeatureConfiguration:
                 unit=f.unit,
                 time_window=f.time_window,
                 is_core=True,
-                enabled=True,
+                enabled=self.core_enabled.get(f.name, True),
             ))
+            seen_names.add(f.name)
         
         # Experimental features use configured state
         for f in EXPERIMENTAL_FEATURES:
@@ -395,6 +353,16 @@ class FeatureConfiguration:
                 is_core=False,
                 enabled=self.experimental_enabled.get(f.name, False),
             ))
+            seen_names.add(f.name)
+        
+        # Add dynamically created derived features from experimental_enabled
+        # These are features like "wind_avg_1h" that don't exist in CORE/EXPERIMENTAL lists
+        for feature_name, enabled in self.experimental_enabled.items():
+            if feature_name not in seen_names and self._is_derived_sensor_stat_feature(feature_name):
+                # Create metadata for derived feature
+                metadata = self._create_derived_feature_metadata(feature_name, enabled)
+                if metadata:
+                    features.append(metadata)
         
         return features
     
@@ -455,6 +423,218 @@ class FeatureConfiguration:
                 return True
         return False
     
+    def enable_core_feature(self, feature_name: str) -> bool:
+        """
+        Enable a core feature.
+        
+        Args:
+            feature_name: Name of the feature to enable
+            
+        Returns:
+            True if feature was found and enabled, False otherwise
+        """
+        for f in CORE_FEATURES:
+            if f.name == feature_name:
+                self.core_enabled[feature_name] = True
+                return True
+        return False
+    
+    def disable_core_feature(self, feature_name: str) -> bool:
+        """
+        Disable a core feature.
+        
+        Args:
+            feature_name: Name of the feature to disable
+            
+        Returns:
+            True if feature was found and disabled, False otherwise
+        """
+        for f in CORE_FEATURES:
+            if f.name == feature_name:
+                self.core_enabled[feature_name] = False
+                return True
+        return False
+    
+    def enable_feature(self, feature_name: str) -> bool:
+        """
+        Enable any feature (core, experimental, or derived from sensor stats).
+        
+        Args:
+            feature_name: Name of the feature to enable
+            
+        Returns:
+            True if feature was found and enabled, False otherwise
+        """
+        if self.enable_core_feature(feature_name):
+            return True
+        if self.enable_experimental_feature(feature_name):
+            return True
+        # Check if this is a derived feature from sensor stats (e.g., wind_avg_1h)
+        if self._is_derived_sensor_stat_feature(feature_name):
+            self.experimental_enabled[feature_name] = True
+            _Logger.info("Enabled derived sensor stat feature: %s", feature_name)
+            return True
+        return False
+    
+    def disable_feature(self, feature_name: str) -> bool:
+        """
+        Disable any feature (core, experimental, or derived from sensor stats).
+        
+        Args:
+            feature_name: Name of the feature to disable
+            
+        Returns:
+            True if feature was found and disabled, False otherwise
+        """
+        if self.disable_core_feature(feature_name):
+            return True
+        if self.disable_experimental_feature(feature_name):
+            return True
+        # Check if this is a derived feature from sensor stats
+        if self._is_derived_sensor_stat_feature(feature_name):
+            self.experimental_enabled[feature_name] = False
+            _Logger.info("Disabled derived sensor stat feature: %s", feature_name)
+            return True
+        return False
+    
+    def _is_derived_sensor_stat_feature(self, feature_name: str) -> bool:
+        """
+        Check if a feature name corresponds to a derived sensor statistic.
+        
+        Derived features have the format: <sensor_name>_avg_<time_window>
+        Examples: wind_avg_1h, outdoor_temp_avg_6h, pressure_avg_24h, temp_delta_avg_1h
+        
+        This includes both raw sensors and virtual sensors.
+        
+        Args:
+            feature_name: Name of the feature to check
+            
+        Returns:
+            True if this is a valid derived sensor stat feature, False otherwise
+        """
+        # Check if the feature follows the pattern sensor_avg_<window>
+        if "_avg_" not in feature_name:
+            return False
+        
+        parts = feature_name.rsplit("_avg_", 1)
+        if len(parts) != 2:
+            return False
+        
+        sensor_name, time_window = parts
+        
+        # Validate the time window
+        valid_windows = {"1h", "6h", "24h", "7d"}
+        if time_window not in valid_windows:
+            return False
+        
+        # Check if this sensor exists in sensor category configuration (raw sensors)
+        try:
+            sensor_config = get_sensor_category_config()
+            if sensor_config.get_sensor_config(sensor_name) is not None:
+                return True
+            
+            # Also check virtual sensors configuration
+            virtual_config = get_virtual_sensors_config()
+            if virtual_config.get_sensor(sensor_name) is not None:
+                return True
+                
+            return False
+        except Exception as e:
+            _Logger.warning("Error checking sensor config for %s: %s", sensor_name, e)
+            return False
+    
+    def _create_derived_feature_metadata(self, feature_name: str, enabled: bool) -> Optional[FeatureMetadata]:
+        """
+        Create FeatureMetadata for a derived sensor statistic feature.
+        
+        This supports both raw sensors and virtual sensors.
+        
+        Args:
+            feature_name: Name of the feature (e.g., "wind_avg_1h" or "temp_delta_avg_1h")
+            enabled: Whether the feature is currently enabled
+            
+        Returns:
+            FeatureMetadata object or None if the feature is invalid
+        """
+        if "_avg_" not in feature_name:
+            return None
+        
+        parts = feature_name.rsplit("_avg_", 1)
+        if len(parts) != 2:
+            return None
+        
+        sensor_name, time_window = parts
+        
+        # Map time window to TimeWindow enum
+        time_window_map = {
+            "1h": TimeWindow.HOUR_1,
+            "6h": TimeWindow.HOUR_6,
+            "24h": TimeWindow.HOUR_24,
+            "7d": TimeWindow.DAY_7,
+        }
+        time_window_enum = time_window_map.get(time_window, TimeWindow.NONE)
+        
+        # Try to get sensor configuration for unit and category
+        try:
+            sensor_config = get_sensor_category_config()
+            sensor_conf = sensor_config.get_sensor_config(sensor_name)
+            
+            # First try raw sensor
+            if sensor_conf is not None:
+                # Get sensor definition for display information
+                sensor_def = get_sensor_definition(sensor_name)
+                
+                # Determine category based on sensor type
+                category = FeatureCategory.WEATHER  # Default
+                if sensor_def:
+                    sensor_type = sensor_def.sensor_type.value
+                    if sensor_type == "indoor":
+                        category = FeatureCategory.INDOOR
+                    elif sensor_type == "control":
+                        category = FeatureCategory.CONTROL
+                    elif sensor_type == "usage":
+                        category = FeatureCategory.USAGE
+                
+                # Create descriptive text
+                window_text = time_window.upper()
+                description = f"{window_text} average for {sensor_name}"
+                if sensor_def:
+                    description = f"{window_text} average of {sensor_def.display_name}"
+                
+                return FeatureMetadata(
+                    name=feature_name,
+                    category=category,
+                    description=description,
+                    unit=sensor_conf.unit or "",
+                    time_window=time_window_enum,
+                    is_core=False,
+                    enabled=enabled,
+                )
+            
+            # Try virtual sensor
+            virtual_config = get_virtual_sensors_config()
+            virtual_sensor = virtual_config.get_sensor(sensor_name)
+            
+            if virtual_sensor is not None:
+                # Virtual sensors - default to EXPERIMENTAL category
+                window_text = time_window.upper()
+                description = f"{window_text} average of {virtual_sensor.display_name}"
+                
+                return FeatureMetadata(
+                    name=feature_name,
+                    category=FeatureCategory.CONTROL,  # Virtual sensors as CONTROL category
+                    description=description,
+                    unit=virtual_sensor.unit or "",
+                    time_window=time_window_enum,
+                    is_core=False,
+                    enabled=enabled,
+                )
+            
+            return None
+        except Exception as e:
+            _Logger.warning("Error creating metadata for derived feature %s: %s", feature_name, e)
+            return None
+    
     def set_timezone(self, timezone: str) -> bool:
         """
         Set the timezone for time-based features.
@@ -501,6 +681,7 @@ class FeatureConfiguration:
         """Convert to dictionary for JSON serialization."""
         return {
             "timezone": self.timezone,
+            "core_enabled": self.core_enabled,
             "experimental_enabled": self.experimental_enabled,
             "two_step_prediction_enabled": self.two_step_prediction_enabled,
         }
@@ -510,9 +691,24 @@ class FeatureConfiguration:
         """Create from dictionary."""
         return cls(
             timezone=data.get("timezone", DEFAULT_TIMEZONE),
+            core_enabled=data.get("core_enabled", {}),
             experimental_enabled=data.get("experimental_enabled", {}),
             two_step_prediction_enabled=data.get("two_step_prediction_enabled", False),
         )
+    
+    def get_complete_feature_state(self) -> dict[str, bool]:
+        """
+        Get complete feature state (all features, core + experimental).
+        
+        Returns a dictionary with all feature names and their enabled state.
+        This is useful for storing the complete configuration with optimizer results.
+        """
+        complete_state = {}
+        # Add all core features
+        complete_state.update(self.core_enabled)
+        # Add all experimental features
+        complete_state.update(self.experimental_enabled)
+        return complete_state
     
     def save(self) -> bool:
         """

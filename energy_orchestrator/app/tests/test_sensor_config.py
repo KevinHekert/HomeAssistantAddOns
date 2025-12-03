@@ -1,20 +1,18 @@
 """
 Tests for sensor configuration management.
+
+Tests the sync_sensor_mappings function which uses the sensor_category_config module.
 """
 
 import pytest
-import os
+from unittest.mock import patch, MagicMock
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from db import Base, SensorMapping
-from db.sensor_config import (
-    SENSOR_CATEGORIES,
-    DEFAULT_ENTITIES,
-    get_configured_sensors,
-    sync_sensor_mappings,
-)
+from db.sensor_config import sync_sensor_mappings
+from db.sensor_category_config import SensorConfig, SensorCategoryConfiguration, CORE_SENSORS
 import db.core as core_module
 import db.sensor_config as config_module
 
@@ -36,147 +34,157 @@ def patch_engine(test_engine, monkeypatch):
 
 
 @pytest.fixture
-def clean_env(monkeypatch):
-    """Clear all sensor-related environment variables."""
-    for env_var in SENSOR_CATEGORIES.values():
-        monkeypatch.delenv(env_var, raising=False)
-    yield
-
-
-class TestGetConfiguredSensors:
-    """Test the get_configured_sensors function."""
-
-    def test_defaults_used_when_no_env_vars(self, clean_env):
-        """Default entity IDs are used when no environment variables are set."""
-        result = get_configured_sensors()
-        assert result == DEFAULT_ENTITIES
-
-    def test_env_var_overrides_default(self, clean_env, monkeypatch):
-        """Environment variable overrides default value."""
-        monkeypatch.setenv("WIND_ENTITY_ID", "sensor.custom_wind")
-        result = get_configured_sensors()
-        assert result["wind"] == "sensor.custom_wind"
-        # Other defaults should still be present
-        assert result["outdoor_temp"] == DEFAULT_ENTITIES["outdoor_temp"]
-
-    def test_all_env_vars_used(self, clean_env, monkeypatch):
-        """All environment variables are used when set."""
-        custom_sensors = {
-            "WIND_ENTITY_ID": "sensor.custom_wind",
-            "OUTDOOR_TEMP_ENTITY_ID": "sensor.custom_temp",
-            "FLOW_TEMP_ENTITY_ID": "sensor.custom_flow",
-            "RETURN_TEMP_ENTITY_ID": "sensor.custom_return",
-            "HUMIDITY_ENTITY_ID": "sensor.custom_humidity",
-            "PRESSURE_ENTITY_ID": "sensor.custom_pressure",
-            "HP_KWH_TOTAL_ENTITY_ID": "sensor.custom_kwh",
-            "DHW_TEMP_ENTITY_ID": "sensor.custom_dhw",
-        }
-        for env_var, value in custom_sensors.items():
-            monkeypatch.setenv(env_var, value)
-
-        result = get_configured_sensors()
-        assert result["wind"] == "sensor.custom_wind"
-        assert result["outdoor_temp"] == "sensor.custom_temp"
-        assert result["flow_temp"] == "sensor.custom_flow"
-        assert result["return_temp"] == "sensor.custom_return"
-        assert result["humidity"] == "sensor.custom_humidity"
-        assert result["pressure"] == "sensor.custom_pressure"
-        assert result["hp_kwh_total"] == "sensor.custom_kwh"
-        assert result["dhw_temp"] == "sensor.custom_dhw"
+def mock_sensor_config():
+    """Create a mock sensor category configuration."""
+    config = SensorCategoryConfiguration()
+    return config
 
 
 class TestSyncSensorMappings:
     """Test the sync_sensor_mappings function."""
 
-    def test_creates_mappings_from_defaults(self, patch_engine, clean_env):
-        """Creates sensor mappings from default values."""
-        sync_sensor_mappings()
+    def test_creates_mappings_from_config(self, patch_engine, tmp_path):
+        """Creates sensor mappings from sensor category config."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_config.get_sensor_category_config") as mock_get_config:
+            # Create a mock config with enabled sensors
+            mock_config = MagicMock()
+            mock_config.get_enabled_sensors.return_value = [
+                SensorConfig(category_name="outdoor_temp", entity_id="sensor.outdoor_temp", enabled=True),
+                SensorConfig(category_name="wind", entity_id="sensor.wind", enabled=True),
+            ]
+            mock_get_config.return_value = mock_config
+            
+            sync_sensor_mappings()
 
-        with Session(patch_engine) as session:
-            mappings = session.query(SensorMapping).all()
-            assert len(mappings) == len(DEFAULT_ENTITIES)
+            with Session(patch_engine) as session:
+                mappings = session.query(SensorMapping).all()
+                assert len(mappings) == 2
+                
+                categories = {m.category for m in mappings}
+                assert "outdoor_temp" in categories
+                assert "wind" in categories
 
-            for mapping in mappings:
+    def test_creates_mapping_with_correct_entity_id(self, patch_engine, tmp_path):
+        """Mapping should have the correct entity_id from config."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_config.get_sensor_category_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.get_enabled_sensors.return_value = [
+                SensorConfig(category_name="hp_kwh_total", entity_id="sensor.my_kwh", enabled=True),
+            ]
+            mock_get_config.return_value = mock_config
+            
+            sync_sensor_mappings()
+
+            with Session(patch_engine) as session:
+                mapping = session.query(SensorMapping).filter(
+                    SensorMapping.category == "hp_kwh_total"
+                ).first()
+                
+                assert mapping is not None
+                assert mapping.entity_id == "sensor.my_kwh"
                 assert mapping.is_active is True
-                assert mapping.priority == 1
-                assert mapping.entity_id == DEFAULT_ENTITIES[mapping.category]
 
-    def test_creates_mappings_from_env_vars(self, patch_engine, clean_env, monkeypatch):
-        """Creates sensor mappings from environment variables."""
-        monkeypatch.setenv("WIND_ENTITY_ID", "sensor.custom_wind")
-
-        sync_sensor_mappings()
-
-        with Session(patch_engine) as session:
-            wind_mapping = (
-                session.query(SensorMapping)
-                .filter(SensorMapping.category == "wind")
-                .first()
-            )
-            assert wind_mapping is not None
-            assert wind_mapping.entity_id == "sensor.custom_wind"
-            assert wind_mapping.is_active is True
-
-    def test_reactivates_inactive_mapping(self, patch_engine, clean_env):
+    def test_reactivates_inactive_mapping(self, patch_engine, tmp_path):
         """Reactivates an existing inactive mapping."""
         # Create an inactive mapping
         with Session(patch_engine) as session:
             session.add(
                 SensorMapping(
                     category="wind",
-                    entity_id=DEFAULT_ENTITIES["wind"],
+                    entity_id="sensor.wind",
                     is_active=False,
                     priority=1,
                 )
             )
             session.commit()
 
-        sync_sensor_mappings()
+        with patch("db.sensor_config.get_sensor_category_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.get_enabled_sensors.return_value = [
+                SensorConfig(category_name="wind", entity_id="sensor.wind", enabled=True),
+            ]
+            mock_get_config.return_value = mock_config
+            
+            sync_sensor_mappings()
 
-        with Session(patch_engine) as session:
-            wind_mapping = (
-                session.query(SensorMapping)
-                .filter(SensorMapping.category == "wind")
-                .first()
-            )
-            assert wind_mapping is not None
-            assert wind_mapping.is_active is True
-
-    def test_idempotent_sync(self, patch_engine, clean_env):
-        """Running sync multiple times doesn't create duplicates."""
-        sync_sensor_mappings()
-        sync_sensor_mappings()
-        sync_sensor_mappings()
-
-        with Session(patch_engine) as session:
-            mappings = session.query(SensorMapping).all()
-            # Should still only have one mapping per category
-            assert len(mappings) == len(DEFAULT_ENTITIES)
-
-    def test_preserves_existing_mappings(self, patch_engine, clean_env):
-        """Existing mappings with different entity_id are preserved."""
-        # Create a custom mapping
-        with Session(patch_engine) as session:
-            session.add(
-                SensorMapping(
-                    category="wind",
-                    entity_id="sensor.manual_wind",
-                    is_active=True,
-                    priority=2,
+            with Session(patch_engine) as session:
+                wind_mapping = (
+                    session.query(SensorMapping)
+                    .filter(SensorMapping.category == "wind")
+                    .first()
                 )
-            )
-            session.commit()
+                assert wind_mapping is not None
+                assert wind_mapping.is_active is True
 
-        sync_sensor_mappings()
+    def test_idempotent_sync(self, patch_engine, tmp_path):
+        """Running sync multiple times doesn't create duplicates."""
+        with patch("db.sensor_config.get_sensor_category_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.get_enabled_sensors.return_value = [
+                SensorConfig(category_name="outdoor_temp", entity_id="sensor.outdoor_temp", enabled=True),
+            ]
+            mock_get_config.return_value = mock_config
+            
+            sync_sensor_mappings()
+            sync_sensor_mappings()
+            sync_sensor_mappings()
 
-        with Session(patch_engine) as session:
-            wind_mappings = (
-                session.query(SensorMapping)
-                .filter(SensorMapping.category == "wind")
-                .all()
-            )
-            # Should have both the manual and the default mapping
-            assert len(wind_mappings) == 2
-            entity_ids = {m.entity_id for m in wind_mappings}
-            assert "sensor.manual_wind" in entity_ids
-            assert DEFAULT_ENTITIES["wind"] in entity_ids
+            with Session(patch_engine) as session:
+                mappings = session.query(SensorMapping).all()
+                # Should still only have one mapping for outdoor_temp
+                assert len(mappings) == 1
+
+    def test_skips_sensors_without_entity_id(self, patch_engine, tmp_path):
+        """Sensors without entity_id are skipped."""
+        with patch("db.sensor_config.get_sensor_category_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.get_enabled_sensors.return_value = [
+                SensorConfig(category_name="outdoor_temp", entity_id="sensor.outdoor_temp", enabled=True),
+                SensorConfig(category_name="pressure", entity_id="", enabled=True),  # Empty entity_id
+            ]
+            mock_get_config.return_value = mock_config
+            
+            sync_sensor_mappings()
+
+            with Session(patch_engine) as session:
+                mappings = session.query(SensorMapping).all()
+                # Only outdoor_temp should be created
+                assert len(mappings) == 1
+                assert mappings[0].category == "outdoor_temp"
+
+    def test_handles_empty_sensor_list(self, patch_engine, tmp_path):
+        """Handles case when no sensors are enabled."""
+        with patch("db.sensor_config.get_sensor_category_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.get_enabled_sensors.return_value = []
+            mock_get_config.return_value = mock_config
+            
+            # Should not raise an error
+            sync_sensor_mappings()
+
+            with Session(patch_engine) as session:
+                mappings = session.query(SensorMapping).all()
+                assert len(mappings) == 0
+
+    def test_creates_all_core_sensors(self, patch_engine, tmp_path):
+        """Creates mappings for all core sensors when using default config."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                # Use actual config which includes all core sensors
+                sync_sensor_mappings()
+
+                with Session(patch_engine) as session:
+                    mappings = session.query(SensorMapping).all()
+                    
+                    # Should have at least all core sensors
+                    assert len(mappings) >= len(CORE_SENSORS)
+                    
+                    categories = {m.category for m in mappings}
+                    for core_sensor in CORE_SENSORS:
+                        assert core_sensor.category_name in categories

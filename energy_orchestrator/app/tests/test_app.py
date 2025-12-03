@@ -33,44 +33,31 @@ def mock_model():
 
 
 class TestResampleEndpoint:
-    """Test the /resample POST endpoint."""
+    """Test the /resample POST endpoint (now runs in background)."""
 
     def test_resample_success(self, client):
-        """Successful resample returns 200 with success message and stats."""
-        mock_stats = ResampleStats(
-            slots_processed=100,
-            slots_saved=90,
-            slots_skipped=10,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-        )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
-
+        """Successful resample starts background thread and returns immediately."""
+        with patch("app._run_resample_in_thread") as mock_thread_func:
             response = client.post("/resample")
 
             assert response.status_code == 200
             data = response.get_json()
             assert data["status"] == "success"
-            assert "successfully" in data["message"]
-            assert data["stats"]["slots_processed"] == 100
-            assert data["stats"]["slots_saved"] == 90
-            assert data["stats"]["slots_skipped"] == 10
-            assert data["stats"]["categories"] == ["outdoor_temp", "wind"]
-            mock_resample.assert_called_once()
+            assert "background" in data["message"].lower()
+            assert data["running"] is True
 
     def test_resample_error(self, client):
-        """Error during resample returns 500 with error message."""
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.side_effect = Exception("Database error")
+        """Error during resample initialization returns 500 with error message."""
+        # Simulate error in thread creation
+        with patch("app.threading.Thread") as mock_thread:
+            mock_thread.side_effect = Exception("Thread creation failed")
 
             response = client.post("/resample")
 
             assert response.status_code == 500
             data = response.get_json()
             assert data["status"] == "error"
-            assert "Database error" in data["message"]
+            assert "Thread creation failed" in data["message"]
 
 
 class TestIndexEndpoint:
@@ -1129,30 +1116,18 @@ class TestResampleWithSampleRate:
     """Test the /resample POST endpoint with configurable sample rate."""
 
     def test_resample_with_custom_rate(self, client):
-        """Resample with custom sample rate uses provided value."""
-        mock_stats = ResampleStats(
-            slots_processed=50,
-            slots_saved=45,
-            slots_skipped=5,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-            sample_rate_minutes=10,
+        """Resample with custom sample rate accepts the value and starts background thread."""
+        response = client.post(
+            "/resample",
+            json={"sample_rate_minutes": 10},
+            content_type="application/json",
         )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
 
-            response = client.post(
-                "/resample",
-                json={"sample_rate_minutes": 10},
-                content_type="application/json",
-            )
-
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data["status"] == "success"
-            assert data["stats"]["sample_rate_minutes"] == 10
-            mock_resample.assert_called_once_with(10, flush=False)
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
+        assert "background" in data["message"].lower()
 
     def test_resample_invalid_rate_not_divisor(self, client):
         """Resample with sample rate that doesn't divide 60 returns error."""
@@ -1181,106 +1156,98 @@ class TestResampleWithSampleRate:
         assert data["status"] == "error"
 
     def test_resample_default_rate(self, client):
-        """Resample without custom rate uses default."""
-        mock_stats = ResampleStats(
-            slots_processed=100,
-            slots_saved=90,
-            slots_skipped=10,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-            sample_rate_minutes=5,
-        )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
+        """Resample without custom rate uses default and starts background thread."""
+        response = client.post("/resample")
 
-            response = client.post("/resample")
-
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data["stats"]["sample_rate_minutes"] == 5
-            mock_resample.assert_called_once()
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
 
     def test_resample_with_flush(self, client):
-        """Resample with flush=true clears existing data."""
-        mock_stats = ResampleStats(
-            slots_processed=100,
-            slots_saved=90,
-            slots_skipped=10,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-            sample_rate_minutes=10,
-            table_flushed=True,
+        """Resample with flush=true accepts the parameter and starts background thread."""
+        response = client.post(
+            "/resample",
+            json={"sample_rate_minutes": 10, "flush": True},
+            content_type="application/json",
         )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
 
-            response = client.post(
-                "/resample",
-                json={"sample_rate_minutes": 10, "flush": True},
-                content_type="application/json",
-            )
-
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data["status"] == "success"
-            assert data["stats"]["sample_rate_minutes"] == 10
-            assert data["stats"]["table_flushed"] is True
-            mock_resample.assert_called_once_with(10, flush=True)
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
 
     def test_resample_table_flushed_in_response(self, client):
-        """Resample response includes table_flushed field."""
-        mock_stats = ResampleStats(
-            slots_processed=50,
-            slots_saved=40,
-            slots_skipped=10,
-            categories=["outdoor_temp"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 18, 0, 0),
-            sample_rate_minutes=5,
-            table_flushed=False,
+        """Resample with flush starts background thread."""
+        response = client.post(
+            "/resample",
+            json={"sample_rate_minutes": 5, "flush": True},
+            content_type="application/json",
         )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
 
-            response = client.post(
-                "/resample",
-                json={"sample_rate_minutes": 5},
-                content_type="application/json",
-            )
-
-            assert response.status_code == 200
-            data = response.get_json()
-            assert "table_flushed" in data["stats"]
-            assert data["stats"]["table_flushed"] is False
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
 
     def test_resample_with_flush_default_rate(self, client):
-        """Resample with flush=true and default sample rate clears existing data."""
-        mock_stats = ResampleStats(
-            slots_processed=100,
-            slots_saved=90,
-            slots_skipped=10,
-            categories=["outdoor_temp", "wind"],
-            start_time=datetime(2024, 1, 1, 12, 0, 0),
-            end_time=datetime(2024, 1, 1, 20, 0, 0),
-            sample_rate_minutes=5,
-            table_flushed=True,
+        """Resample with flush and default rate starts background thread."""
+        response = client.post(
+            "/resample",
+            json={"flush": True},
+            content_type="application/json",
         )
-        with patch("app.resample_all_categories") as mock_resample:
-            mock_resample.return_value = mock_stats
 
-            response = client.post(
-                "/resample",
-                json={"flush": True},
-                content_type="application/json",
-            )
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is True
 
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data["status"] == "success"
-            assert data["stats"]["table_flushed"] is True
-            mock_resample.assert_called_once_with(None, flush=True)
+
+class TestResampleStatusEndpoint:
+    """Test the /api/resample/status GET endpoint."""
+
+    def test_resample_status_no_progress(self, client):
+        """Status endpoint returns success when no resampling has been run."""
+        response = client.get("/api/resample/status")
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert data["running"] is False
+        assert data["progress"] is None
+        assert "message" in data
+
+    def test_resample_status_with_progress(self, client):
+        """Status endpoint returns progress when resampling is running."""
+        # Simulate resampling in progress by setting global state
+        with patch("app._resample_progress") as mock_progress:
+            with patch("app._resample_running", True):
+                with patch("app._resample_lock"):
+                    mock_progress.phase = "resampling"
+                    mock_progress.slots_processed = 60
+                    mock_progress.slots_total = 120
+                    mock_progress.slots_saved = 55
+                    mock_progress.slots_skipped = 5
+                    mock_progress.categories = ["outdoor_temp", "indoor_temp"]
+                    mock_progress.current_slot = datetime(2024, 12, 3, 10, 0, 0)
+                    mock_progress.log_messages = ["Log line 1", "Log line 2"]
+                    mock_progress.sample_rate_minutes = 5
+                    mock_progress.get_hours_processed = lambda: 5
+                    mock_progress.get_hours_total = lambda: 10
+                    mock_progress.error_message = None
+                    
+                    response = client.get("/api/resample/status")
+
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data["status"] == "success"
+                    assert data["running"] is True
+                    assert data["progress"]["phase"] == "resampling"
+                    assert data["progress"]["hours_processed"] == 5
+                    assert data["progress"]["hours_total"] == 10
+                    assert data["progress"]["slots_processed"] == 60
+                    assert data["progress"]["slots_total"] == 120
 
 
 class TestSampleRateEndpoints:
@@ -1747,3 +1714,282 @@ class TestTrainTwoStepHeatingDemandEndpoint:
             data = response.get_json()
             assert data["status"] == "error"
             assert "Insufficient data" in data["message"]
+
+
+# =============================================================================
+# SENSOR CONFIGURATION ENDPOINTS TESTS
+# =============================================================================
+
+
+class TestSensorCategoryConfigEndpoint:
+    """Test the /api/sensors/category_config GET endpoint."""
+
+    def test_get_config_success(self, client, tmp_path):
+        """Should return sensor configuration."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.get("/api/sensors/category_config")
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert "config" in data
+                assert "sensors_by_type" in data
+                assert "enabled_entity_ids" in data
+                assert data["config"]["core_sensor_count"] > 0
+                assert data["config"]["experimental_sensor_count"] > 0
+
+    def test_config_has_sensor_types(self, client, tmp_path):
+        """Should have sensors grouped by type."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.get("/api/sensors/category_config")
+
+                assert response.status_code == 200
+                data = response.get_json()
+                sensors_by_type = data["sensors_by_type"]
+                
+                # Should have at least weather and usage types
+                assert "weather" in sensors_by_type
+                assert "usage" in sensors_by_type
+
+
+class TestSensorToggleEndpoint:
+    """Test the /api/sensors/toggle POST endpoint."""
+
+    def test_toggle_experimental_sensor_enable(self, client, tmp_path):
+        """Should enable an experimental sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "pressure", "enabled": True},
+                )
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert "enabled" in data["message"]
+                assert "pressure" in data["enabled_sensors"]
+
+    def test_toggle_experimental_sensor_disable(self, client, tmp_path):
+        """Should disable an experimental sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                # First enable
+                client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "pressure", "enabled": True},
+                )
+                
+                # Then disable
+                response = client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "pressure", "enabled": False},
+                )
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert "disabled" in data["message"]
+                assert "pressure" not in data["enabled_sensors"]
+
+    def test_cannot_toggle_core_sensor(self, client, tmp_path):
+        """Should not be able to toggle a core sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "outdoor_temp", "enabled": False},
+                )
+
+                assert response.status_code == 400
+                data = response.get_json()
+                assert data["status"] == "error"
+                assert "core sensor" in data["message"].lower()
+
+    def test_toggle_unknown_sensor(self, client, tmp_path):
+        """Should return error for unknown sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/toggle",
+                    json={"category_name": "nonexistent", "enabled": True},
+                )
+
+                assert response.status_code == 400
+                data = response.get_json()
+                assert data["status"] == "error"
+                assert "Unknown" in data["message"]
+
+    def test_toggle_missing_category_name(self, client):
+        """Should return error when category_name is missing."""
+        response = client.post(
+            "/api/sensors/toggle",
+            json={"enabled": True},
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "category_name" in data["message"]
+
+    def test_toggle_missing_enabled(self, client):
+        """Should return error when enabled is missing."""
+        response = client.post(
+            "/api/sensors/toggle",
+            json={"category_name": "pressure"},
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "enabled" in data["message"]
+
+
+class TestSensorSetEntityEndpoint:
+    """Test the /api/sensors/set_entity POST endpoint."""
+
+    def test_set_entity_success(self, client, tmp_path):
+        """Should set entity ID for a sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/set_entity",
+                    json={
+                        "category_name": "outdoor_temp",
+                        "entity_id": "sensor.custom_temperature",
+                    },
+                )
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert "sensor.custom_temperature" in data["message"]
+                assert data["sensor"]["entity_id"] == "sensor.custom_temperature"
+
+    def test_set_entity_for_experimental_sensor(self, client, tmp_path):
+        """Should set entity ID for experimental sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/set_entity",
+                    json={
+                        "category_name": "pressure",
+                        "entity_id": "sensor.my_pressure",
+                    },
+                )
+
+                assert response.status_code == 200
+                data = response.get_json()
+                assert data["status"] == "success"
+                assert data["sensor"]["is_core"] is False
+
+    def test_set_entity_unknown_sensor(self, client, tmp_path):
+        """Should return error for unknown sensor."""
+        config_file = tmp_path / "sensor_category_config.json"
+        
+        with patch("db.sensor_category_config.SENSOR_CONFIG_FILE_PATH", config_file):
+            with patch("db.sensor_category_config._config", None):
+                response = client.post(
+                    "/api/sensors/set_entity",
+                    json={
+                        "category_name": "nonexistent",
+                        "entity_id": "sensor.test",
+                    },
+                )
+
+                assert response.status_code == 400
+                data = response.get_json()
+                assert data["status"] == "error"
+                assert "Unknown" in data["message"]
+
+    def test_set_entity_empty_entity_id(self, client):
+        """Should return error for empty entity_id."""
+        response = client.post(
+            "/api/sensors/set_entity",
+            json={
+                "category_name": "outdoor_temp",
+                "entity_id": "",
+            },
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "entity_id" in data["message"]
+
+    def test_set_entity_missing_category_name(self, client):
+        """Should return error when category_name is missing."""
+        response = client.post(
+            "/api/sensors/set_entity",
+            json={"entity_id": "sensor.test"},
+        )
+
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["status"] == "error"
+        assert "category_name" in data["message"]
+
+
+class TestSensorDefinitionsEndpoint:
+    """Test the /api/sensors/definitions GET endpoint."""
+
+    def test_get_definitions_success(self, client):
+        """Should return sensor definitions."""
+        response = client.get("/api/sensors/definitions")
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["status"] == "success"
+        assert "core_sensors" in data
+        assert "experimental_sensors" in data
+        assert "total_count" in data
+        assert len(data["core_sensors"]) > 0
+        assert len(data["experimental_sensors"]) > 0
+
+    def test_definitions_have_required_fields(self, client):
+        """Sensor definitions should have required fields."""
+        response = client.get("/api/sensors/definitions")
+
+        assert response.status_code == 200
+        data = response.get_json()
+        
+        # Check a core sensor
+        core_sensor = data["core_sensors"][0]
+        assert "category_name" in core_sensor
+        assert "display_name" in core_sensor
+        assert "description" in core_sensor
+        assert "unit" in core_sensor
+        assert "is_core" in core_sensor
+        assert core_sensor["is_core"] is True
+
+        # Check an experimental sensor
+        exp_sensor = data["experimental_sensors"][0]
+        assert exp_sensor["is_core"] is False
+
+    def test_hp_kwh_total_in_core(self, client):
+        """hp_kwh_total should be in core sensors."""
+        response = client.get("/api/sensors/definitions")
+
+        assert response.status_code == 200
+        data = response.get_json()
+        
+        core_names = [s["category_name"] for s in data["core_sensors"]]
+        assert "hp_kwh_total" in core_names

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Resampling logic for aggregating raw sensor samples into configurable time slots.
 
@@ -5,6 +7,7 @@ This module provides functionality to:
 1. Map logical categories to Home Assistant entities
 2. Compute time-weighted averages for sensor data
 3. Resample raw samples into uniform time slots (configurable, default 5 minutes)
+4. Calculate virtual (derived) sensor values from raw sensor data
 """
 
 import json
@@ -20,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from db import ResampledSample, Sample, SensorMapping
 from db.core import engine, init_db_schema
+from db.virtual_sensors import get_virtual_sensors_config
 
 _Logger = logging.getLogger(__name__)
 
@@ -143,6 +147,45 @@ class ResampleStats:
     end_time: datetime | None
     sample_rate_minutes: int = 5
     table_flushed: bool = False
+
+
+@dataclass
+class ResampleProgress:
+    """Progress information for ongoing resampling operation."""
+    phase: str  # "initializing", "resampling", "calculating_stats", "complete", "error"
+    slots_processed: int
+    slots_total: int
+    slots_saved: int
+    slots_skipped: int
+    categories: list[str]
+    start_time: datetime
+    current_slot: datetime | None = None
+    log_messages: list[str] = None
+    error_message: str | None = None
+    sample_rate_minutes: int = 5
+    
+    def __post_init__(self):
+        if self.log_messages is None:
+            self.log_messages = []
+    
+    def add_log(self, message: str):
+        """Add a log message, keeping only the last 15."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_messages.append(f"[{timestamp}] {message}")
+        if len(self.log_messages) > 15:
+            self.log_messages = self.log_messages[-15:]
+    
+    def get_hours_processed(self) -> int:
+        """Calculate hours processed based on slots and sample rate."""
+        if self.sample_rate_minutes == 0:
+            return 0
+        return (self.slots_processed * self.sample_rate_minutes) // 60
+    
+    def get_hours_total(self) -> int:
+        """Calculate total hours based on slots and sample rate."""
+        if self.sample_rate_minutes == 0:
+            return 0
+        return (self.slots_total * self.sample_rate_minutes) // 60
 
 
 def flush_resampled_samples() -> int:
@@ -410,7 +453,11 @@ def _align_to_boundary(dt: datetime, sample_rate_minutes: int) -> datetime:
     return dt.replace(minute=aligned_minutes, second=0, microsecond=0)
 
 
-def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool = False) -> ResampleStats:
+def resample_all_categories(
+    sample_rate_minutes: int | None = None, 
+    flush: bool = False,
+    progress_callback: callable | None = None
+) -> ResampleStats:
     """
     Resample raw sensor samples into time slots for all configured categories.
 
@@ -419,15 +466,26 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
     2. Optionally flushes the resampled_samples table (for sample rate changes).
     3. Fetches category-to-entity mappings.
     4. Computes the global time range where all categories have data.
-    5. Iterates over time slots and computes time-weighted averages.
-    6. Only writes complete slots (all categories have values).
-    7. Ensures idempotence by deleting existing rows before inserting.
+    5. Iterates over time slots and computes time-weighted averages for raw sensors.
+    6. Marks raw sensor samples as is_derived=False (sampled from raw sensor data).
+    7. Calculates virtual (derived) sensor values from resampled raw sensor data.
+    8. Marks virtual sensor samples as is_derived=True (calculated after resampling).
+    9. Only writes complete slots (all categories have values).
+    10. Ensures idempotence by deleting existing rows before inserting.
+    
+    **Important**: Raw sensors are sampled first, then virtual sensors are calculated
+    from the resampled raw data. This ensures proper data lineage and allows
+    distinguishing between raw measurements and derived calculations.
+    
+    Virtual sensors are only calculated if both source sensors have values in that slot.
+    Enabled virtual sensors are loaded from the configuration file.
     
     Args:
         sample_rate_minutes: Optional sample rate in minutes. If None, uses
             the configured SAMPLE_RATE_MINUTES environment variable (default 5).
         flush: If True, flush (delete all) existing resampled data before
             resampling. This should be used when the sample rate changes.
+        progress_callback: Optional callback function(ResampleProgress) to report progress.
 
     Returns:
         ResampleStats with statistics about the resampling operation.
@@ -514,10 +572,43 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
         sample_rate_minutes,
     )
 
+    # Calculate total number of slots for progress reporting
+    slots_total = int((global_end - effective_start).total_seconds() / (sample_rate_minutes * 60))
+    
+    # Initialize progress tracking if callback provided
+    progress = None
+    if progress_callback:
+        progress = ResampleProgress(
+            phase="resampling",
+            slots_processed=0,
+            slots_total=slots_total,
+            slots_saved=0,
+            slots_skipped=0,
+            categories=list(category_to_entity.keys()),
+            start_time=datetime.now(),
+            sample_rate_minutes=sample_rate_minutes,
+        )
+        progress.add_log(f"Starting resample of {slots_total} time slots")
+        progress.add_log(f"Time range: {effective_start} to {global_end}")
+        progress.add_log(f"Sample rate: {sample_rate_minutes} minutes")
+        progress.add_log(f"Categories: {', '.join(list(category_to_entity.keys()))}")
+        if flush:
+            progress.add_log("Table flushed before resampling")
+        progress_callback(progress)
+
     # Track statistics
     slots_processed = 0
     slots_saved = 0
     slots_skipped = 0
+
+    # Step 4.8: Load enabled virtual sensors
+    virtual_sensors_config = get_virtual_sensors_config()
+    enabled_virtual_sensors = virtual_sensors_config.get_enabled_sensors()
+    
+    _Logger.info(
+        "Found %d enabled virtual sensors for resampling",
+        len(enabled_virtual_sensors),
+    )
 
     # Step 5: Iterate over slots
     try:
@@ -555,18 +646,88 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
                         ResampledSample.slot_start == slot_start
                     ).delete()
 
-                    # Insert new rows for each category
+                    # Step 5.1: Insert raw sensor samples first (is_derived=False)
+                    # These are direct time-weighted averages from raw sensor data
                     for category, (avg, unit) in slot_values.items():
                         resampled = ResampledSample(
                             slot_start=slot_start,
                             category=category,
                             value=avg,
                             unit=unit,
+                            is_derived=False,  # Raw sensor data
                         )
                         session.add(resampled)
+                    
+                    # Step 5.2: Calculate and insert virtual sensor values (is_derived=True)
+                    # These are calculated from the resampled raw sensor data above
+                    for virtual_sensor in enabled_virtual_sensors:
+                        try:
+                            # Get source sensor values from slot_values
+                            source1_data = slot_values.get(virtual_sensor.source_sensor1)
+                            source2_data = slot_values.get(virtual_sensor.source_sensor2)
+                            
+                            if source1_data is None or source2_data is None:
+                                _Logger.debug(
+                                    "Skipping virtual sensor '%s' for slot %s: source sensor(s) not available",
+                                    virtual_sensor.name,
+                                    slot_start,
+                                )
+                                continue
+                            
+                            value1, _ = source1_data
+                            value2, _ = source2_data
+                            
+                            # Calculate virtual sensor value from resampled raw data
+                            virtual_value = virtual_sensor.calculate(value1, value2)
+                            
+                            if virtual_value is not None:
+                                resampled = ResampledSample(
+                                    slot_start=slot_start,
+                                    category=virtual_sensor.name,
+                                    value=virtual_value,
+                                    unit=virtual_sensor.unit,
+                                    is_derived=True,  # Virtual/derived sensor data
+                                )
+                                session.add(resampled)
+                                _Logger.debug(
+                                    "Virtual sensor '%s' calculated: %.2f %s (from %.2f and %.2f)",
+                                    virtual_sensor.name,
+                                    virtual_value,
+                                    virtual_sensor.unit,
+                                    value1,
+                                    value2,
+                                )
+                        except Exception as e:
+                            # Log error but don't fail the entire resampling transaction
+                            _Logger.error(
+                                "Error calculating virtual sensor '%s' for slot %s: %s",
+                                virtual_sensor.name,
+                                slot_start,
+                                e,
+                            )
+                    
                     slots_saved += 1
                 else:
                     slots_skipped += 1
+
+                # Update progress every 50 slots or on first/last slot
+                if progress and progress_callback and (
+                    slots_processed % 50 == 0 or 
+                    slots_processed == 1 or 
+                    slot_start >= global_end - resample_step
+                ):
+                    progress.slots_processed = slots_processed
+                    progress.slots_saved = slots_saved
+                    progress.slots_skipped = slots_skipped
+                    progress.current_slot = slot_start
+                    hours_processed = progress.get_hours_processed()
+                    hours_total = progress.get_hours_total()
+                    progress.add_log(
+                        f"Progress: {hours_processed}/{hours_total} hours " +
+                        f"({slots_processed}/{slots_total} slots, " +
+                        f"{slots_saved} saved, {slots_skipped} skipped)"
+                    )
+                    progress_callback(progress)
 
                 slot_start = slot_end
 
@@ -580,6 +741,17 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
                 slots_skipped,
                 sample_rate_minutes,
             )
+            
+            # Update progress to complete phase
+            if progress and progress_callback:
+                progress.phase = "complete"
+                progress.slots_processed = slots_processed
+                progress.slots_saved = slots_saved
+                progress.slots_skipped = slots_skipped
+                progress.add_log(
+                    f"Resample complete: {slots_saved} slots saved, {slots_skipped} skipped"
+                )
+                progress_callback(progress)
 
             return ResampleStats(
                 slots_processed=slots_processed,
@@ -594,4 +766,9 @@ def resample_all_categories(sample_rate_minutes: int | None = None, flush: bool 
 
     except SQLAlchemyError as e:
         _Logger.error("Error during resampling: %s", e)
+        if progress and progress_callback:
+            progress.phase = "error"
+            progress.error_message = str(e)
+            progress.add_log(f"Error: {str(e)}")
+            progress_callback(progress)
         raise

@@ -172,6 +172,11 @@
         .action-btn.warning:hover {
             background: #b45309;
         }
+        .action-btn.small {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            margin: 0.2rem;
+        }
         .status-message {
             margin-top: 0.75rem;
             padding: 0.75rem;
@@ -259,6 +264,30 @@
         .results-table tr:hover {
             background: var(--bg-tertiary);
         }
+        .results-table tbody tr {
+            cursor: pointer;
+        }
+        .feature-details-row {
+            background: var(--bg-secondary) !important;
+        }
+        .feature-details-row td {
+            padding: 1rem !important;
+        }
+        .feature-details-content {
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            border-left: 3px solid var(--accent-blue);
+        }
+        .feature-tag {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            margin: 0.2rem;
+            background: var(--accent-blue);
+            color: white;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
         .chart-container {
             margin-top: 1rem;
             background: var(--bg-tertiary);
@@ -301,6 +330,32 @@
             background: var(--bg-tertiary);
             color: var(--text-secondary);
             font-weight: 600;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .data-table th, .data-table td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .data-table th {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+        .data-table tr:hover {
+            background: var(--bg-tertiary);
+        }
+        .data-table input[type="text"], .data-table input[type="number"] {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            padding: 0.4rem;
+            font-size: 0.85rem;
         }
         .total-kwh {
             font-size: 1.5rem;
@@ -468,45 +523,15 @@
     <div class="tabs-container">
         <div class="tabs-nav">
             <button class="tab-btn active" onclick="switchTab('configuration')">⚙️ Configuration</button>
+            <button class="tab-btn" onclick="switchTab('sensorConfig')">📡 Sensor Configuration</button>
             <button class="tab-btn" onclick="switchTab('training')">🤖 Model Training</button>
+            <button class="tab-btn" onclick="switchTab('optimizer')">🔍 Optimizer</button>
             <button class="tab-btn" onclick="switchTab('sensors')">📊 Sensor Information</button>
         </div>
     </div>
 
     <!-- Configuration Tab -->
     <div id="tab-configuration" class="tab-content active">
-        <div class="card">
-            <h3>🔄 Data Resampling</h3>
-            <p>Resample raw sensor data into time slots and save to resampled_samples table.</p>
-            
-            <div class="timezone-config" style="margin-bottom: 1rem;">
-                <label for="sampleRateSelect">📊 Sample Rate (minutes):</label>
-                <select id="sampleRateSelect" onchange="updateSampleRate()" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem 1rem; font-size: 0.9rem;">
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5" selected>5</option>
-                    <option value="6">6</option>
-                    <option value="10">10</option>
-                    <option value="12">12</option>
-                    <option value="15">15</option>
-                    <option value="20">20</option>
-                    <option value="30">30</option>
-                    <option value="60">60</option>
-                </select>
-                <span style="color: var(--text-secondary); font-size: 0.85rem;">Current: <span id="sampleRateText">5</span> minutes</span>
-            </div>
-            
-            <div style="margin-bottom: 0.5rem;">
-                <label for="flushCheckbox" style="cursor: pointer;">
-                    <input type="checkbox" id="flushCheckbox" style="margin-right: 0.5rem;">
-                    Flush existing data (required when sample rate changes)
-                </label>
-            </div>
-            <button class="action-btn" id="resampleBtn" onclick="triggerResample()">Resample Data</button>
-            <div id="resampleStatus" class="status-message"></div>
-        </div>
 
         <div class="card">
             <h3>📡 Sync Configuration</h3>
@@ -554,11 +579,24 @@
 
         <div class="card">
             <h3>⚙️ Feature Configuration</h3>
-            <p class="example-description">Configure which features are used for model training and prediction. Core features (13) are always active. Experimental features can be enabled/disabled.</p>
+            <p class="example-description">
+                Configure which features are used for model training and prediction. Time/Date and kWh features are always shown. 
+                Physical sensor cards with their aggregation features can be shown/hidden using the button below.
+                Core features are labeled 'CORE' but can be disabled. Experimental features are labeled 'EXPERIMENTAL' and disabled by default.
+            </p>
+            <p class="example-description" style="margin-top: 0.5rem;">
+                <strong>📝 Note:</strong> Configuration loads automatically. To manage raw sensors and configure which statistics to calculate, 
+                use the <strong>📡 Sensor Configuration</strong> tab.
+            </p>
             
-            <button class="action-btn secondary" id="loadFeaturesBtn" onclick="loadFeatureConfig()">Load Configuration</button>
             <div id="featureConfigStatus" class="status-message"></div>
             <div id="featureConfigContent"></div>
+            
+            <button class="action-btn secondary" id="showSensorCardsBtn" onclick="toggleSensorCards()" style="margin-top: 1rem; margin-bottom: 1rem;">
+                📊 Show Sensor Cards
+            </button>
+            
+            <div id="sensorCardsContainer" style="display: none;"></div>
         </div>
 
         <div class="card">
@@ -612,6 +650,36 @@
             <button class="action-btn secondary" id="testWeatherBtn" onclick="testWeatherApi()">Test Connection</button>
             <button class="action-btn secondary" id="loadWeatherConfigBtn" onclick="loadWeatherConfig()">Reload</button>
             <div id="weatherConfigStatus" class="status-message"></div>
+        </div>
+    </div>
+
+    <!-- Sensor Configuration Tab -->
+    <div id="tab-sensorConfig" class="tab-content">
+        <div class="card">
+            <h3>📊 Raw Sensors</h3>
+            <p>Configure raw sensors that are directly read from Home Assistant. Add unit information and view current values.</p>
+            <button class="action-btn secondary" id="loadRawSensorsBtn" onclick="loadRawSensors()">Load Sensors</button>
+            <div id="rawSensorsStatus" class="status-message"></div>
+            <div id="rawSensorsTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔗 Virtual Sensors</h3>
+            <p>Create virtual (derived) sensors based on two existing sensors. Example: delta = target_temp - indoor_temp</p>
+            <div style="margin-bottom: 20px;">
+                <button class="action-btn" id="addVirtualSensorBtn" onclick="showAddVirtualSensorDialog()">+ Add Virtual Sensor</button>
+                <button class="action-btn secondary" id="loadVirtualSensorsBtn" onclick="loadVirtualSensors()">Reload List</button>
+            </div>
+            <div id="virtualSensorsStatus" class="status-message"></div>
+            <div id="virtualSensorsTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>📈 Feature Stats Configuration</h3>
+            <p>Configure which time-based statistics (avg_1h, avg_6h, avg_24h, avg_7d) should be generated for each sensor during resampling.</p>
+            <button class="action-btn secondary" id="loadFeatureStatsBtn" onclick="loadFeatureStatsConfig()">Load Configuration</button>
+            <div id="featureStatsStatus" class="status-message"></div>
+            <div id="featureStatsTable"></div>
         </div>
     </div>
 
@@ -696,6 +764,90 @@
 
     </div>
 
+    <!-- Optimizer Tab -->
+    <div id="tab-optimizer" class="tab-content">
+        <div class="card">
+            <h3>🔍 Settings Optimizer</h3>
+            <p class="example-description">
+                Automatically find the best model configuration by testing different feature combinations. 
+                The optimizer cycles through experimental features and trains both single-step and two-step models 
+                to find the configuration with the lowest validation MAPE (%).
+            </p>
+            <p class="example-description" style="margin-top: 0.5rem;">
+                <strong>⚠️ Note:</strong> This process may take several minutes as it trains multiple models.
+                Your current settings will be saved before starting and restored after completion.
+            </p>
+            
+            <!-- Optimizer Configuration -->
+            <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                <h4 style="margin-top: 0; margin-bottom: 0.75rem;">⚙️ Optimizer Settings</h4>
+                <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                    <label for="maxWorkersInput" style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="color: var(--text-secondary);">Max Workers:</span>
+                        <input 
+                            type="number" 
+                            id="maxWorkersInput" 
+                            min="0" 
+                            max="20" 
+                            placeholder="0 (auto)" 
+                            style="width: 80px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-primary); padding: 0.35rem 0.5rem;"
+                            onchange="saveOptimizerConfig()"
+                        />
+                        <span style="color: var(--text-secondary); font-size: 0.85rem;">(0 = auto-calculate)</span>
+                    </label>
+                    <div id="optimizerConfigStatus" style="color: var(--text-secondary); font-size: 0.85rem;"></div>
+                </div>
+                <p style="margin: 0.5rem 0 0 0; color: var(--text-secondary); font-size: 0.85rem;">
+                    <strong>Tip:</strong> Leave at 0 to auto-calculate based on available CPU and memory. 
+                    Manual limit useful to prevent OOM kills on systems with limited memory.
+                </p>
+            </div>
+            
+            <!-- Run Optimizer Controls -->
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                <button class="action-btn success" id="runOptimizerBtn" onclick="runOptimizer()">🔍 Start Optimization</button>
+            </div>
+            
+            <!-- Progress Display (never overwritten by status checks) -->
+            <div id="optimizerProgress" style="display: none; margin-bottom: 1rem;">
+                <h4 style="margin-bottom: 0.5rem;">⏳ Optimization Progress</h4>
+                <div id="optimizerProgressContent" class="status-message loading"></div>
+                <div id="optimizerLog" style="margin-top: 1rem;">
+                    <h4 style="margin-bottom: 0.5rem;">📋 Optimization Log</h4>
+                    <div id="optimizerLogContent" style="background: var(--bg-tertiary); border-radius: 8px; padding: 1rem; max-height: 300px; overflow-y: auto; font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; font-size: 0.8rem; white-space: pre-wrap;"></div>
+                </div>
+            </div>
+            
+            <!-- Status Check Display (separate from progress) -->
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+                <button class="action-btn secondary" id="optimizerStatusBtn" onclick="checkOptimizerStatus()">📊 Check Status</button>
+            </div>
+            <div id="optimizerStatusDisplay" class="status-message" style="display: none;"></div>
+        </div>
+
+        <!-- Results Table (always visible, shows top 30) -->
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="margin: 0;">📊 Optimization Results (Top 30)</h3>
+                <button class="action-btn secondary" id="refreshResultsBtn" onclick="loadOptimizerResultsTable()" style="padding: 0.5rem 1rem;">🔄 Refresh Results</button>
+            </div>
+            <p class="example-description">Click on a row to view features used in training. Results are automatically loaded from the last optimizer run.</p>
+            <div id="optimizerResultsTable"></div>
+        </div>
+
+        <!-- Re-train with specific configuration -->
+        <div class="card">
+            <h3>🔄 Re-train Model with Selected Configuration</h3>
+            <p class="example-description">After selecting a configuration from the results table, you can re-train the model with that exact feature set.</p>
+            <div style="margin-bottom: 1rem;">
+                <label for="selectedResultId" style="color: var(--text-secondary); display: block; margin-bottom: 0.5rem;">Selected Result ID:</label>
+                <input type="number" id="selectedResultId" placeholder="Enter result ID" style="width: 150px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem;">
+            </div>
+            <button class="action-btn success" id="retrainFromResultBtn" onclick="retrainFromResult()">🔄 Re-train with Selected Configuration</button>
+            <div id="retrainStatus" class="status-message"></div>
+        </div>
+    </div>
+
     <!-- Sensor Information Tab -->
     <div id="tab-sensors" class="tab-content">
         <div class="card">
@@ -705,11 +857,68 @@
             <div id="sensorInfoStatus" class="status-message"></div>
             <div id="sensorInfoTable"></div>
         </div>
+
+        <div class="card">
+            <h3>📈 Resampled Sensor Information</h3>
+            <p>View resampled sensor data statistics from the resampled_samples table.</p>
+            <button class="action-btn secondary" id="loadResampledSensorsBtn" onclick="loadResampledSensorInfo()">Load Resampled Sensor Info</button>
+            <div id="resampledSensorInfoStatus" class="status-message"></div>
+            <div id="resampledSensorInfoTable"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔄 Data Resampling</h3>
+            <p>Resample raw sensor data into time slots and save to resampled_samples table.</p>
+            
+            <div class="timezone-config" style="margin-bottom: 1rem;">
+                <label for="sampleRateSelect">📊 Sample Rate (minutes):</label>
+                <select id="sampleRateSelect" onchange="updateSampleRate()" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.5rem 1rem; font-size: 0.9rem;">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5" selected>5</option>
+                    <option value="6">6</option>
+                    <option value="10">10</option>
+                    <option value="12">12</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                    <option value="60">60</option>
+                </select>
+                <span style="color: var(--text-secondary); font-size: 0.85rem;">Current: <span id="sampleRateText">5</span> minutes</span>
+            </div>
+            
+            <div style="margin-bottom: 0.5rem;">
+                <label for="flushCheckbox" style="cursor: pointer;">
+                    <input type="checkbox" id="flushCheckbox" style="margin-right: 0.5rem;">
+                    Flush existing data (required when sample rate changes)
+                </label>
+            </div>
+            <button class="action-btn" id="resampleBtn" onclick="triggerResample()">Resample Data</button>
+            <button class="action-btn" id="resampleStatusBtn" onclick="checkResampleStatus()" style="margin-left: 0.5rem;">Check Status</button>
+            <div id="resampleStatus" class="status-message"></div>
+            <div id="resampleProgress" style="display: none; margin-top: 1rem;">
+                <div style="margin-bottom: 0.5rem;">
+                    <strong>Progress:</strong> <span id="resampleProgressText">0/0 hours</span>
+                </div>
+                <div style="margin-bottom: 0.5rem;">
+                    <strong>Phase:</strong> <span id="resamplePhase">-</span>
+                </div>
+                <div style="margin-top: 0.5rem;">
+                    <strong>Recent Activity (last 15 lines):</strong>
+                    <pre id="resampleLog" style="background: var(--bg-secondary); padding: 0.5rem; border-radius: 4px; max-height: 200px; overflow-y: auto; font-size: 0.85rem;"></pre>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
         // Store historical data when loaded for comparison in table
         let currentHistoricalData = null;
+        
+        // Resample polling state
+        let resamplePollingInterval = null;
         
         // Theme management
         function toggleTheme() {
@@ -756,6 +965,21 @@
             
             // Activate clicked tab button
             event.target.classList.add('active');
+            
+            // Auto-load data for Configuration tab
+            if (tabName === 'configuration') {
+                loadFeatureConfigAuto();
+            }
+            
+            // Auto-load latest optimizer results for Optimizer tab
+            if (tabName === 'optimizer') {
+                loadLatestOptimizerResults();
+            }
+            
+            // Auto-load latest optimizer results for Training tab
+            if (tabName === 'training') {
+                // No longer load optimizer results here since it's moved to optimizer tab
+            }
         }
         
         // Load available days and sample rate on page load
@@ -766,6 +990,9 @@
             loadSyncConfig();
             loadTwoStepPredictionStatus();
             loadWeatherConfig();
+            loadOptimizerConfig();
+            // Auto-load features for Configuration tab (default active tab)
+            loadFeatureConfigAuto();
         });
         
         async function loadSampleRate() {
@@ -1032,22 +1259,33 @@
                     document.getElementById('twoStepClassifierAccuracy').textContent = classifierMetrics.accuracy != null ? (classifierMetrics.accuracy * 100).toFixed(1) + '%' : '-';
                     statsDiv.style.display = 'grid';
                     
+                    // Extract step-specific info from API response
+                    const step1 = data.step1_classifier || {};
+                    const step2 = data.step2_regressor || {};
+                    
                     let message = '✓ ' + data.message + '\n\n';
-                    message += '--- Classifier (Active/Inactive Hours) ---\n';
+                    message += '--- Step 1: Classifier (Active/Inactive Hours) ---\n';
                     message += 'Activity threshold: ' + (thresholdValue != null ? thresholdValue.toFixed(4) : 'N/A') + ' kWh\n';
                     message += 'Active samples: ' + (threshold.active_samples != null ? threshold.active_samples : '-') + '\n';
                     message += 'Inactive samples: ' + (threshold.inactive_samples != null ? threshold.inactive_samples : '-') + '\n';
                     message += 'Accuracy: ' + (classifierMetrics.accuracy != null ? (classifierMetrics.accuracy * 100).toFixed(1) + '%' : 'N/A') + '\n';
                     message += 'Precision: ' + (classifierMetrics.precision != null ? (classifierMetrics.precision * 100).toFixed(1) + '%' : 'N/A') + '\n';
                     message += 'Recall: ' + (classifierMetrics.recall != null ? (classifierMetrics.recall * 100).toFixed(1) + '%' : 'N/A') + '\n';
-                    message += 'F1 Score: ' + (classifierMetrics.f1 != null ? (classifierMetrics.f1 * 100).toFixed(1) + '%' : 'N/A') + '\n\n';
-                    message += '--- Regressor (kWh for Active Hours) ---\n';
+                    message += 'F1 Score: ' + (classifierMetrics.f1 != null ? (classifierMetrics.f1 * 100).toFixed(1) + '%' : 'N/A') + '\n';
+                    if (step1.features_used && step1.features_used.length > 0) {
+                        message += 'Features (' + step1.features_used.length + '): ' + step1.features_used.join(', ') + '\n';
+                    }
+                    message += '\n';
+                    message += '--- Step 2: Regressor (kWh for Active Hours) ---\n';
                     message += 'Training samples: ' + (regressorMetrics.train_samples != null ? regressorMetrics.train_samples : '-') + '\n';
                     message += 'Validation samples: ' + (regressorMetrics.val_samples != null ? regressorMetrics.val_samples : '-') + '\n';
                     message += 'Train MAE (kWh): ' + (regressorMetrics.train_mae_kwh != null ? regressorMetrics.train_mae_kwh : 'N/A') + '\n';
                     message += 'Val MAE (kWh): ' + (regressorMetrics.val_mae_kwh != null ? regressorMetrics.val_mae_kwh : 'N/A') + '\n';
                     message += 'Val MAPE (%): ' + (regressorMetrics.val_mape_pct != null ? regressorMetrics.val_mape_pct : 'N/A') + '\n';
-                    message += 'Val R²: ' + (regressorMetrics.val_r2 || 'N/A');
+                    message += 'Val R²: ' + (regressorMetrics.val_r2 || 'N/A') + '\n';
+                    if (step2.features_used && step2.features_used.length > 0) {
+                        message += 'Features (' + step2.features_used.length + '): ' + step2.features_used.join(', ');
+                    }
                     
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = message;
@@ -1133,6 +1371,9 @@
                     message += 'Activity threshold: ' + (thresholdKwh != null ? thresholdKwh.toFixed(4) : 'N/A') + ' kWh\n';
                     message += 'Training timestamp: ' + (data.training_timestamp || 'Unknown') + '\n';
                     if (data.features && data.features.length > 0) {
+                        message += '\n--- Features (used by both steps) ---\n';
+                        message += 'Step 1 (Classifier): ' + data.features.length + ' features\n';
+                        message += 'Step 2 (Regressor): ' + data.features.length + ' features\n';
                         message += 'Features: ' + data.features.join(', ');
                     }
                     statusDiv.className = 'status-message success';
@@ -1200,7 +1441,7 @@
             
             btn.disabled = true;
             statusDiv.className = 'status-message loading';
-            statusDiv.textContent = 'Resampling in progress...';
+            statusDiv.textContent = 'Starting resampling in background...';
             
             try {
                 const requestBody = {};
@@ -1217,35 +1458,118 @@
                 const data = await response.json();
                 
                 if (response.ok) {
-                    const stats = data.stats || {};
-                    let message = '✓ ' + data.message + '\n\n';
-                    if (stats.table_flushed) {
-                        message += '⚠️ Existing resampled data was flushed\n';
-                    }
-                    message += 'Sample rate: ' + (stats.sample_rate_minutes || 5) + ' minutes\n';
-                    message += 'Slots processed: ' + (stats.slots_processed || 0) + '\n';
-                    message += 'Slots saved: ' + (stats.slots_saved || 0) + '\n';
-                    message += 'Slots skipped: ' + (stats.slots_skipped || 0) + '\n';
-                    if (stats.categories && stats.categories.length > 0) {
-                        message += 'Categories: ' + stats.categories.join(', ') + '\n';
-                    }
-                    if (stats.start_time) {
-                        message += 'Time range: ' + stats.start_time + ' to ' + stats.end_time;
-                    }
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = message;
+                    statusDiv.textContent = '✓ ' + data.message;
                     
-                    // Uncheck the flush checkbox after successful resample
+                    // Uncheck the flush checkbox after starting
                     flushCheckbox.checked = false;
+                    
+                    // Start polling for status
+                    startResamplePolling();
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ Error: ' + data.message;
+                    btn.disabled = false;
                 }
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
-            } finally {
                 btn.disabled = false;
+            }
+        }
+
+        function startResamplePolling() {
+            // Clear any existing polling interval
+            if (resamplePollingInterval) {
+                clearInterval(resamplePollingInterval);
+            }
+            
+            // Poll immediately
+            checkResampleStatus();
+            
+            // Poll every 2 seconds
+            resamplePollingInterval = setInterval(checkResampleStatus, 2000);
+        }
+
+        function stopResamplePolling() {
+            if (resamplePollingInterval) {
+                clearInterval(resamplePollingInterval);
+                resamplePollingInterval = null;
+            }
+        }
+
+        async function checkResampleStatus() {
+            try {
+                const response = await fetch('/api/resample/status');
+                const data = await response.json();
+                
+                if (response.ok && data.progress) {
+                    const progress = data.progress;
+                    const progressDiv = document.getElementById('resampleProgress');
+                    const progressText = document.getElementById('resampleProgressText');
+                    const phaseSpan = document.getElementById('resamplePhase');
+                    const logPre = document.getElementById('resampleLog');
+                    const statusDiv = document.getElementById('resampleStatus');
+                    const btn = document.getElementById('resampleBtn');
+                    
+                    // Show progress div
+                    progressDiv.style.display = 'block';
+                    
+                    // Update progress text
+                    const hoursProcessed = progress.hours_processed || 0;
+                    const hoursTotal = progress.hours_total || 0;
+                    const slotsProcessed = progress.slots_processed || 0;
+                    const slotsTotal = progress.slots_total || 0;
+                    progressText.textContent = `${hoursProcessed}/${hoursTotal} hours (${slotsProcessed}/${slotsTotal} slots)`;
+                    
+                    // Update phase
+                    phaseSpan.textContent = progress.phase || 'unknown';
+                    
+                    // Update log
+                    if (progress.log && progress.log.length > 0) {
+                        logPre.textContent = progress.log.join('\n');
+                        // Auto-scroll to bottom
+                        logPre.scrollTop = logPre.scrollHeight;
+                    }
+                    
+                    // Update status message based on phase
+                    if (progress.phase === 'complete') {
+                        statusDiv.className = 'status-message success';
+                        statusDiv.textContent = `✓ Resampling complete: ${progress.slots_saved} slots saved, ${progress.slots_skipped} skipped`;
+                        btn.disabled = false;
+                        stopResamplePolling();
+                    } else if (progress.phase === 'error') {
+                        statusDiv.className = 'status-message error';
+                        statusDiv.textContent = '✗ Error: ' + (progress.error || 'Unknown error');
+                        btn.disabled = false;
+                        stopResamplePolling();
+                    } else if (data.running) {
+                        statusDiv.className = 'status-message loading';
+                        let phaseText = progress.phase || 'running';
+                        if (progress.phase === 'resampling') {
+                            phaseText = 'resampling data';
+                        } else if (progress.phase === 'calculating_stats') {
+                            phaseText = 'calculating feature statistics';
+                        }
+                        statusDiv.textContent = `⏳ Running: ${phaseText}...`;
+                    } else {
+                        // Not running but has progress - probably completed
+                        btn.disabled = false;
+                        stopResamplePolling();
+                    }
+                } else if (response.ok && !data.progress) {
+                    // No resampling has been run yet
+                    document.getElementById('resampleProgress').style.display = 'none';
+                    const statusDiv = document.getElementById('resampleStatus');
+                    const btn = document.getElementById('resampleBtn');
+                    statusDiv.className = 'status-message';
+                    statusDiv.textContent = 'ℹ️ No resampling status available. Start a resample operation first.';
+                    btn.disabled = false;
+                    stopResamplePolling();
+                }
+            } catch (error) {
+                console.error('Error checking resample status:', error);
+                stopResamplePolling();
             }
         }
 
@@ -1270,16 +1594,41 @@
                     const metrics = data.metrics || {};
                     const stats = data.dataset_stats || {};
                     const trainingData = data.training_data || {};
+                    const featureCategories = data.feature_categories || {};
+                    
                     let message = '✓ ' + data.message + '\n\n';
+                    
+                    // Dataset information (dynamic, not static)
+                    message += '--- Training Dataset ---\n';
+                    if (stats.data_start_time && stats.data_end_time) {
+                        message += 'Data range: ' + stats.data_start_time + ' to ' + stats.data_end_time + '\n';
+                    }
+                    if (stats.available_history_hours) {
+                        const days = (stats.available_history_hours / 24).toFixed(1);
+                        message += 'History: ' + stats.available_history_hours + ' hours (~' + days + ' days)\n';
+                    }
                     message += 'Training samples: ' + (metrics.train_samples || 0) + '\n';
                     message += 'Validation samples: ' + (metrics.val_samples || 0) + '\n';
+                    message += '\n';
+                    
+                    // Model performance
+                    message += '--- Model Performance ---\n';
                     message += 'Train MAE (kWh): ' + (metrics.train_mae_kwh || 'N/A') + '\n';
                     message += 'Val MAE (kWh): ' + (metrics.val_mae_kwh || 'N/A') + '\n';
                     message += 'Val MAPE (%): ' + (metrics.val_mape_pct || 'N/A') + '\n';
                     message += 'Val R²: ' + (metrics.val_r2 || 'N/A') + '\n';
+                    message += '\n';
+                    
+                    // Features used (dynamic - shows exactly what was used for training)
+                    message += '--- Features Used for Training ---\n';
+                    const featureCount = metrics.features ? metrics.features.length : 0;
+                    const rawCount = featureCategories.raw_sensor_features ? featureCategories.raw_sensor_features.length : 0;
+                    const calcCount = featureCategories.calculated_features ? featureCategories.calculated_features.length : 0;
+                    message += 'Total features: ' + featureCount + ' (' + rawCount + ' raw sensors + ' + calcCount + ' calculated)\n';
                     if (metrics.features && metrics.features.length > 0) {
-                        message += '\nFeatures: ' + metrics.features.join(', ');
+                        message += 'Features: ' + metrics.features.join(', ');
                     }
+                    
                     statusDiv.className = 'status-message success';
                     statusDiv.textContent = message;
                     
@@ -1406,6 +1755,92 @@
                 } else if (response.ok) {
                     statusDiv.className = 'status-message info';
                     statusDiv.textContent = 'ℹ️ No sensors found in database';
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error: ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function loadResampledSensorInfo() {
+            const btn = document.getElementById('loadResampledSensorsBtn');
+            const statusDiv = document.getElementById('resampledSensorInfoStatus');
+            const tableDiv = document.getElementById('resampledSensorInfoTable');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading resampled sensor information...';
+            tableDiv.innerHTML = '';
+            
+            try {
+                // Get unique categories from resampled data
+                // Note: Limit set to 1000 to balance between data coverage and performance
+                const RESAMPLED_DATA_LIMIT = 1000;
+                const response = await fetch(`api/resampled_data?limit=${RESAMPLED_DATA_LIMIT}`);
+                const data = await response.json();
+                
+                if (response.ok && data.data && data.data.length > 0) {
+                    // Group by category and find first/last timestamps
+                    const sensorStats = {};
+                    
+                    data.data.forEach(sample => {
+                        if (!sensorStats[sample.category]) {
+                            sensorStats[sample.category] = {
+                                category: sample.category,
+                                unit: sample.unit,
+                                is_derived: sample.is_derived,
+                                first_timestamp: sample.slot_start,
+                                last_timestamp: sample.slot_start,
+                                count: 0
+                            };
+                        }
+                        
+                        const stats = sensorStats[sample.category];
+                        stats.count++;
+                        
+                        // Track min and max timestamps across all samples
+                        // This works regardless of the API sort order
+                        if (sample.slot_start < stats.first_timestamp) {
+                            stats.first_timestamp = sample.slot_start;
+                        }
+                        if (sample.slot_start > stats.last_timestamp) {
+                            stats.last_timestamp = sample.slot_start;
+                        }
+                    });
+                    
+                    const sensorList = Object.values(sensorStats);
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Found ${sensorList.length} resampled sensor categories (from up to ${RESAMPLED_DATA_LIMIT} total samples)`;
+                    
+                    let html = '<table class="sensor-table"><thead><tr>';
+                    html += '<th>Category</th><th>Unit</th><th>Type</th><th>First Timestamp</th><th>Last Timestamp</th><th>Sample Count</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    sensorList.forEach(sensor => {
+                        const typeBadge = sensor.is_derived 
+                            ? '<span style="padding: 2px 8px; background: var(--accent-orange); color: white; border-radius: 3px; font-size: 0.8em;">Derived</span>'
+                            : '<span style="padding: 2px 8px; background: var(--accent-blue); color: white; border-radius: 3px; font-size: 0.8em;">Raw</span>';
+                        
+                        html += `<tr>`;
+                        html += `<td>${sensor.category}</td>`;
+                        html += `<td>${sensor.unit || '-'}</td>`;
+                        html += `<td>${typeBadge}</td>`;
+                        html += `<td>${sensor.first_timestamp || 'N/A'}</td>`;
+                        html += `<td>${sensor.last_timestamp || 'N/A'}</td>`;
+                        html += `<td>${sensor.count.toLocaleString()}</td>`;
+                        html += `</tr>`;
+                    });
+                    
+                    html += '</tbody></table>';
+                    tableDiv.innerHTML = html;
+                } else if (response.ok) {
+                    statusDiv.className = 'status-message info';
+                    statusDiv.textContent = 'ℹ️ No resampled data found. Run resampling to generate data.';
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ Error: ' + data.message;
@@ -1654,12 +2089,360 @@
             }
         }
 
+        // =============================================================================
+        // SENSOR CONFIGURATION FUNCTIONS
+        // =============================================================================
+
+        async function loadSensorConfig() {
+            const btn = document.getElementById('loadSensorsBtn');
+            const statusDiv = document.getElementById('sensorConfigStatus');
+            const summaryDiv = document.getElementById('sensorConfigSummary');
+            const contentDiv = document.getElementById('sensorConfigContent');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading sensor configuration...';
+            
+            try {
+                const response = await fetch('api/sensors/category_config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Configuration loaded: ${data.config.enabled_sensor_count} sensors enabled`;
+                    
+                    // Update summary
+                    summaryDiv.style.display = 'block';
+                    document.getElementById('coreSensorCount').textContent = data.config.core_sensor_count;
+                    document.getElementById('expSensorCount').textContent = data.config.experimental_sensor_count;
+                    document.getElementById('enabledSensorCount').textContent = data.config.enabled_sensor_count;
+                    
+                    // Build UI grouped by sensor type
+                    let html = '';
+                    const typeOrder = ['usage', 'weather', 'indoor', 'heating'];
+                    const typeIcons = {
+                        'usage': '⚡',
+                        'weather': '🌤️',
+                        'indoor': '🏠',
+                        'heating': '🔥'
+                    };
+                    const typeDescriptions = {
+                        'usage': 'Energy consumption sensors (required for training)',
+                        'weather': 'Weather and outdoor condition sensors',
+                        'indoor': 'Indoor climate and setpoint sensors',
+                        'heating': 'Heating system monitoring sensors'
+                    };
+                    
+                    typeOrder.forEach(sensorType => {
+                        const sensors = data.sensors_by_type[sensorType] || [];
+                        if (sensors.length === 0) return;
+                        
+                        html += '<div class="feature-category">';
+                        html += `<div class="feature-category-title">${typeIcons[sensorType] || '📌'} ${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}</div>`;
+                        html += `<div class="feature-description" style="margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.85rem;">${typeDescriptions[sensorType] || ''}</div>`;
+                        html += '<div class="feature-list">';
+                        
+                        sensors.forEach(s => {
+                            const itemClass = s.is_core ? 'core' : (s.enabled ? 'experimental' : 'experimental disabled');
+                            const badgeClass = s.is_core ? 'core' : 'experimental';
+                            const badgeText = s.is_core ? 'CORE' : 'EXPERIMENTAL';
+                            const checked = s.enabled ? 'checked' : '';
+                            const toggleDisabled = s.is_core ? 'disabled' : '';
+                            
+                            // Safely escape values - category names from server are alphanumeric only
+                            // All other values are escaped for HTML special characters
+                            const safeCategoryName = s.category_name.replace(/[^a-zA-Z0-9_]/g, '');
+                            const escapeHtml = (str) => (str || '')
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;')
+                                .replace(/"/g, '&quot;')
+                                .replace(/'/g, '&#39;');
+                            const safeDisplayName = escapeHtml(s.display_name);
+                            const safeDesc = escapeHtml(s.description);
+                            const safeUnit = escapeHtml(s.unit);
+                            const safeEntityId = escapeHtml(s.entity_id);
+                            
+                            html += `<div class="feature-item ${itemClass}">`;
+                            html += `<div class="feature-toggle"><input type="checkbox" ${checked} ${toggleDisabled} data-sensor="${safeCategoryName}" onchange="toggleSensor('${safeCategoryName}', this.checked)"></div>`;
+                            html += `<div class="feature-info" style="flex: 1;">`;
+                            html += `<div class="feature-name">${safeDisplayName}<span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                            html += `<div class="feature-description">${safeDesc}</div>`;
+                            html += `<div class="feature-meta">Unit: ${safeUnit}</div>`;
+                            html += `<div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">`;
+                            html += `<label style="color: var(--text-secondary); font-size: 0.85rem;">Entity ID:</label>`;
+                            html += `<input type="text" id="entity_${safeCategoryName}" value="${safeEntityId}" placeholder="sensor.entity_id" style="flex: 1; max-width: 300px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 0.35rem 0.5rem; font-size: 0.85rem;">`;
+                            html += `<button class="action-btn secondary" style="padding: 0.35rem 0.75rem; font-size: 0.85rem;" onclick="saveSensorEntity('${safeCategoryName}')">Save</button>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div>'; // feature-list
+                        html += '</div>'; // feature-category
+                    });
+                    
+                    contentDiv.innerHTML = html;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + (data.message || 'Unknown error');
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function toggleSensor(categoryName, enabled) {
+            const statusDiv = document.getElementById('sensorConfigStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `${enabled ? 'Enabling' : 'Disabling'} sensor...`;
+            
+            try {
+                const response = await fetch('api/sensors/toggle', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ category_name: categoryName, enabled: enabled })
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload to update counts
+                    loadSensorConfig();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + (data.message || 'Failed to toggle sensor');
+                    // Revert checkbox
+                    const checkbox = document.querySelector(`input[data-sensor="${categoryName}"]`);
+                    if (checkbox) checkbox.checked = !enabled;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        async function saveSensorEntity(categoryName) {
+            const statusDiv = document.getElementById('sensorConfigStatus');
+            const inputId = `entity_${categoryName}`;
+            const input = document.getElementById(inputId);
+            const entityId = input ? input.value.trim() : '';
+            
+            if (!entityId) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Entity ID cannot be empty';
+                return;
+            }
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Saving entity ID...';
+            
+            try {
+                const response = await fetch('api/sensors/set_entity', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ category_name: categoryName, entity_id: entityId })
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + (data.message || 'Failed to save entity ID');
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        async function loadFeatureConfigAuto() {
+            const statusDiv = document.getElementById('featureConfigStatus');
+            const contentDiv = document.getElementById('featureConfigContent');
+            const sensorContainer = document.getElementById('sensorCardsContainer');
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading configuration...';
+            
+            try {
+                // Load special cards, sensor cards, and config in parallel
+                const [specialResponse, sensorResponse, configResponse] = await Promise.all([
+                    fetch('api/features/special_cards'),
+                    fetch('api/features/sensor_cards'),
+                    fetch('api/features/config')
+                ]);
+                
+                const specialData = await specialResponse.json();
+                const sensorData = await sensorResponse.json();
+                const configData = await configResponse.json();
+                
+                if (specialResponse.ok && sensorResponse.ok && configResponse.ok) {
+                    // Count features
+                    const coreCount = configData.config.core_feature_count;
+                    const activeCount = configData.config.active_feature_count;
+                    const experimentalCount = activeCount - coreCount;
+                    
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Configuration loaded: ${activeCount} active features (${coreCount} core + ${experimentalCount} experimental)`;
+                    
+                    // Build UI for main content (stats, timezone, special cards)
+                    let html = '';
+                    
+                    // Feature stats
+                    html += '<div class="feature-stats">';
+                    html += `<div class="feature-stat"><div class="feature-stat-value">${coreCount}</div><div class="feature-stat-label">Core Features</div></div>`;
+                    html += `<div class="feature-stat"><div class="feature-stat-value">${activeCount}</div><div class="feature-stat-label">Active Features</div></div>`;
+                    html += '</div>';
+                    
+                    // Timezone configuration
+                    html += '<div class="timezone-config">';
+                    html += '<label for="timezoneSelect">🕐 Timezone for hour_of_day:</label>';
+                    html += `<select id="timezoneSelect" onchange="updateTimezone(this.value)">`;
+                    const commonTimezones = [
+                        'Europe/Amsterdam', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+                        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+                        'Asia/Tokyo', 'Asia/Shanghai', 'Australia/Sydney', 'UTC'
+                    ];
+                    commonTimezones.forEach(tz => {
+                        const selected = tz === configData.config.timezone ? 'selected' : '';
+                        html += `<option value="${tz}" ${selected}>${tz}</option>`;
+                    });
+                    html += '</select>';
+                    html += '</div>';
+                    
+                    // Special Cards (Time/Date and kWh - always visible)
+                    specialData.cards.forEach(card => {
+                        html += '<div class="feature-category">';
+                        html += `<div class="feature-category-title">${card.name}</div>`;
+                        html += `<p class="example-description" style="margin: 0.5rem 0;">${card.description}</p>`;
+                        html += '<div class="feature-list">';
+                        
+                        card.features.forEach(f => {
+                            const itemClass = f.is_core ? 'core' : (f.enabled ? 'experimental' : 'experimental disabled');
+                            const badgeClass = f.is_core ? 'core' : 'experimental';
+                            const badgeText = f.is_core ? 'CORE' : 'EXPERIMENTAL';
+                            const checked = f.enabled ? 'checked' : '';
+                            
+                            const safeName = f.name.replace(/[^a-zA-Z0-9_]/g, '');
+                            const safeDesc = f.description.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            const safeUnit = f.unit.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            
+                            html += `<div class="feature-item ${itemClass}">`;
+                            html += `<div class="feature-toggle"><input type="checkbox" ${checked} data-feature="${safeName}" onchange="toggleFeatureAuto(this.dataset.feature, this.checked)"></div>`;
+                            html += `<div class="feature-info">`;
+                            html += `<div class="feature-name">${safeName} <span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                            html += `<div class="feature-description">${safeDesc}</div>`;
+                            html += `<div class="feature-meta">Unit: ${safeUnit}</div>`;
+                            html += `</div>`;
+                            html += `</div>`;
+                        });
+                        
+                        html += '</div>';
+                        html += '</div>';
+                    });
+                    
+                    contentDiv.innerHTML = html;
+                    
+                    // Build sensor cards HTML (hidden by default, shown on button click)
+                    let sensorHtml = '';
+                    sensorData.sensor_cards.forEach(sensor => {
+                        sensorHtml += '<div class="feature-category">';
+                        sensorHtml += `<div class="feature-category-title">🌡️ ${sensor.display_name}</div>`;
+                        sensorHtml += '<div class="feature-list">';
+                        
+                        sensor.features.forEach(f => {
+                            const itemClass = f.is_core ? 'core' : (f.enabled ? 'experimental' : 'experimental disabled');
+                            const badgeClass = f.is_core ? 'core' : 'experimental';
+                            const badgeText = f.is_core ? 'CORE' : 'EXPERIMENTAL';
+                            const checked = f.enabled ? 'checked' : '';
+                            
+                            const safeName = f.name.replace(/[^a-zA-Z0-9_]/g, '');
+                            const safeDesc = f.description.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            const safeUnit = f.unit.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                            
+                            sensorHtml += `<div class="feature-item ${itemClass}">`;
+                            sensorHtml += `<div class="feature-toggle"><input type="checkbox" ${checked} data-feature="${safeName}" onchange="toggleFeatureAuto(this.dataset.feature, this.checked)"></div>`;
+                            sensorHtml += `<div class="feature-info">`;
+                            sensorHtml += `<div class="feature-name">${safeName} <span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                            sensorHtml += `<div class="feature-description">${safeDesc}</div>`;
+                            sensorHtml += `<div class="feature-meta">Unit: ${safeUnit}${f.time_window !== 'none' ? ' | Window: ' + f.time_window : ''}</div>`;
+                            sensorHtml += `</div>`;
+                            sensorHtml += `</div>`;
+                        });
+                        
+                        sensorHtml += '</div>';
+                        sensorHtml += '</div>';
+                    });
+                    
+                    sensorContainer.innerHTML = sensorHtml;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error loading configuration';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+        
+        
+        function toggleSensorCards() {
+            const container = document.getElementById('sensorCardsContainer');
+            const btn = document.getElementById('showSensorCardsBtn');
+            
+            // Toggle visibility
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                btn.textContent = '📊 Hide Sensor Cards';
+            } else {
+                container.style.display = 'none';
+                btn.textContent = '📊 Show Sensor Cards';
+            }
+        }
+        
+        async function toggleFeatureAuto(featureName, enabled) {
+            const statusDiv = document.getElementById('featureConfigStatus');
+            
+            try {
+                const response = await fetch('api/features/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        feature_name: featureName,
+                        enabled: enabled
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload to update stats
+                    setTimeout(() => loadFeatureConfigAuto(), 500);
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    // Reload to restore checkbox state
+                    setTimeout(() => loadFeatureConfigAuto(), 500);
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                setTimeout(() => loadFeatureConfigAuto(), 500);
+            }
+        }
+
         async function loadFeatureConfig() {
-            const btn = document.getElementById('loadFeaturesBtn');
             const statusDiv = document.getElementById('featureConfigStatus');
             const contentDiv = document.getElementById('featureConfigContent');
             
-            btn.disabled = true;
             statusDiv.className = 'status-message loading';
             statusDiv.textContent = 'Loading feature configuration...';
             
@@ -1749,8 +2532,6 @@
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
-            } finally {
-                btn.disabled = false;
             }
         }
 
@@ -1805,12 +2586,93 @@
                 } else {
                     statusDiv.className = 'status-message error';
                     statusDiv.textContent = '✗ ' + data.message;
-                    loadFeatureConfig();
+                    loadFeatureConfigAuto();
                 }
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
-                loadFeatureConfig();
+                loadFeatureConfigAuto();
+            }
+        }
+
+        async function loadSensorsWithStats() {
+            const btn = document.getElementById('loadSensorsWithStatsBtn');
+            const statusDiv = document.getElementById('featureConfigStatus');
+            const contentDiv = document.getElementById('sensorsWithStatsContent');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading sensors and statistics...';
+            
+            try {
+                const response = await fetch('api/features/sensors_with_stats');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Loaded ${data.total_count} sensors (${data.raw_count} raw + ${data.virtual_count} virtual)`;
+                    
+                    // Build UI
+                    let html = '<div class="feature-category">';
+                    html += '<div class="feature-category-title">📊 All Sensors with Time-Based Statistics</div>';
+                    html += '<div class="feature-list">';
+                    
+                    data.sensors.forEach(sensor => {
+                        const itemClass = sensor.type === 'raw' ? 'core' : 'experimental';
+                        const badgeClass = sensor.type === 'raw' ? 'core' : 'experimental';
+                        const badgeText = sensor.type === 'raw' ? 'RAW SENSOR' : 'VIRTUAL SENSOR';
+                        const icon = sensor.type === 'raw' ? '📡' : '🔗';
+                        
+                        html += `<div class="feature-item ${itemClass}">`;
+                        html += `<div class="feature-info">`;
+                        html += `<div class="feature-name">${icon} ${sensor.display_name || sensor.name}`;
+                        html += `<span class="feature-badge ${badgeClass}">${badgeText}</span></div>`;
+                        
+                        if (sensor.description) {
+                            html += `<div class="feature-description">${sensor.description}</div>`;
+                        }
+                        
+                        // Show enabled statistics
+                        if (sensor.enabled_stats && sensor.enabled_stats.length > 0) {
+                            html += `<div class="feature-meta">`;
+                            html += `Enabled statistics: ${sensor.enabled_stats.join(', ')}`;
+                            html += `</div>`;
+                            
+                            // Show generated feature names
+                            if (sensor.stat_features && sensor.stat_features.length > 0) {
+                                html += `<div class="feature-meta" style="font-size: 0.75rem; color: var(--text-muted);">`;
+                                html += `Features: `;
+                                sensor.stat_features.forEach((feat, idx) => {
+                                    if (idx > 0) html += ', ';
+                                    html += `<code>${feat.name}</code>`;
+                                });
+                                html += `</div>`;
+                            }
+                        } else {
+                            html += `<div class="feature-meta" style="color: var(--text-muted);">`;
+                            html += `No time-based statistics enabled`;
+                            html += `</div>`;
+                        }
+                        
+                        html += `</div>`;
+                        html += `</div>`;
+                    });
+                    
+                    html += '</div>';
+                    html += '</div>';
+                    
+                    contentDiv.innerHTML = html;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Error: ' + data.message;
+                    contentDiv.innerHTML = '';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                contentDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
             }
         }
 
@@ -2185,6 +3047,1166 @@
             } catch (error) {
                 statusDiv.className = 'status-message error';
                 statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // =============================================================================
+        // SETTINGS OPTIMIZER FUNCTIONS
+        // =============================================================================
+
+        async function loadOptimizerConfig() {
+            try {
+                const response = await fetch('api/optimizer/config');
+                const data = await response.json();
+                
+                if (response.ok && data.config) {
+                    const maxWorkers = data.config.max_workers;
+                    const input = document.getElementById('maxWorkersInput');
+                    if (input) {
+                        input.value = maxWorkers === null ? '' : maxWorkers;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading optimizer config:', error);
+            }
+        }
+
+        async function saveOptimizerConfig() {
+            const input = document.getElementById('maxWorkersInput');
+            const statusDiv = document.getElementById('optimizerConfigStatus');
+            
+            const value = input.value.trim();
+            const maxWorkers = value === '' ? null : parseInt(value, 10);
+            
+            if (maxWorkers !== null && (isNaN(maxWorkers) || maxWorkers < 0)) {
+                statusDiv.textContent = '✗ Invalid value (must be >= 0)';
+                statusDiv.style.color = 'var(--error-red)';
+                return;
+            }
+            
+            try {
+                const response = await fetch('api/optimizer/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ max_workers: maxWorkers })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.textContent = '✓ Saved';
+                    statusDiv.style.color = 'var(--accent-green)';
+                    setTimeout(() => {
+                        statusDiv.textContent = '';
+                    }, 2000);
+                } else {
+                    statusDiv.textContent = '✗ ' + data.message;
+                    statusDiv.style.color = 'var(--error-red)';
+                }
+            } catch (error) {
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                statusDiv.style.color = 'var(--error-red)';
+            }
+        }
+
+        function toggleFeatureDetails(event, resultId, features, trainSamples, valSamples, firstRowData, lastRowData) {
+            // Check if details row already exists
+            const detailsRowId = `features-${resultId}`;
+            const existingRow = document.getElementById(detailsRowId);
+            
+            if (existingRow) {
+                // Remove the details row if it exists
+                existingRow.remove();
+                return;
+            }
+            
+            // Find the result row
+            const resultRow = event.target.closest('tr');
+            if (!resultRow) return;
+            
+            // Create new details row
+            const detailsRow = document.createElement('tr');
+            detailsRow.id = detailsRowId;
+            detailsRow.className = 'feature-details-row';
+            
+            const detailsCell = document.createElement('td');
+            detailsCell.colSpan = 7;  // Span all columns
+            
+            // Core features (15 features - always used in their configured state)
+            const coreFeatures = [
+                'outdoor_temp', 'wind', 'humidity', 'indoor_temp', 'target_temp',
+                'outdoor_temp_avg_1h', 'outdoor_temp_avg_24h', 'indoor_temp_avg_6h', 
+                'indoor_temp_avg_24h', 'target_temp_avg_6h', 'target_temp_avg_24h',
+                'hour_of_day', 'is_weekend', 'is_night', 'hp_kwh_prev_1h'
+            ];
+            
+            // Build features display
+            let html = '<div class="feature-details-content">';
+            html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">';
+            html += '<h5 style="margin: 0;">Features Used in Training:</h5>';
+            html += '<div style="color: var(--text-secondary); font-size: 0.9rem;">';
+            html += `Training: <strong>${trainSamples || 0}</strong> rows | Validation: <strong>${valSamples || 0}</strong> rows`;
+            html += '</div>';
+            html += '</div>';
+            
+            // Show core features
+            html += '<div style="margin-bottom: 1rem;">';
+            html += '<h6 style="margin: 0 0 0.5rem 0; color: var(--accent-green); font-size: 0.9rem;">Core Features (always used):</h6>';
+            html += '<div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">';
+            for (const coreFeat of coreFeatures) {
+                html += `<span class="feature-tag" style="background: var(--accent-green);">${coreFeat} (${trainSamples || 0} rows)</span>`;
+            }
+            html += '</div>';
+            html += '</div>';
+            
+            // Show experimental features
+            html += '<div>';
+            html += '<h6 style="margin: 0 0 0.5rem 0; color: var(--accent-orange); font-size: 0.9rem;">Experimental Features (tested in this configuration):</h6>';
+            if (features && Object.keys(features).length > 0) {
+                const enabledFeatures = Object.entries(features).filter(([_, value]) => value === true);
+                
+                if (enabledFeatures.length > 0) {
+                    html += '<div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">';
+                    for (const [key, _] of enabledFeatures) {
+                        html += `<span class="feature-tag" style="background: var(--accent-orange);">${key} (${trainSamples || 0} rows)</span>`;
+                    }
+                    html += '</div>';
+                } else {
+                    html += '<p style="color: var(--text-secondary); margin: 0;">None enabled (core features only)</p>';
+                }
+            } else {
+                html += '<p style="color: var(--text-secondary); margin: 0;">None enabled (core features only)</p>';
+            }
+            html += '</div>';
+            
+            html += `<p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0.75rem 0 0 0; font-style: italic;">Total: ${coreFeatures.length} core + ${Object.values(features || {}).filter(v => v === true).length} experimental features = ${coreFeatures.length + Object.values(features || {}).filter(v => v === true).length} features used</p>`;
+            
+            // Display actual training data (first and last rows)
+            if (firstRowData || lastRowData) {
+                html += '<div style="margin-top: 1rem;">';
+                html += '<h6 style="margin: 0 0 0.5rem 0; color: var(--text-primary); font-size: 0.9rem;">📊 Training Dataset Samples:</h6>';
+                
+                if (firstRowData) {
+                    html += '<div style="margin-bottom: 0.75rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px; border-left: 3px solid var(--accent-green);">';
+                    html += '<strong style="color: var(--accent-green);">First Row:</strong>';
+                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.25rem; margin-top: 0.25rem; font-size: 0.8rem;">';
+                    for (const [key, value] of Object.entries(firstRowData)) {
+                        const displayValue = value !== null && value !== undefined ? (typeof value === 'number' ? value.toFixed(4) : value) : 'null';
+                        html += `<span style="color: var(--text-secondary);"><strong>${key}:</strong> ${displayValue}</span>`;
+                    }
+                    html += '</div></div>';
+                }
+                
+                if (lastRowData) {
+                    html += '<div style="padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px; border-left: 3px solid var(--accent-blue);">';
+                    html += '<strong style="color: var(--accent-blue);">Last Row:</strong>';
+                    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.25rem; margin-top: 0.25rem; font-size: 0.8rem;">';
+                    for (const [key, value] of Object.entries(lastRowData)) {
+                        const displayValue = value !== null && value !== undefined ? (typeof value === 'number' ? value.toFixed(4) : value) : 'null';
+                        html += `<span style="color: var(--text-secondary);"><strong>${key}:</strong> ${displayValue}</span>`;
+                    }
+                    html += '</div></div>';
+                }
+                
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            detailsCell.innerHTML = html;
+            detailsRow.appendChild(detailsCell);
+            
+            // Insert after the clicked row
+            resultRow.parentNode.insertBefore(detailsRow, resultRow.nextSibling);
+        }
+
+        async function runOptimizer() {
+            const btn = document.getElementById('runOptimizerBtn');
+            const progressDiv = document.getElementById('optimizerProgress');
+            const progressContent = document.getElementById('optimizerProgressContent');
+            const logDiv = document.getElementById('optimizerLog');
+            const logContent = document.getElementById('optimizerLogContent');
+            const resultsTable = document.getElementById('optimizerResultsTable');
+            
+            btn.disabled = true;
+            progressDiv.style.display = 'block';
+            progressContent.className = 'status-message loading';
+            progressContent.textContent = 'Starting optimization... This will run in the background.';
+            logContent.textContent = 'Initializing optimizer...\n';
+            resultsTable.innerHTML = '<p style="color: var(--text-secondary);">Optimization in progress...</p>';
+            
+            try {
+                const response = await fetch('api/optimizer/run', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    progressContent.textContent = '⏳ Optimization running in background... Polling for updates.';
+                    
+                    // Start polling for status
+                    const pollInterval = setInterval(async () => {
+                        try {
+                            const statusResponse = await fetch('api/optimizer/status');
+                            const statusData = await statusResponse.json();
+                            
+                            if (statusData.progress) {
+                                const p = statusData.progress;
+                                
+                                // Update log
+                                if (p.log && p.log.length > 0) {
+                                    logContent.textContent = p.log.join('\n');
+                                    logContent.scrollTop = logContent.scrollHeight;
+                                }
+                                
+                                // Update progress
+                                if (statusData.running) {
+                                    progressContent.className = 'status-message loading';
+                                    progressContent.textContent = `⏳ Progress: ${p.completed_configurations}/${p.total_configurations}`;
+                                    if (p.current_configuration) {
+                                        progressContent.textContent += `\nCurrent: ${p.current_configuration} (${p.current_model_type})`;
+                                    }
+                                } else if (p.phase === 'complete' || p.phase === 'error') {
+                                    clearInterval(pollInterval);
+                                    btn.disabled = false;
+                                    
+                                    if (p.phase === 'complete') {
+                                        progressContent.className = 'status-message success';
+                                        progressContent.textContent = '✓ Optimization complete!';
+                                        
+                                        // Load results table
+                                        await loadOptimizerResultsTable();
+                                    } else {
+                                        progressContent.className = 'status-message error';
+                                        progressContent.textContent = '✗ Error: ' + (p.error || 'Unknown error');
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Polling error:', error);
+                        }
+                    }, 2000);  // Poll every 2 seconds
+                } else {
+                    progressContent.className = 'status-message error';
+                    progressContent.textContent = '✗ ' + (data.message || 'Failed to start optimizer');
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                progressContent.className = 'status-message error';
+                progressContent.textContent = '✗ Error: ' + error.message;
+                btn.disabled = false;
+            }
+        }
+
+
+        async function checkOptimizerStatus() {
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
+            const btn = document.getElementById('optimizerStatusBtn');
+            
+            btn.disabled = true;
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Checking optimizer status...';
+            
+            try {
+                const response = await fetch('api/optimizer/status');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (data.progress) {
+                        const p = data.progress;
+                        let message = `Phase: ${p.phase}\n`;
+                        message += `Progress: ${p.completed_configurations}/${p.total_configurations} configurations\n`;
+                        if (p.current_configuration) {
+                            message += `Current: ${p.current_configuration} (${p.current_model_type})\n`;
+                        }
+                        if (p.best_result) {
+                            message += `\nBest so far: ${p.best_result.config_name} (${p.best_result.model_type})\n`;
+                            message += `Best Val MAPE: ${p.best_result.val_mape_pct}%`;
+                        }
+                        
+                        statusDiv.className = 'status-message ' + (data.running ? 'loading' : 'info');
+                        statusDiv.textContent = message;
+                    } else {
+                        statusDiv.className = 'status-message info';
+                        statusDiv.textContent = 'ℹ️ ' + (data.message || 'No optimization has been run yet');
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function loadOptimizerResultsTable() {
+            const resultsTable = document.getElementById('optimizerResultsTable');
+            const refreshBtn = document.getElementById('refreshResultsBtn');
+            
+            if (refreshBtn) refreshBtn.disabled = true;
+            if (resultsTable) resultsTable.innerHTML = '<p style="color: var(--text-secondary);">Loading results...</p>';
+            
+            try {
+                const response = await fetch('api/optimizer/latest');
+                const data = await response.json();
+                
+                if (response.ok && data.run && data.run.results && data.run.results.length > 0) {
+                    const results = data.run.results;
+                    const maxResults = 30;
+                    
+                    // Sort by Val MAPE ascending
+                    const sortedResults = [...results].sort((a, b) => {
+                        if (a.val_mape_pct === null) return 1;
+                        if (b.val_mape_pct === null) return -1;
+                        return a.val_mape_pct - b.val_mape_pct;
+                    });
+                    
+                    // Limit to top 30 results
+                    const limitedResults = sortedResults.slice(0, maxResults);
+                    
+                    let html = '<table class="results-table"><thead><tr>';
+                    html += '<th>Rank</th><th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th><th>Actions</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    limitedResults.forEach((result, idx) => {
+                        const isBest = data.run.best_result && 
+                            result.config_name === data.run.best_result.config_name && 
+                            result.model_type === data.run.best_result.model_type;
+                        const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
+                        
+                        // Escape JSON for HTML attribute
+                        const escapedFeatures = JSON.stringify(result.experimental_features || {}).replace(/'/g, "\\'");
+                        const escapedFirstRow = JSON.stringify(result.first_row_data || null).replace(/'/g, "\\'");
+                        const escapedLastRow = JSON.stringify(result.last_row_data || null).replace(/'/g, "\\'");
+                        
+                        html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(event, ${result.id}, JSON.parse('${escapedFeatures}'), ${result.train_samples || 0}, ${result.val_samples || 0}, JSON.parse('${escapedFirstRow}'), JSON.parse('${escapedLastRow}'))">`;
+                        html += `<td>${idx + 1}${isBest ? ' 👑' : ''}</td>`;
+                        html += `<td>${result.config_name}</td>`;
+                        html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
+                        html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
+                        html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
+                        html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
+                        html += `<td>${result.success ? '✓' : '✗'}</td>`;
+                        
+                        // Add apply and select buttons
+                        html += `<td onclick="event.stopPropagation();">`;
+                        if (result.success && result.id) {
+                            html += `<button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; margin: 0.1rem;" onclick="applyResultById(${result.id})">Apply</button>`;
+                            html += `<button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem; margin: 0.1rem;" onclick="selectForRetrain(${result.id})">Select</button>`;
+                        } else {
+                            html += '-';
+                        }
+                        html += `</td>`;
+                        
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table>';
+                    resultsTable.innerHTML = html;
+                } else {
+                    resultsTable.innerHTML = '<p style="color: var(--text-secondary);">No optimization results available yet. Run the optimizer to generate results.</p>';
+                }
+            } catch (error) {
+                resultsTable.innerHTML = '<p style="color: var(--error-text);">Error loading results: ' + error.message + '</p>';
+            } finally {
+                if (refreshBtn) refreshBtn.disabled = false;
+            }
+        }
+
+        function selectForRetrain(resultId) {
+            document.getElementById('selectedResultId').value = resultId;
+            // Scroll to retrain section
+            document.querySelector('#selectedResultId').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        async function retrainFromResult() {
+            const resultIdInput = document.getElementById('selectedResultId');
+            const statusDiv = document.getElementById('retrainStatus');
+            const btn = document.getElementById('retrainFromResultBtn');
+            
+            const resultId = parseInt(resultIdInput.value);
+            
+            if (!resultId || isNaN(resultId)) {
+                statusDiv.className = 'status-message error';
+                statusDiv.style.display = 'block';
+                statusDiv.textContent = '✗ Please select a valid result ID';
+                return;
+            }
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.style.display = 'block';
+            statusDiv.textContent = 'Re-training model with selected configuration...';
+            
+            try {
+                // First, get the result details
+                const resultResponse = await fetch(`api/optimizer/runs/${resultId}`);
+                if (!resultResponse.ok) {
+                    throw new Error('Failed to fetch result details');
+                }
+                
+                const resultData = await resultResponse.json();
+                
+                // Apply the configuration first
+                const applyResponse = await fetch(`api/optimizer/apply/${resultId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enable_two_step: true })
+                });
+                
+                const applyData = await applyResponse.json();
+                
+                if (!applyResponse.ok) {
+                    throw new Error(applyData.message || 'Failed to apply configuration');
+                }
+                
+                statusDiv.textContent = '✓ Configuration applied. Now training model...\n';
+                
+                // Now train the model based on the model type
+                const isTwoStep = resultData.run && resultData.run.results && 
+                    resultData.run.results.find(r => r.id === resultId)?.model_type === 'two_step';
+                
+                const trainEndpoint = isTwoStep ? 'api/train/two_step_heating_demand' : 'api/train/heating_demand';
+                
+                const trainResponse = await fetch(trainEndpoint, {
+                    method: 'POST'
+                });
+                
+                const trainData = await trainResponse.json();
+                
+                if (trainResponse.ok) {
+                    statusDiv.className = 'status-message success';
+                    let message = '✓ Model re-trained successfully!\n\n';
+                    
+                    if (isTwoStep) {
+                        message += 'Two-Step Model:\n';
+                        message += `- Classifier Accuracy: ${trainData.classifier_metrics?.accuracy ? (trainData.classifier_metrics.accuracy * 100).toFixed(1) + '%' : 'N/A'}\n`;
+                        message += `- Regressor Val MAPE: ${trainData.regressor_metrics?.val_mape_pct !== null ? trainData.regressor_metrics.val_mape_pct + '%' : 'N/A'}\n`;
+                    } else {
+                        message += 'Single-Step Model:\n';
+                        message += `- Val MAPE: ${trainData.metrics?.val_mape_pct !== null ? trainData.metrics.val_mape_pct + '%' : 'N/A'}\n`;
+                        message += `- Val MAE: ${trainData.metrics?.val_mae_kwh !== null ? trainData.metrics.val_mae_kwh.toFixed(4) + ' kWh' : 'N/A'}\n`;
+                    }
+                    
+                    statusDiv.textContent = message;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ Training failed: ' + (trainData.message || 'Unknown error');
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function getOptimizerStatus() {
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
+            const btn = document.getElementById('optimizerStatusBtn');
+            
+            if (!btn || !statusDiv) return;
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Checking optimizer status...';
+            
+            try {
+                const response = await fetch('api/optimizer/status');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (data.progress) {
+                        const p = data.progress;
+                        let message = `Phase: ${p.phase}\n`;
+                        message += `Progress: ${p.completed_configurations}/${p.total_configurations} configurations\n`;
+                        if (p.current_configuration) {
+                            message += `Current: ${p.current_configuration} (${p.current_model_type})\n`;
+                        }
+                        if (p.best_result) {
+                            message += `\nBest so far: ${p.best_result.config_name} (${p.best_result.model_type})\n`;
+                            message += `Best Val MAPE: ${p.best_result.val_mape_pct}%`;
+                        }
+                        
+                        statusDiv.className = 'status-message ' + (data.running ? 'loading' : 'info');
+                        statusDiv.textContent = message;
+                        
+                        // Update log if available
+                        if (p.log && p.log.length > 0) {
+                            const logDiv = document.getElementById('optimizerLog');
+                            const logContent = document.getElementById('optimizerLogContent');
+                            logDiv.style.display = 'block';
+                            logContent.textContent = p.log.join('\n');
+                            logContent.scrollTop = logContent.scrollHeight;
+                        }
+                    } else {
+                        statusDiv.className = 'status-message info';
+                        statusDiv.textContent = 'ℹ️ ' + (data.message || 'No optimization has been run yet');
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function applyOptimizerResult() {
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
+            const btn = document.getElementById('applyOptimizerBtn');
+            
+            if (!confirm('Apply the best configuration found by the optimizer? This will save the new settings.')) {
+                return;
+            }
+            
+            if (!statusDiv || !btn) return;
+            
+            btn.disabled = true;
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Applying best configuration...';
+            
+            try {
+                const response = await fetch('api/optimizer/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enable_two_step: true })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    let message = '✓ ' + data.message + '\n\n';
+                    message += 'Applied settings:\n';
+                    message += `- Configuration: ${data.applied_settings.config_name}\n`;
+                    message += `- Model type: ${data.applied_settings.model_type}\n`;
+                    message += `- Two-step enabled: ${data.applied_settings.two_step_enabled}\n`;
+                    message += `- Val MAPE: ${data.applied_settings.val_mape_pct}%`;
+                    statusDiv.textContent = message;
+                    
+                    // Reload feature config to reflect changes
+                    loadFeatureConfig();
+                    loadTwoStepPredictionStatus();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function applyResultById(resultId) {
+            if (!confirm('Apply this configuration? This will save the settings.')) {
+                return;
+            }
+            
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
+            
+            if (!statusDiv) return;
+            
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Applying configuration...';
+            
+            try {
+                const response = await fetch(`api/optimizer/apply/${resultId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enable_two_step: true })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    let message = '✓ ' + data.message + '\n\n';
+                    message += 'Applied settings:\n';
+                    message += `- Configuration: ${data.applied_settings.config_name}\n`;
+                    message += `- Model type: ${data.applied_settings.model_type}\n`;
+                    message += `- Two-step enabled: ${data.applied_settings.two_step_enabled}\n`;
+                    message += `- Val MAPE: ${data.applied_settings.val_mape_pct}%`;
+                    statusDiv.textContent = message;
+                    
+                    // Reload feature config to reflect changes
+                    loadFeatureConfig();
+                    loadTwoStepPredictionStatus();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        async function loadLatestOptimizerResults() {
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
+            const logDiv = document.getElementById('optimizerLog');
+            const logContent = document.getElementById('optimizerLogContent');
+            const resultsDiv = document.getElementById('optimizerResultsTable');
+            
+            try {
+                const response = await fetch('api/optimizer/latest');
+                const data = await response.json();
+                
+                if (response.ok && data.run) {
+                    const run = data.run;
+                    
+                    // Show log if available
+                    if (run.start_time && logDiv && logContent) {
+                        logDiv.style.display = 'block';
+                        const startTime = new Date(run.start_time).toLocaleString();
+                        const endTime = run.end_time ? new Date(run.end_time).toLocaleString() : 'In progress';
+                        logContent.textContent = `Previous run: Started ${startTime}, Ended ${endTime}\nPhase: ${run.phase}\n`;
+                    }
+                    
+                    // Show status if best result available
+                    if (run.best_result && statusDiv) {
+                        statusDiv.className = 'status-message success';
+                        statusDiv.textContent = '✓ Previous optimization results loaded. Best Val MAPE: ' + 
+                            (run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A');
+                    }
+                    
+                    // Show results table
+                    if (run.results && run.results.length > 0 && resultsDiv) {
+                        const maxResults = 30;
+                        const totalResults = run.results.length;
+                        let html = '<h4 style="margin-bottom: 0.5rem;">Results from Previous Run - Top ' + Math.min(maxResults, totalResults);
+                        if (totalResults > maxResults) {
+                            html += ' <span style="color: var(--text-secondary); font-size: 0.85rem;">(showing ' + maxResults + ' of ' + totalResults + ')</span>';
+                        }
+                        html += '</h4>';
+                        html += '<p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">Click on a row to view features used</p>';
+                        html += '<table class="results-table"><thead><tr>';
+                        html += '<th>Configuration</th><th>Model</th><th>Val MAPE (%)</th><th>Val MAE (kWh)</th><th>Val R²</th><th>Status</th><th>Action</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        // Sort by Val MAPE ascending
+                        const sortedResults = [...run.results].sort((a, b) => {
+                            if (a.val_mape_pct === null) return 1;
+                            if (b.val_mape_pct === null) return -1;
+                            return a.val_mape_pct - b.val_mape_pct;
+                        });
+                        
+                        // Limit to top 30 results
+                        const limitedResults = sortedResults.slice(0, maxResults);
+                        
+                        limitedResults.forEach((result) => {
+                            const isBest = run.best_result && 
+                                result.config_name === run.best_result.config_name && 
+                                result.model_type === run.best_result.model_type;
+                            // Light green background for winner
+                            const rowStyle = isBest ? 'background: rgba(76, 175, 80, 0.2);' : '';
+                            
+                            // Escape JSON for HTML attribute
+                            const escapedFeatures = JSON.stringify(result.experimental_features || {}).replace(/'/g, "\\'");
+                            const escapedFirstRow = JSON.stringify(result.first_row_data || null).replace(/'/g, "\\'");
+                            const escapedLastRow = JSON.stringify(result.last_row_data || null).replace(/'/g, "\\'");
+                            
+                            html += `<tr style="${rowStyle}" onclick="toggleFeatureDetails(event, ${result.id}, JSON.parse('${escapedFeatures}'), ${result.train_samples || 0}, ${result.val_samples || 0}, JSON.parse('${escapedFirstRow}'), JSON.parse('${escapedLastRow}'))">`;
+                            html += `<td>${result.config_name}${isBest ? ' 👑' : ''}</td>`;
+                            html += `<td>${result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step'}</td>`;
+                            html += `<td>${result.val_mape_pct !== null ? result.val_mape_pct.toFixed(2) + '%' : '-'}</td>`;
+                            html += `<td>${result.val_mae_kwh !== null ? result.val_mae_kwh.toFixed(4) : '-'}</td>`;
+                            html += `<td>${result.val_r2 !== null ? result.val_r2.toFixed(4) : '-'}</td>`;
+                            html += `<td>${result.success ? '✓' : '✗' + (result.error_message || 'Failed')}</td>`;
+                            
+                            // Add apply button for successful results (stop propagation to prevent row click)
+                            if (result.success && result.id) {
+                                html += `<td><button class="action-btn secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;" onclick="event.stopPropagation(); applyResultById(${result.id})">Apply</button></td>`;
+                            } else {
+                                html += `<td>-</td>`;
+                            }
+                            
+                            html += '</tr>';
+                        });
+                        
+                        html += '</tbody></table>';
+                        resultsDiv.innerHTML = html;
+                        resultsDiv.style.display = 'block';
+                    }
+                } else {
+                    // No previous results
+                    if (statusDiv) {
+                        statusDiv.className = 'status-message info';
+                        statusDiv.textContent = 'ℹ️ No previous optimization results found. Click "Run Optimizer" to start.';
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading latest optimizer results:', error);
+            }
+        }
+
+        // ===================================================================
+        // Sensor Configuration Tab Functions
+        // ===================================================================
+
+        // Load raw sensors list
+        async function loadRawSensors() {
+            const statusDiv = document.getElementById('rawSensorsStatus');
+            const tableDiv = document.getElementById('rawSensorsTable');
+            const btn = document.getElementById('loadRawSensorsBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading raw sensors...';
+            
+            try {
+                const response = await fetch('api/sensors/category_config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Loaded ${data.config.enabled_sensor_count} enabled sensors`;
+                    
+                    // Build sensors table grouped by type
+                    let html = '<div style="margin-top: 20px;">';
+                    
+                    const sensorTypes = data.sensors_by_type;
+                    for (const [type, sensors] of Object.entries(sensorTypes)) {
+                        html += `<h4 style="margin-top: 20px; margin-bottom: 10px; text-transform: capitalize;">${type} Sensors</h4>`;
+                        html += '<table class="data-table">';
+                        html += '<thead><tr>';
+                        html += '<th>Sensor</th><th>Entity ID</th><th>Unit</th><th>Status</th><th>Actions</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        for (const sensor of sensors) {
+                            const statusBadge = sensor.is_core 
+                                ? '<span style="padding: 2px 8px; background: var(--accent-green); color: white; border-radius: 3px; font-size: 0.8em;">Core</span>'
+                                : (sensor.enabled 
+                                    ? '<span style="padding: 2px 8px; background: var(--accent-orange); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
+                                    : '<span style="padding: 2px 8px; background: var(--text-muted); color: white; border-radius: 3px; font-size: 0.8em;">Disabled</span>');
+                            
+                            html += '<tr>';
+                            html += `<td><strong>${sensor.display_name}</strong><br><small style="color: var(--text-secondary);">${sensor.description}</small></td>`;
+                            html += `<td><input type="text" value="${sensor.entity_id || ''}" id="entity_${sensor.category_name}" style="width: 300px;" placeholder="sensor.example"></td>`;
+                            html += `<td><input type="text" value="${sensor.unit || ''}" id="unit_${sensor.category_name}" style="width: 80px;" placeholder="Unit"></td>`;
+                            html += `<td>${statusBadge}</td>`;
+                            html += `<td><button class="action-btn small" onclick="saveRawSensor('${sensor.category_name}')">Save</button></td>`;
+                            html += '</tr>';
+                        }
+                        
+                        html += '</tbody></table>';
+                    }
+                    
+                    html += '</div>';
+                    tableDiv.innerHTML = html;
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    tableDiv.innerHTML = '';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                tableDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Save a single raw sensor configuration
+        async function saveRawSensor(categoryName) {
+            const entityIdInput = document.getElementById(`entity_${categoryName}`);
+            const unitInput = document.getElementById(`unit_${categoryName}`);
+            const statusDiv = document.getElementById('rawSensorsStatus');
+            
+            if (!entityIdInput || !unitInput) {
+                return;
+            }
+            
+            const entityId = entityIdInput.value.trim();
+            const unit = unitInput.value.trim();
+            
+            if (!entityId) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Entity ID is required';
+                return;
+            }
+            
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `Saving ${categoryName}...`;
+            
+            try {
+                // Save entity ID
+                const entityResponse = await fetch('api/sensors/set_entity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category_name: categoryName,
+                        entity_id: entityId
+                    })
+                });
+                
+                const entityData = await entityResponse.json();
+                
+                if (!entityResponse.ok) {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + entityData.message;
+                    return;
+                }
+                
+                // Save unit
+                const unitResponse = await fetch('api/sensors/set_unit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category_name: categoryName,
+                        unit: unit
+                    })
+                });
+                
+                const unitData = await unitResponse.json();
+                
+                if (unitResponse.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Saved ${categoryName}: Entity ID and unit updated`;
+                    setTimeout(() => { statusDiv.textContent = ''; }, 3000);
+                } else {
+                    statusDiv.className = 'status-message warning';
+                    statusDiv.textContent = `⚠ Entity ID saved but unit failed: ${unitData.message}`;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Load virtual sensors list
+        async function loadVirtualSensors() {
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            const tableDiv = document.getElementById('virtualSensorsTable');
+            const btn = document.getElementById('loadVirtualSensorsBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading virtual sensors...';
+            
+            try {
+                const response = await fetch('api/virtual_sensors/list');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = `✓ Loaded ${data.count} virtual sensors`;
+                    
+                    if (data.count === 0) {
+                        tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">No virtual sensors defined yet. Click "+ Add Virtual Sensor" to create one.</p>';
+                    } else {
+                        // Build virtual sensors table
+                        let html = '<table class="data-table" style="margin-top: 20px;">';
+                        html += '<thead><tr>';
+                        html += '<th>Name</th><th>Formula</th><th>Unit</th><th>Status</th><th>Actions</th>';
+                        html += '</tr></thead><tbody>';
+                        
+                        for (const sensor of data.sensors) {
+                            const statusBadge = sensor.enabled
+                                ? '<span style="padding: 2px 8px; background: var(--accent-green); color: white; border-radius: 3px; font-size: 0.8em;">Enabled</span>'
+                                : '<span style="padding: 2px 8px; background: var(--text-muted); color: white; border-radius: 3px; font-size: 0.8em;">Disabled</span>';
+                            
+                            const operationSymbol = {
+                                'subtract': '-',
+                                'add': '+',
+                                'multiply': '×',
+                                'divide': '÷',
+                                'average': 'avg'
+                            }[sensor.operation] || sensor.operation;
+                            
+                            html += '<tr>';
+                            html += `<td><strong>${sensor.display_name}</strong><br><small style="color: var(--text-secondary);">${sensor.description}</small></td>`;
+                            html += `<td><code>${sensor.source_sensor1} ${operationSymbol} ${sensor.source_sensor2}</code></td>`;
+                            html += `<td>${sensor.unit || '-'}</td>`;
+                            html += `<td>${statusBadge}</td>`;
+                            html += `<td>`;
+                            html += `<button class="action-btn small" onclick="toggleVirtualSensor('${sensor.name}', ${!sensor.enabled})">${sensor.enabled ? 'Disable' : 'Enable'}</button>`;
+                            html += `<button class="action-btn small warning" onclick="deleteVirtualSensor('${sensor.name}')">Delete</button>`;
+                            html += `</td>`;
+                            html += '</tr>';
+                        }
+                        
+                        html += '</tbody></table>';
+                        tableDiv.innerHTML = html;
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    tableDiv.innerHTML = '';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                tableDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Show dialog to add a new virtual sensor
+        async function showAddVirtualSensorDialog() {
+            // Get available sensors for dropdowns
+            const sensorsResponse = await fetch('api/sensors/category_config');
+            if (!sensorsResponse.ok) {
+                alert('Failed to load sensors list');
+                return;
+            }
+            const sensorsData = await sensorsResponse.json();
+            
+            // Build list of all available sensors
+            const allSensors = [];
+            for (const [type, sensors] of Object.entries(sensorsData.sensors_by_type)) {
+                for (const sensor of sensors) {
+                    if (sensor.enabled) {
+                        allSensors.push({
+                            value: sensor.category_name,
+                            label: `${sensor.display_name} (${sensor.category_name})`
+                        });
+                    }
+                }
+            }
+            
+            // Create dialog
+            const name = prompt('Enter virtual sensor name (e.g., temp_delta):');
+            if (!name) return;
+            
+            const displayName = prompt('Enter display name (e.g., Temperature Delta):');
+            if (!displayName) return;
+            
+            const description = prompt('Enter description:');
+            if (!description) return;
+            
+            const sensor1 = prompt(`Enter first sensor (available: ${allSensors.map(s => s.value).join(', ')}):`);
+            if (!sensor1) return;
+            
+            const sensor2 = prompt(`Enter second sensor (available: ${allSensors.map(s => s.value).join(', ')}):`);
+            if (!sensor2) return;
+            
+            const operation = prompt('Enter operation (subtract, add, multiply, divide, average):');
+            if (!operation) return;
+            
+            const unit = prompt('Enter unit (optional):') || '';
+            
+            // Create virtual sensor
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Creating virtual sensor...';
+            
+            try {
+                const response = await fetch('api/virtual_sensors/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        display_name: displayName,
+                        description: description,
+                        source_sensor1: sensor1,
+                        source_sensor2: sensor2,
+                        operation: operation,
+                        unit: unit
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload the list
+                    await loadVirtualSensors();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Toggle virtual sensor enabled/disabled
+        async function toggleVirtualSensor(name, enabled) {
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `${enabled ? 'Enabling' : 'Disabling'} virtual sensor...`;
+            
+            try {
+                const response = await fetch(`api/virtual_sensors/${name}/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: enabled })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload the list
+                    await loadVirtualSensors();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Delete virtual sensor
+        async function deleteVirtualSensor(name) {
+            if (!confirm(`Are you sure you want to delete virtual sensor '${name}'?`)) {
+                return;
+            }
+            
+            const statusDiv = document.getElementById('virtualSensorsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Deleting virtual sensor...';
+            
+            try {
+                const response = await fetch(`api/virtual_sensors/${name}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    // Reload the list
+                    await loadVirtualSensors();
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+            }
+        }
+
+        // Load feature stats configuration
+        async function loadFeatureStatsConfig() {
+            const statusDiv = document.getElementById('featureStatsStatus');
+            const tableDiv = document.getElementById('featureStatsTable');
+            const btn = document.getElementById('loadFeatureStatsBtn');
+            
+            btn.disabled = true;
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = 'Loading feature stats configuration...';
+            
+            try {
+                const response = await fetch('api/feature_stats/config');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    const sensorCount = Object.keys(data.sensors).length;
+                    statusDiv.textContent = `✓ Loaded feature stats configuration for ${sensorCount} sensors`;
+                    
+                    if (sensorCount === 0) {
+                        tableDiv.innerHTML = '<p style="color: var(--text-secondary); margin-top: 10px;">No sensors configured yet.</p>';
+                    } else {
+                        // Build feature stats configuration table
+                        let html = '<table class="data-table" style="margin-top: 20px;">';
+                        html += '<thead><tr>';
+                        html += '<th>Sensor</th><th>Type</th>';
+                        
+                        // Add column for each stat type
+                        for (const statType of data.all_stat_types) {
+                            html += `<th>${statType}</th>`;
+                        }
+                        
+                        html += '</tr></thead><tbody>';
+                        
+                        for (const [sensorName, sensorConfig] of Object.entries(data.sensors)) {
+                            html += '<tr>';
+                            html += `<td><strong>${sensorName}</strong></td>`;
+                            
+                            const typeBadge = sensorConfig.sensor_type === 'raw'
+                                ? '<span style="padding: 2px 8px; background: var(--accent-blue); color: white; border-radius: 3px; font-size: 0.8em;">Raw</span>'
+                                : '<span style="padding: 2px 8px; background: var(--accent-orange); color: white; border-radius: 3px; font-size: 0.8em;">Virtual</span>';
+                            html += `<td>${typeBadge}</td>`;
+                            
+                            // Add checkbox for each stat type
+                            for (const statType of data.all_stat_types) {
+                                const isEnabled = sensorConfig.enabled_stats.includes(statType);
+                                html += `<td><input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleFeatureStat('${sensorName}', '${statType}', this.checked)"></td>`;
+                            }
+                            
+                            html += '</tr>';
+                        }
+                        
+                        html += '</tbody></table>';
+                        html += '<p style="margin-top: 10px; color: var(--text-secondary); font-size: 0.9em;">';
+                        html += 'Check boxes to enable time-based statistics generation during resampling. ';
+                        html += 'For example, enabling "avg_1h" for outdoor_temp will create "outdoor_temp_avg_1h" during resampling.';
+                        html += '</p>';
+                        tableDiv.innerHTML = html;
+                    }
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    tableDiv.innerHTML = '';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                tableDiv.innerHTML = '';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Toggle a feature stat for a sensor
+        async function toggleFeatureStat(sensorName, statType, enabled) {
+            const statusDiv = document.getElementById('featureStatsStatus');
+            statusDiv.className = 'status-message loading';
+            statusDiv.textContent = `${enabled ? 'Enabling' : 'Disabling'} ${statType} for ${sensorName}...`;
+            
+            try {
+                const response = await fetch('api/feature_stats/set', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sensor_name: sensorName,
+                        stat_type: statType,
+                        enabled: enabled
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.className = 'status-message success';
+                    statusDiv.textContent = '✓ ' + data.message;
+                    setTimeout(() => { statusDiv.textContent = ''; }, 2000);
+                } else {
+                    statusDiv.className = 'status-message error';
+                    statusDiv.textContent = '✗ ' + data.message;
+                    // Reload to restore correct state
+                    await loadFeatureStatsConfig();
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message error';
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                // Reload to restore correct state
+                await loadFeatureStatsConfig();
             }
         }
     </script>

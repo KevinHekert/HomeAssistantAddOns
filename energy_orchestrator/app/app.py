@@ -1,7 +1,13 @@
 import logging
+import threading
 from datetime import datetime, timedelta
+from typing import Optional
 from flask import Flask, render_template, jsonify, request
+from sqlalchemy.orm import Session
 import pandas as pd
+
+# Thread lock for optimizer state
+_optimizer_lock = threading.Lock()
 from ha.ha_api import get_entity_state
 from ha.weather_api import (
     get_weather_config,
@@ -11,8 +17,16 @@ from ha.weather_api import (
     convert_forecast_to_scenario_timeslots,
 )
 from workers import start_sensor_logging_worker
-from db.resample import resample_all_categories, get_sample_rate_minutes, set_sample_rate_minutes, VALID_SAMPLE_RATES, flush_resampled_samples
-from db.core import init_db_schema
+from db.resample import (
+    resample_all_categories, 
+    get_sample_rate_minutes, 
+    set_sample_rate_minutes, 
+    VALID_SAMPLE_RATES, 
+    flush_resampled_samples,
+    ResampleProgress,
+)
+from db.core import init_db_schema, engine
+from db import ResampledSample, FeatureStatistic
 from db.sensor_config import sync_sensor_mappings
 from db.samples import get_sensor_info
 from db.sync_config import (
@@ -25,6 +39,26 @@ from db.sync_config import (
     MIN_SYNC_INTERVAL,
     MAX_SYNC_INTERVAL,
 )
+from db.sensor_category_config import (
+    get_sensor_category_config,
+    get_all_sensor_definitions,
+    get_sensor_definition,
+    CORE_SENSORS,
+    EXPERIMENTAL_SENSORS,
+)
+from db.virtual_sensors import (
+    get_virtual_sensors_config,
+    VirtualSensorDefinition,
+    VirtualSensorOperation,
+)
+from db.feature_stats import (
+    get_feature_stats_config,
+    StatType,
+)
+from db.calculate_feature_stats import (
+    calculate_feature_statistics,
+    flush_feature_statistics,
+)
 from db.prediction_storage import (
     store_prediction,
     get_stored_predictions,
@@ -32,6 +66,17 @@ from db.prediction_storage import (
     delete_prediction,
     compare_prediction_with_actual,
     get_prediction_list_summary,
+)
+from db.optimizer_storage import (
+    save_optimizer_run,
+    get_latest_optimizer_run,
+    get_optimizer_run_by_id,
+    get_optimizer_result_by_id,
+    list_optimizer_runs,
+)
+from db.optimizer_config import (
+    get_optimizer_config,
+    set_optimizer_config,
 )
 from ml.heating_features import (
     build_heating_feature_dataset,
@@ -66,9 +111,18 @@ from ml.feature_config import (
     get_feature_metadata_dict,
     get_core_feature_count,
     FeatureCategory,
+    FeatureMetadata,
     categorize_features,
     get_feature_details,
     verify_model_features,
+    CORE_FEATURES,
+    EXPERIMENTAL_FEATURES,
+)
+from ml.optimizer import (
+    run_optimization,
+    apply_best_configuration,
+    OptimizerProgress,
+    SearchStrategy,
 )
 
 
@@ -86,6 +140,12 @@ PREDICTION_DECIMAL_PLACES = 4
 # Global model instances
 _heating_model: HeatingDemandModel | None = None
 _two_step_model: TwoStepHeatingDemandModel | None = None
+
+# Global resampling state
+_resample_lock = threading.Lock()
+_resample_progress: Optional[ResampleProgress] = None
+_resample_running: bool = False
+_resample_thread: Optional[threading.Thread] = None
 
 
 def _get_model() -> HeatingDemandModel | None:
@@ -122,9 +182,82 @@ def index():
     )
 
 
+def _run_resample_in_thread(sample_rate: int | None, flush: bool):
+    """Background thread function to run resampling."""
+    global _resample_progress, _resample_running
+    
+    try:
+        _Logger.info("Starting resampling in background...")
+        
+        def progress_callback(progress):
+            """Update global progress state."""
+            global _resample_progress
+            with _resample_lock:
+                _resample_progress = progress
+        
+        # Run the resampling with progress callback
+        stats = resample_all_categories(
+            sample_rate_minutes=sample_rate,
+            flush=flush,
+            progress_callback=progress_callback,
+        )
+        
+        # Update progress with feature stats phase
+        with _resample_lock:
+            if _resample_progress:
+                _resample_progress.phase = "calculating_stats"
+                _resample_progress.add_log("Calculating feature statistics...")
+        
+        # Step 2: Automatically calculate feature statistics after successful resampling
+        try:
+            _Logger.info("Calculating feature statistics after resampling...")
+            # If we flushed resampled data, also flush feature statistics
+            if flush:
+                flush_feature_statistics()
+                _Logger.info("Flushed feature statistics due to flush=True")
+                if _resample_progress:
+                    with _resample_lock:
+                        _resample_progress.add_log("Flushed feature statistics")
+            
+            feature_stats_result = calculate_feature_statistics()
+            _Logger.info(
+                "Feature statistics calculated: %d stats saved for %d sensors",
+                feature_stats_result.stats_saved,
+                feature_stats_result.sensors_processed,
+            )
+            
+            with _resample_lock:
+                if _resample_progress:
+                    _resample_progress.add_log(
+                        f"Feature stats: {feature_stats_result.stats_saved} saved for " +
+                        f"{feature_stats_result.sensors_processed} sensors"
+                    )
+                    _resample_progress.phase = "complete"
+        except Exception as e:
+            # Log error but don't fail - resampling was successful
+            _Logger.error("Error calculating feature statistics: %s", e, exc_info=True)
+            with _resample_lock:
+                if _resample_progress:
+                    _resample_progress.add_log(f"Warning: Feature stats error: {str(e)}")
+                    _resample_progress.phase = "complete"
+        
+    except Exception as e:
+        _Logger.error("Error running resample: %s", e, exc_info=True)
+        # Update progress with error
+        with _resample_lock:
+            if _resample_progress:
+                _resample_progress.phase = "error"
+                _resample_progress.error_message = str(e)
+                _resample_progress.add_log(f"Error: {str(e)}")
+    
+    finally:
+        with _resample_lock:
+            _resample_running = False
+
+
 @app.post("/resample")
 def trigger_resample():
-    """Trigger resampling of all categories to configured time slots.
+    """Trigger resampling of all categories to configured time slots in background.
     
     Optionally accepts a JSON body with:
     {
@@ -137,7 +270,22 @@ def trigger_resample():
     
     When the sample rate changes, the flush parameter should be set to true
     to clear existing resampled data that was computed with a different interval.
+    
+    After resampling completes, feature statistics (time-span averages) are
+    automatically calculated from the resampled data.
+    
+    This endpoint starts resampling in the background and returns immediately.
+    Use /api/resample/status to poll for progress.
     """
+    global _resample_progress, _resample_running, _resample_thread
+    
+    with _resample_lock:
+        if _resample_running:
+            return jsonify({
+                "status": "error",
+                "message": "Resampling is already running",
+            }), 400
+    
     try:
         # Check if parameters were provided in the request
         sample_rate = None
@@ -157,26 +305,107 @@ def trigger_resample():
         
         _Logger.info("Resample triggered via UI with sample_rate=%s, flush=%s", sample_rate or "default", flush)
         
-        # Always use resample_all_categories - it uses configured rate when sample_rate is None
-        stats = resample_all_categories(sample_rate, flush=flush)
+        # Initialize progress
+        with _resample_lock:
+            _resample_running = True
+            _resample_progress = ResampleProgress(
+                phase="initializing",
+                slots_processed=0,
+                slots_total=0,
+                slots_saved=0,
+                slots_skipped=0,
+                categories=[],
+                start_time=datetime.now(),
+                sample_rate_minutes=sample_rate or get_sample_rate_minutes(),
+            )
+            _resample_progress.add_log("Initializing resampling...")
+        
+        # Start resampling in background thread
+        _resample_thread = threading.Thread(
+            target=_run_resample_in_thread,
+            args=(sample_rate, flush),
+            daemon=True
+        )
+        _resample_thread.start()
+        
+        _Logger.info("Resample thread started")
         
         return jsonify({
             "status": "success",
-            "message": "Resampling completed successfully",
-            "stats": {
-                "slots_processed": stats.slots_processed,
-                "slots_saved": stats.slots_saved,
-                "slots_skipped": stats.slots_skipped,
-                "categories": stats.categories,
-                "start_time": stats.start_time.isoformat() if stats.start_time else None,
-                "end_time": stats.end_time.isoformat() if stats.end_time else None,
-                "sample_rate_minutes": stats.sample_rate_minutes,
-                "table_flushed": stats.table_flushed,
-            },
+            "message": "Resampling started in background. Use /api/resample/status to check progress.",
+            "running": True,
         })
+        
     except Exception as e:
-        _Logger.error("Error during resampling: %s", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        with _resample_lock:
+            _resample_running = False
+        _Logger.error("Error starting resample: %s", e, exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/resample/status")
+def get_resample_status():
+    """Get the current status of the resampling operation.
+    
+    Response:
+    {
+        "status": "success",
+        "running": false,
+        "progress": {
+            "phase": "complete",
+            "slots_processed": 1000,
+            "slots_total": 1000,
+            "slots_saved": 950,
+            "slots_skipped": 50,
+            "hours_processed": 83,
+            "hours_total": 83,
+            "categories": ["outdoor_temp", "indoor_temp", ...],
+            "current_slot": "2024-12-03T10:00:00",
+            "log": ["[10:00:00] Starting resample...", ...],
+            "sample_rate_minutes": 5
+        }
+    }
+    """
+    global _resample_progress, _resample_running
+    
+    with _resample_lock:
+        if _resample_progress is None:
+            return jsonify({
+                "status": "success",
+                "running": _resample_running,
+                "progress": None,
+                "message": "No resampling has been run yet",
+            })
+        
+        progress = _resample_progress
+        is_running = _resample_running
+    
+    response_data = {
+        "status": "success",
+        "running": is_running,
+        "progress": {
+            "phase": progress.phase,
+            "slots_processed": progress.slots_processed,
+            "slots_total": progress.slots_total,
+            "slots_saved": progress.slots_saved,
+            "slots_skipped": progress.slots_skipped,
+            "hours_processed": progress.get_hours_processed(),
+            "hours_total": progress.get_hours_total(),
+            "categories": progress.categories,
+            "current_slot": progress.current_slot.isoformat() if progress.current_slot else None,
+            "log": progress.log_messages,
+            "sample_rate_minutes": progress.sample_rate_minutes,
+        },
+    }
+    
+    # Include error message if phase is error
+    if progress.phase == "error" and progress.error_message:
+        response_data["progress"]["error"] = progress.error_message
+    
+    return jsonify(response_data)
 
 
 @app.get("/api/sample_rate")
@@ -259,6 +488,195 @@ def update_sample_rate():
             }), 500
     except Exception as e:
         _Logger.error("Error updating sample rate: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/resampled_data")
+def get_resampled_data():
+    """
+    Query resampled data with is_derived field information.
+    
+    Query parameters:
+    - category (optional): Filter by sensor category/name
+    - start_time (optional): ISO format datetime string
+    - end_time (optional): ISO format datetime string
+    - limit (optional): Maximum number of records (default: 100, max: 1000)
+    - is_derived (optional): Filter by is_derived flag (true/false)
+    
+    Response:
+    {
+        "status": "success",
+        "data": [
+            {
+                "slot_start": "2024-12-02T10:00:00",
+                "category": "outdoor_temp",
+                "value": 5.5,
+                "unit": "°C",
+                "is_derived": false
+            },
+            ...
+        ],
+        "count": 100,
+        "has_more": true
+    }
+    """
+    try:
+        # Parse query parameters
+        category = request.args.get('category')
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        limit = min(int(request.args.get('limit', 100)), 1000)
+        is_derived_str = request.args.get('is_derived')
+        
+        # Build query
+        with Session(engine) as session:
+            query = session.query(ResampledSample)
+            
+            if category:
+                query = query.filter(ResampledSample.category == category)
+            
+            if start_time:
+                start_dt = datetime.fromisoformat(start_time)
+                query = query.filter(ResampledSample.slot_start >= start_dt)
+            
+            if end_time:
+                end_dt = datetime.fromisoformat(end_time)
+                query = query.filter(ResampledSample.slot_start <= end_dt)
+            
+            if is_derived_str is not None:
+                is_derived = is_derived_str.lower() == 'true'
+                query = query.filter(ResampledSample.is_derived == is_derived)
+            
+            # Order by slot_start descending (most recent first)
+            query = query.order_by(ResampledSample.slot_start.desc())
+            
+            # Get one more than limit to check if there are more
+            results = query.limit(limit + 1).all()
+            
+            has_more = len(results) > limit
+            if has_more:
+                results = results[:limit]
+            
+            # Convert to dict
+            data = [
+                {
+                    "slot_start": r.slot_start.isoformat(),
+                    "category": r.category,
+                    "value": r.value,
+                    "unit": r.unit,
+                    "is_derived": r.is_derived,
+                }
+                for r in results
+            ]
+            
+            return jsonify({
+                "status": "success",
+                "data": data,
+                "count": len(data),
+                "has_more": has_more,
+            })
+    except ValueError as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Invalid parameter: {str(e)}",
+        }), 400
+    except Exception as e:
+        _Logger.error("Error querying resampled data: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/feature_statistics")
+def get_feature_statistics_data():
+    """
+    Query feature statistics (time-span averages) from the feature_statistics table.
+    
+    Query parameters:
+    - sensor_name (optional): Filter by sensor name
+    - stat_type (optional): Filter by statistic type (avg_1h, avg_6h, avg_24h, avg_7d)
+    - start_time (optional): ISO format datetime string
+    - end_time (optional): ISO format datetime string
+    - limit (optional): Maximum number of records (default: 100, max: 1000)
+    
+    Response:
+    {
+        "status": "success",
+        "data": [
+            {
+                "slot_start": "2024-12-02T10:00:00",
+                "sensor_name": "outdoor_temp",
+                "stat_type": "avg_1h",
+                "value": 5.5,
+                "unit": "°C",
+                "source_sample_count": 12
+            },
+            ...
+        ],
+        "count": 100,
+        "has_more": true
+    }
+    """
+    try:
+        # Parse query parameters
+        sensor_name = request.args.get('sensor_name')
+        stat_type = request.args.get('stat_type')
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        limit = min(int(request.args.get('limit', 100)), 1000)
+        
+        # Build query
+        with Session(engine) as session:
+            query = session.query(FeatureStatistic)
+            
+            if sensor_name:
+                query = query.filter(FeatureStatistic.sensor_name == sensor_name)
+            
+            if stat_type:
+                query = query.filter(FeatureStatistic.stat_type == stat_type)
+            
+            if start_time:
+                start_dt = datetime.fromisoformat(start_time)
+                query = query.filter(FeatureStatistic.slot_start >= start_dt)
+            
+            if end_time:
+                end_dt = datetime.fromisoformat(end_time)
+                query = query.filter(FeatureStatistic.slot_start <= end_dt)
+            
+            # Order by slot_start descending (most recent first)
+            query = query.order_by(FeatureStatistic.slot_start.desc())
+            
+            # Get one more than limit to check if there are more
+            results = query.limit(limit + 1).all()
+            
+            has_more = len(results) > limit
+            if has_more:
+                results = results[:limit]
+            
+            # Convert to dict
+            data = [
+                {
+                    "slot_start": r.slot_start.isoformat(),
+                    "sensor_name": r.sensor_name,
+                    "stat_type": r.stat_type,
+                    "value": r.value,
+                    "unit": r.unit,
+                    "source_sample_count": r.source_sample_count,
+                }
+                for r in results
+            ]
+            
+            return jsonify({
+                "status": "success",
+                "data": data,
+                "count": len(data),
+                "has_more": has_more,
+            })
+    except ValueError as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Invalid parameter: {str(e)}",
+        }), 400
+    except Exception as e:
+        _Logger.error("Error querying feature statistics: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -1430,11 +1848,12 @@ def get_features_config():
 
 
 @app.post("/api/features/toggle")
-def toggle_experimental_feature():
+def toggle_feature():
     """
-    Enable or disable an experimental feature.
+    Enable or disable any feature (core or experimental).
     
-    Core features cannot be toggled (they are always enabled).
+    Both core and experimental features can be toggled.
+    Core features are labeled as 'CORE' in UI but can still be disabled.
     
     Request body:
     {
@@ -1446,7 +1865,8 @@ def toggle_experimental_feature():
     {
         "status": "success",
         "message": "Feature 'pressure' is now enabled",
-        "active_features": [...]
+        "active_features": [...],
+        "is_core": false
     }
     """
     try:
@@ -1475,25 +1895,35 @@ def toggle_experimental_feature():
         
         config = get_feature_config()
         
+        # Try to toggle the feature (works for both core and experimental)
         if enabled:
-            result = config.enable_experimental_feature(feature_name)
+            result = config.enable_feature(feature_name)
         else:
-            result = config.disable_experimental_feature(feature_name)
+            result = config.disable_feature(feature_name)
         
         if not result:
             return jsonify({
                 "status": "error",
-                "message": f"Feature '{feature_name}' is not an experimental feature (cannot toggle core features)",
-            }), 400
+                "message": f"Feature '{feature_name}' not found",
+            }), 404
+        
+        # Determine if it's a core feature
+        is_core = any(f.name == feature_name for f in CORE_FEATURES)
         
         # Save configuration
         config.save()
+        
+        # Note: We do NOT sync feature stats configuration here.
+        # Sensor stats configuration should remain independent from ML feature configuration.
+        # Users configure sensor stats separately to collect data, and ML features determine
+        # which features are used for training, not which stats are collected.
         
         status = "enabled" if enabled else "disabled"
         return jsonify({
             "status": "success",
             "message": f"Feature '{feature_name}' is now {status}",
             "active_features": config.get_active_feature_names(),
+            "is_core": is_core,
         })
     except Exception as e:
         _Logger.error("Error toggling feature: %s", e)
@@ -1556,6 +1986,115 @@ def set_feature_timezone():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.get("/api/features/sensors_with_stats")
+def get_sensors_with_statistics():
+    """
+    Get comprehensive sensor information including their time-based statistics.
+    
+    This endpoint provides all sensors (raw + virtual) with their enabled statistics
+    for display in the Feature Configuration section.
+    
+    Response:
+    {
+        "status": "success",
+        "sensors": [
+            {
+                "name": "outdoor_temp",
+                "display_name": "Outdoor Temperature",
+                "type": "raw",
+                "enabled": true,
+                "enabled_stats": ["avg_1h", "avg_6h", "avg_24h"],
+                "stat_features": [
+                    {"name": "outdoor_temp_avg_1h", "type": "avg_1h"},
+                    {"name": "outdoor_temp_avg_6h", "type": "avg_6h"},
+                    ...
+                ]
+            },
+            {
+                "name": "temp_delta",
+                "display_name": "Temperature Delta",
+                "type": "virtual",
+                "enabled": true,
+                "description": "Target - Indoor",
+                "enabled_stats": ["avg_1h"],
+                ...
+            }
+        ],
+        "total_count": 15,
+        "raw_count": 10,
+        "virtual_count": 5
+    }
+    """
+    try:
+        sensor_category_config = get_sensor_category_config()
+        virtual_sensors_config = get_virtual_sensors_config()
+        feature_stats_config = get_feature_stats_config()
+        
+        sensors_list = []
+        raw_count = 0
+        virtual_count = 0
+        
+        # Add raw sensors
+        for sensor_config in sensor_category_config.get_enabled_sensors():
+            # Get the sensor definition to access display_name
+            sensor_def = get_sensor_definition(sensor_config.category_name)
+            display_name = sensor_def.display_name if sensor_def else sensor_config.category_name
+            
+            enabled_stats = feature_stats_config.get_enabled_stats_for_sensor(sensor_config.category_name)
+            stat_features = [
+                {
+                    "name": feature_stats_config.get_sensor_config(sensor_config.category_name).get_stat_category_name(stat),
+                    "type": stat.value
+                }
+                for stat in enabled_stats
+            ]
+            
+            sensors_list.append({
+                "name": sensor_config.category_name,
+                "display_name": display_name,
+                "type": "raw",
+                "enabled": sensor_config.enabled,
+                "enabled_stats": [s.value for s in enabled_stats],
+                "stat_features": stat_features,
+            })
+            raw_count += 1
+        
+        # Add virtual sensors
+        for virtual_sensor in virtual_sensors_config.get_enabled_sensors():
+            enabled_stats = feature_stats_config.get_enabled_stats_for_sensor(virtual_sensor.name)
+            stat_features = [
+                {
+                    "name": feature_stats_config.get_sensor_config(virtual_sensor.name).get_stat_category_name(stat),
+                    "type": stat.value
+                }
+                for stat in enabled_stats
+            ]
+            
+            sensors_list.append({
+                "name": virtual_sensor.name,
+                "display_name": virtual_sensor.display_name,
+                "type": "virtual",
+                "enabled": virtual_sensor.enabled,
+                "description": virtual_sensor.description,
+                "operation": virtual_sensor.operation.value,
+                "enabled_stats": [s.value for s in enabled_stats],
+                "stat_features": stat_features,
+            })
+            virtual_count += 1
+        
+        return jsonify({
+            "status": "success",
+            "sensors": sensors_list,
+            "total_count": len(sensors_list),
+            "raw_count": raw_count,
+            "virtual_count": virtual_count,
+        })
+    except Exception as e:
+        _Logger.error("Error getting sensors with statistics: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
 @app.get("/api/features/metadata")
 def get_features_metadata():
     """
@@ -1592,6 +2131,313 @@ def get_features_metadata():
     except Exception as e:
         _Logger.error("Error getting feature metadata: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/features/special_cards")
+def get_special_feature_cards():
+    """
+    Get special feature cards for Time/Date and Usage calculated features.
+    
+    These are system-generated cards that group calculated features which are
+    not directly tied to physical sensors.
+    
+    Response:
+    {
+        "status": "success",
+        "cards": [
+            {
+                "id": "time_date",
+                "name": "Time & Date Features",
+                "description": "Calendar and time-based features for temporal patterns",
+                "type": "calculated",
+                "features": [
+                    {
+                        "name": "hour_of_day",
+                        "display_name": "Hour of Day",
+                        "description": "Local hour (0-23) in configured timezone",
+                        "unit": "hour",
+                        "is_core": true,
+                        "enabled": true
+                    },
+                    ...
+                ]
+            },
+            {
+                "id": "usage_heating",
+                "name": "Heating Usage Features",
+                "description": "Historical heating consumption and demand metrics",
+                "type": "calculated",
+                "features": [...]
+            }
+        ]
+    }
+    """
+    try:
+        config = get_feature_config()
+        
+        # Time & Date Features
+        time_date_features = ["hour_of_day", "day_of_week", "is_weekend", "is_night"]
+        
+        # Usage/Heating Features
+        usage_features = [
+            "heating_kwh_last_1h",
+            "heating_kwh_last_6h", 
+            "heating_kwh_last_24h",
+            "heating_kwh_last_7d",
+            "heating_degree_hours_24h",
+            "heating_degree_hours_7d",
+        ]
+        
+        # Get all features with their metadata
+        all_features = config.get_all_features()
+        features_dict = {f.name: f for f in all_features}
+        
+        # Build Time/Date card
+        time_date_card = {
+            "id": "time_date",
+            "name": "Time & Date Features",
+            "description": "Calendar and time-based features for temporal patterns",
+            "type": "calculated",
+            "features": []
+        }
+        
+        for feature_name in time_date_features:
+            if feature_name in features_dict:
+                f = features_dict[feature_name]
+                time_date_card["features"].append({
+                    "name": f.name,
+                    "display_name": f.name.replace("_", " ").title(),
+                    "description": f.description,
+                    "unit": f.unit,
+                    "is_core": f.is_core,
+                    "enabled": f.enabled,
+                })
+        
+        # Build Usage card
+        usage_card = {
+            "id": "usage_heating",
+            "name": "Heating Usage Features",
+            "description": "Historical heating consumption and demand metrics",
+            "type": "calculated",
+            "features": []
+        }
+        
+        for feature_name in usage_features:
+            if feature_name in features_dict:
+                f = features_dict[feature_name]
+                usage_card["features"].append({
+                    "name": f.name,
+                    "display_name": f.name.replace("_", " ").title(),
+                    "description": f.description,
+                    "unit": f.unit,
+                    "is_core": f.is_core,
+                    "enabled": f.enabled,
+                })
+        
+        return jsonify({
+            "status": "success",
+            "cards": [time_date_card, usage_card]
+        })
+    except Exception as e:
+        _Logger.error("Error getting special feature cards: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/features/sensor_cards")
+def get_sensor_feature_cards():
+    """
+    Get feature cards for physical sensors with their aggregation features.
+    
+    Returns sensor cards showing which time-based aggregations (avg_1h, avg_6h, etc.)
+    are available as features for each sensor.
+    
+    Response:
+    {
+        "status": "success",
+        "sensor_cards": [
+            {
+                "sensor_name": "outdoor_temp",
+                "display_name": "Outdoor Temperature",
+                "unit": "°C",
+                "type": "weather",
+                "features": [
+                    {
+                        "name": "outdoor_temp",
+                        "display_name": "Current Value",
+                        "is_core": true,
+                        "enabled": true
+                    },
+                    {
+                        "name": "outdoor_temp_avg_1h",
+                        "display_name": "1-Hour Average",
+                        "is_core": true,
+                        "enabled": true
+                    },
+                    ...
+                ]
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        config = get_feature_config()
+        all_features = config.get_all_features()
+        
+        # Get sensor information from sensor_category_config
+        sensor_category_conf = get_sensor_category_config()
+        all_sensor_defs = get_all_sensor_definitions()
+        virtual_sensors_conf = get_virtual_sensors_config()
+        
+        # Get feature stats configuration to determine which time-based stats are enabled
+        feature_stats_conf = get_feature_stats_config()
+        
+        # Build dynamic sensor metadata from configured sensors
+        raw_sensors: dict[str, dict] = {}
+        
+        # Add all configured raw sensors (both core and experimental, enabled or disabled)
+        # We show all sensors so users can see what's available and configure them
+        for sensor_def in all_sensor_defs:
+            sensor_config = sensor_category_conf.get_sensor_config(sensor_def.category_name)
+            # sensor_config should always exist since __post_init__ creates defaults,
+            # but we check to be safe in case of configuration corruption
+            if sensor_config:
+                raw_sensors[sensor_def.category_name] = {
+                    "display_name": sensor_def.display_name,
+                    "unit": sensor_config.unit if sensor_config.unit else sensor_def.unit,
+                    "type": sensor_def.sensor_type.value,
+                }
+        
+        # Add all virtual sensors (enabled or disabled)
+        for virtual_sensor in virtual_sensors_conf.sensors.values():
+            raw_sensors[virtual_sensor.name] = {
+                "display_name": virtual_sensor.display_name,
+                "unit": virtual_sensor.unit,
+                "type": "virtual",  # Virtual sensors get their own type
+            }
+        
+        # Build a lookup map of feature names to feature objects
+        feature_map: dict[str, FeatureMetadata] = {f.name: f for f in all_features}
+        
+        # Group features by base sensor name
+        sensor_features: dict[str, list] = {}
+        
+        # Initialize sensor groups
+        for sensor_name in raw_sensors.keys():
+            sensor_features[sensor_name] = []
+        
+        # For each sensor, add the base sensor feature and all configured time-based statistics
+        for sensor_name in raw_sensors.keys():
+            sensor_info = raw_sensors[sensor_name]
+            
+            # Add the base sensor feature (current value) if it exists
+            if sensor_name in feature_map:
+                f = feature_map[sensor_name]
+                sensor_features[sensor_name].append({
+                    "name": f.name,
+                    "display_name": _get_feature_display_name(f.name, sensor_name),
+                    "description": f.description,
+                    "unit": f.unit,
+                    "time_window": f.time_window.value,
+                    "is_core": f.is_core,
+                    "enabled": f.enabled,
+                })
+            else:
+                # Base sensor doesn't exist in feature config yet, create it as an experimental feature
+                # This happens for virtual sensors or sensors that haven't been added to feature config
+                sensor_features[sensor_name].append({
+                    "name": sensor_name,
+                    "display_name": _get_feature_display_name(sensor_name, sensor_name),
+                    "description": f"Current value for {sensor_name}",
+                    "unit": sensor_info["unit"],
+                    "time_window": "none",
+                    "is_core": False,
+                    "enabled": False,  # Not enabled in feature config yet
+                })
+            
+            # Get enabled time-based statistics from feature stats configuration
+            enabled_stats = feature_stats_conf.get_enabled_stats_for_sensor(sensor_name)
+            
+            # Add features for each enabled statistic
+            for stat_type in enabled_stats:
+                stat_feature_name = f"{sensor_name}_{stat_type.value}"
+                
+                # Check if this feature exists in feature configuration
+                if stat_feature_name in feature_map:
+                    # Feature already exists in config, use its properties
+                    f = feature_map[stat_feature_name]
+                    sensor_features[sensor_name].append({
+                        "name": f.name,
+                        "display_name": _get_feature_display_name(f.name, sensor_name),
+                        "description": f.description,
+                        "unit": f.unit,
+                        "time_window": f.time_window.value,
+                        "is_core": f.is_core,
+                        "enabled": f.enabled,
+                    })
+                else:
+                    # Feature doesn't exist in feature config yet, create it as an experimental feature
+                    # This happens when a statistic is enabled in feature stats but not yet in feature config
+                    sensor_features[sensor_name].append({
+                        "name": stat_feature_name,
+                        "display_name": _get_feature_display_name(stat_feature_name, sensor_name),
+                        "description": f"Time-based statistic: {stat_type.value} for {sensor_name}",
+                        "unit": sensor_info["unit"],
+                        "time_window": _stat_type_to_time_window(stat_type),
+                        "is_core": False,
+                        "enabled": False,  # Not enabled in feature config yet
+                    })
+        
+        # Build sensor cards
+        sensor_cards = []
+        for sensor_name, features in sensor_features.items():
+            if features:  # Only include sensors that have features
+                info = raw_sensors[sensor_name]
+                sensor_cards.append({
+                    "sensor_name": sensor_name,
+                    "display_name": info["display_name"],
+                    "unit": info["unit"],
+                    "type": info["type"],
+                    "features": features,
+                })
+        
+        return jsonify({
+            "status": "success",
+            "sensor_cards": sensor_cards
+        })
+    except Exception as e:
+        _Logger.error("Error getting sensor feature cards: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _get_feature_display_name(feature_name: str, sensor_name: str) -> str:
+    """Helper to generate display names for features."""
+    if feature_name == sensor_name:
+        return "Current Value"
+    elif "_avg_" in feature_name:
+        window = feature_name.split("_avg_")[-1]
+        return f"{window.upper()} Average"
+    else:
+        return feature_name.replace("_", " ").title()
+
+
+def _stat_type_to_time_window(stat_type: StatType) -> str:
+    """
+    Convert StatType to TimeWindow string value.
+    
+    Args:
+        stat_type: The StatType enum value
+        
+    Returns:
+        TimeWindow string value (e.g., "1h", "6h", "24h", "7d")
+    """
+    mapping = {
+        StatType.AVG_1H: "1h",
+        StatType.AVG_6H: "6h",
+        StatType.AVG_24H: "24h",
+        StatType.AVG_7D: "7d",
+    }
+    return mapping.get(stat_type, "none")
 
 
 # =============================================================================
@@ -2529,6 +3375,1251 @@ def compare_stored_prediction_endpoint(prediction_id: str):
         
     except Exception as e:
         _Logger.error("Error comparing prediction: %s", e, exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =============================================================================
+# SETTINGS OPTIMIZER ENDPOINTS
+# =============================================================================
+
+# Global optimizer state
+_optimizer_progress: Optional[OptimizerProgress] = None
+_optimizer_running: bool = False
+_optimizer_thread: Optional[threading.Thread] = None
+
+
+def _run_optimizer_in_thread():
+    """Background thread function to run the optimizer."""
+    global _optimizer_progress, _optimizer_running
+    
+    try:
+        _Logger.info("Starting settings optimizer in background...")
+        
+        def progress_callback(progress):
+            """Update global progress state."""
+            global _optimizer_progress
+            with _optimizer_lock:
+                _optimizer_progress = progress
+        
+        # Get optimizer configuration from database
+        optimizer_config = get_optimizer_config()
+        configured_max_workers = optimizer_config.get("max_workers", None)
+        configured_max_combinations = optimizer_config.get("max_combinations", None)
+        
+        # Run the optimization with adaptive parallelism and memory throttling
+        # configured_max_workers is read from UI settings (None or 0 = auto-calculate)
+        # configured_max_combinations limits exhaustive search (None = default 1024)
+        # Default strategy: HYBRID_GENETIC_BAYESIAN for scalable feature selection
+        progress = run_optimization(
+            train_single_step_fn=train_heating_demand_model,
+            train_two_step_fn=train_two_step_heating_demand_model,
+            build_dataset_fn=build_heating_feature_dataset,
+            progress_callback=progress_callback,
+            min_samples=50,
+            include_derived_features=True,  # Include ALL derived features (52+)
+            max_memory_mb=None,  # None = auto-detect (75% of available RAM)
+            configured_max_workers=configured_max_workers,  # From UI config
+            configured_max_combinations=configured_max_combinations,  # From UI config (for exhaustive only)
+            # Genetic Algorithm + Bayesian Optimization parameters (default values)
+            # search_strategy defaults to HYBRID_GENETIC_BAYESIAN in function signature
+            # genetic_population_size=50, genetic_num_generations=100, bayesian_iterations=100
+        )
+        
+        with _optimizer_lock:
+            _optimizer_progress = progress
+        
+        # Save results to database
+        if progress:
+            run_id = save_optimizer_run(progress)
+            if run_id:
+                _Logger.info("Saved optimizer run to database with ID: %d", run_id)
+            else:
+                _Logger.warning("Failed to save optimizer run to database")
+        
+    except Exception as e:
+        _Logger.error("Error running optimizer: %s", e, exc_info=True)
+        # Update progress with error
+        with _optimizer_lock:
+            if _optimizer_progress:
+                _optimizer_progress.phase = "error"
+                _optimizer_progress.error_message = str(e)
+    
+    finally:
+        with _optimizer_lock:
+            _optimizer_running = False
+
+
+@app.get("/api/optimizer/config")
+def get_optimizer_config_endpoint():
+    """
+    Get the current optimizer configuration.
+    
+    Returns the optimizer settings including max_workers.
+    
+    Response:
+    {
+        "status": "success",
+        "config": {
+            "max_workers": 5  // or null for auto-calculate
+        }
+    }
+    """
+    try:
+        config = get_optimizer_config()
+        return jsonify({
+            "status": "success",
+            "config": config,
+        })
+    except Exception as e:
+        _Logger.error("Error getting optimizer config: %s", e, exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.post("/api/optimizer/config")
+def set_optimizer_config_endpoint():
+    """
+    Set the optimizer configuration.
+    
+    Updates optimizer settings including max_workers.
+    
+    Request body:
+    {
+        "max_workers": 5  // or null/0 for auto-calculate
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Configuration saved"
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "No data provided",
+            }), 400
+        
+        max_workers = data.get("max_workers", None)
+        
+        # Validate max_workers
+        if max_workers is not None:
+            try:
+                max_workers = int(max_workers)
+                if max_workers < 0:
+                    return jsonify({
+                        "status": "error",
+                        "message": "max_workers must be >= 0 or null",
+                    }), 400
+            except (ValueError, TypeError):
+                return jsonify({
+                    "status": "error",
+                    "message": "max_workers must be an integer or null",
+                }), 400
+        
+        # Save configuration
+        success = set_optimizer_config(max_workers=max_workers)
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Configuration saved",
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to save configuration",
+            }), 500
+            
+    except Exception as e:
+        _Logger.error("Error setting optimizer config: %s", e, exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.post("/api/optimizer/run")
+def run_optimizer():
+    """
+    Start the settings optimizer to find the best configuration.
+    
+    The optimizer will:
+    1. Save current settings
+    2. Cycle through different feature configurations
+    3. Train both single-step and two-step models
+    4. Find the configuration with the lowest Val MAPE (%)
+    5. Save results to database
+    
+    This endpoint starts the optimization in the background and returns immediately.
+    Use /api/optimizer/status to poll for progress.
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Optimizer started",
+        "total_configurations": 12
+    }
+    """
+    global _optimizer_progress, _optimizer_running, _optimizer_thread
+    
+    with _optimizer_lock:
+        if _optimizer_running:
+            return jsonify({
+                "status": "error",
+                "message": "Optimizer is already running",
+            }), 400
+        
+        _optimizer_running = True
+        _optimizer_progress = OptimizerProgress(
+            total_configurations=0,
+            completed_configurations=0,
+            current_configuration="",
+            current_model_type="",
+            phase="initializing",
+            start_time=datetime.now(),
+        )
+    
+    try:
+        # Start optimizer in background thread
+        _optimizer_thread = threading.Thread(target=_run_optimizer_in_thread, daemon=True)
+        _optimizer_thread.start()
+        
+        _Logger.info("Optimizer thread started")
+        
+        return jsonify({
+            "status": "success",
+            "message": "Optimizer started in background. Use /api/optimizer/status to check progress.",
+            "running": True,
+        })
+        
+    except Exception as e:
+        with _optimizer_lock:
+            _optimizer_running = False
+        _Logger.error("Error starting optimizer: %s", e, exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/optimizer/status")
+def get_optimizer_status():
+    """
+    Get the current status of the optimizer.
+    
+    Response:
+    {
+        "status": "success",
+        "running": false,
+        "progress": {...}
+    }
+    """
+    global _optimizer_progress, _optimizer_running
+    
+    with _optimizer_lock:
+        if _optimizer_progress is None:
+            return jsonify({
+                "status": "success",
+                "running": _optimizer_running,
+                "progress": None,
+                "message": "No optimization has been run yet",
+            })
+        
+        progress = _optimizer_progress
+        is_running = _optimizer_running
+    
+    response_data = {
+        "status": "success",
+        "running": is_running,
+        "progress": {
+            "phase": progress.phase,
+            "total_configurations": progress.total_configurations,
+            "completed_configurations": progress.completed_configurations,
+            "current_configuration": progress.current_configuration,
+            "current_model_type": progress.current_model_type,
+            "log": progress.log_messages,
+            "run_id": progress.run_id,  # Include run_id for database queries
+        },
+    }
+    
+    # Include results from database if optimization is complete or in progress
+    if progress.run_id:
+        # Get top 20 results from database (sorted by MAPE)
+        from db.optimizer_storage import get_optimizer_run_top_results
+        top_results = get_optimizer_run_top_results(progress.run_id, limit=20)
+        if top_results:
+            response_data["progress"]["top_results"] = top_results
+        
+        # Include error message if phase is error
+        if progress.phase == "error" and progress.error_message:
+            response_data["progress"]["error"] = progress.error_message
+    
+    if progress.best_result:
+        response_data["progress"]["best_result"] = {
+            "config_name": progress.best_result.config_name,
+            "model_type": progress.best_result.model_type,
+            "val_mape_pct": round(progress.best_result.val_mape_pct, 2) if progress.best_result.val_mape_pct else None,
+            "experimental_features": progress.best_result.experimental_features,
+        }
+    
+    return jsonify(response_data)
+
+
+@app.post("/api/optimizer/apply")
+def apply_optimizer_result():
+    """
+    Apply the best configuration found by the optimizer.
+    
+    This will save the experimental feature settings and optionally
+    enable/disable two-step prediction based on the best result.
+    
+    Request body (optional):
+    {
+        "enable_two_step": true  // Whether to enable two-step if that was best
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Best configuration applied",
+        "applied_settings": {...}
+    }
+    """
+    global _optimizer_progress
+    
+    if _optimizer_progress is None or _optimizer_progress.best_result is None:
+        return jsonify({
+            "status": "error",
+            "message": "No optimization results to apply. Run the optimizer first.",
+        }), 400
+    
+    try:
+        data = request.get_json() or {}
+        enable_two_step = data.get("enable_two_step", True)
+        
+        best = _optimizer_progress.best_result
+        
+        success = apply_best_configuration(
+            best_result=best,
+            enable_two_step=enable_two_step and best.model_type == "two_step",
+        )
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Best configuration applied and saved",
+                "applied_settings": {
+                    "config_name": best.config_name,
+                    "model_type": best.model_type,
+                    "experimental_features": best.experimental_features,
+                    "two_step_enabled": enable_two_step and best.model_type == "two_step",
+                    "val_mape_pct": round(best.val_mape_pct, 2) if best.val_mape_pct else None,
+                },
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to save configuration",
+            }), 500
+            
+    except Exception as e:
+        _Logger.error("Error applying optimizer result: %s", e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.post("/api/optimizer/apply/<int:result_id>")
+def apply_optimizer_result_by_id(result_id: int):
+    """
+    Apply a specific optimizer result by its database ID.
+    
+    This allows applying any result from the results table, not just the best one.
+    
+    Path parameter:
+        result_id: The database ID of the optimizer result to apply
+    
+    Request body (optional):
+    {
+        "enable_two_step": true  // Whether to enable two-step if that was the model type
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Configuration applied",
+        "applied_settings": {...}
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        enable_two_step = data.get("enable_two_step", True)
+        
+        # Retrieve the result from database
+        result_dict = get_optimizer_result_by_id(result_id)
+        
+        if not result_dict:
+            return jsonify({
+                "status": "error",
+                "message": f"Optimizer result with ID {result_id} not found",
+            }), 404
+        
+        # Convert to OptimizationResult for apply function
+        from ml.optimizer import OptimizationResult
+        
+        result = OptimizationResult(
+            config_name=result_dict["config_name"],
+            model_type=result_dict["model_type"],
+            experimental_features=result_dict["experimental_features"],
+            complete_feature_config=result_dict.get("complete_feature_config"),  # New field
+            val_mape_pct=result_dict["val_mape_pct"],
+            val_mae_kwh=result_dict["val_mae_kwh"],
+            val_r2=result_dict["val_r2"],
+            train_samples=result_dict["train_samples"],
+            val_samples=result_dict["val_samples"],
+            success=result_dict["success"],
+            error_message=result_dict["error_message"],
+        )
+        
+        success = apply_best_configuration(
+            best_result=result,
+            enable_two_step=enable_two_step and result.model_type == "two_step",
+        )
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Configuration applied and saved",
+                "applied_settings": {
+                    "config_name": result.config_name,
+                    "model_type": result.model_type,
+                    "experimental_features": result.experimental_features,
+                    "two_step_enabled": enable_two_step and result.model_type == "two_step",
+                    "val_mape_pct": round(result.val_mape_pct, 2) if result.val_mape_pct else None,
+                },
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to save configuration",
+            }), 500
+            
+    except Exception as e:
+        _Logger.error("Error applying optimizer result %d: %s", result_id, e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/optimizer/runs")
+def get_optimizer_runs():
+    """
+    Get a list of recent optimizer runs.
+    
+    Query parameters:
+        limit: Maximum number of runs to return (default 10)
+    
+    Response:
+    {
+        "status": "success",
+        "runs": [
+            {
+                "id": 1,
+                "start_time": "2025-12-03T10:00:00",
+                "end_time": "2025-12-03T10:15:00",
+                "phase": "complete",
+                "total_configurations": 12,
+                "completed_configurations": 12,
+                "best_result": {...}
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        limit = request.args.get("limit", 10, type=int)
+        runs = list_optimizer_runs(limit=limit)
+        
+        return jsonify({
+            "status": "success",
+            "runs": runs,
+        })
+        
+    except Exception as e:
+        _Logger.error("Error retrieving optimizer runs: %s", e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/optimizer/runs/<int:run_id>")
+def get_optimizer_run_details(run_id: int):
+    """
+    Get detailed information about a specific optimizer run.
+    
+    Path parameter:
+        run_id: The database ID of the optimizer run
+    
+    Response:
+    {
+        "status": "success",
+        "run": {
+            "id": 1,
+            "start_time": "2025-12-03T10:00:00",
+            "end_time": "2025-12-03T10:15:00",
+            "phase": "complete",
+            "total_configurations": 12,
+            "completed_configurations": 12,
+            "best_result": {...},
+            "results": [...]
+        }
+    }
+    """
+    try:
+        run = get_optimizer_run_by_id(run_id)
+        
+        if not run:
+            return jsonify({
+                "status": "error",
+                "message": f"Optimizer run with ID {run_id} not found",
+            }), 404
+        
+        return jsonify({
+            "status": "success",
+            "run": run,
+        })
+        
+    except Exception as e:
+        _Logger.error("Error retrieving optimizer run %d: %s", run_id, e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.get("/api/optimizer/latest")
+def get_latest_optimizer_run_api():
+    """
+    Get the most recent optimizer run with all its results.
+    
+    Response:
+    {
+        "status": "success",
+        "run": {
+            "id": 1,
+            "start_time": "2025-12-03T10:00:00",
+            "end_time": "2025-12-03T10:15:00",
+            "phase": "complete",
+            "total_configurations": 12,
+            "completed_configurations": 12,
+            "best_result": {...},
+            "results": [...]
+        }
+    }
+    """
+    try:
+        run = get_latest_optimizer_run()
+        
+        if not run:
+            return jsonify({
+                "status": "success",
+                "run": None,
+                "message": "No optimizer runs found in database",
+            })
+        
+        return jsonify({
+            "status": "success",
+            "run": run,
+        })
+        
+    except Exception as e:
+        _Logger.error("Error retrieving latest optimizer run: %s", e)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+# =============================================================================
+# SENSOR CONFIGURATION ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/sensors/category_config")
+def get_sensor_category_config_api():
+    """
+    Get the current sensor category configuration.
+    
+    Returns all sensors grouped by type with their configuration and status.
+    Core sensors are always enabled and cannot be disabled.
+    Experimental sensors can be enabled/disabled.
+    
+    Response:
+    {
+        "status": "success",
+        "config": {
+            "core_sensor_count": 6,
+            "experimental_sensor_count": 5,
+            "enabled_sensor_count": 6,
+            "migrated_from_config_yaml": true
+        },
+        "sensors_by_type": {
+            "weather": [...],
+            "indoor": [...],
+            "heating": [...],
+            "usage": [...]
+        },
+        "enabled_entity_ids": ["sensor.outdoor_temp", ...]
+    }
+    """
+    try:
+        config = get_sensor_category_config()
+        
+        return jsonify({
+            "status": "success",
+            "config": {
+                "core_sensor_count": len(CORE_SENSORS),
+                "experimental_sensor_count": len(EXPERIMENTAL_SENSORS),
+                "enabled_sensor_count": len(config.get_enabled_sensors()),
+                "migrated_from_config_yaml": config.migrated_from_config_yaml,
+            },
+            "sensors_by_type": config.get_sensors_by_type(),
+            "enabled_entity_ids": config.get_enabled_sensor_entity_ids(),
+        })
+    except Exception as e:
+        _Logger.error("Error getting sensor category config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/sensors/toggle")
+def toggle_sensor():
+    """
+    Enable or disable an experimental sensor.
+    
+    Core sensors cannot be toggled (they are always enabled).
+    
+    Request body:
+    {
+        "category_name": "pressure",
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Sensor 'pressure' is now enabled",
+        "enabled_sensors": [...]
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        category_name = data.get("category_name")
+        enabled = data.get("enabled")
+        
+        if not category_name:
+            return jsonify({
+                "status": "error",
+                "message": "category_name is required",
+            }), 400
+        
+        if enabled is None:
+            return jsonify({
+                "status": "error",
+                "message": "enabled is required (true or false)",
+            }), 400
+        
+        # Verify sensor exists
+        sensor_def = get_sensor_definition(category_name)
+        if sensor_def is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Unknown sensor category: {category_name}",
+            }), 400
+        
+        # Check if it's a core sensor
+        if sensor_def.is_core:
+            return jsonify({
+                "status": "error",
+                "message": f"Cannot toggle core sensor '{category_name}'. Core sensors are always enabled.",
+            }), 400
+        
+        config = get_sensor_category_config()
+        
+        if enabled:
+            result = config.enable_sensor(category_name)
+        else:
+            result = config.disable_sensor(category_name)
+        
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to toggle sensor '{category_name}'",
+            }), 500
+        
+        # Save configuration
+        config.save()
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Sensor '{category_name}' is now {status}",
+            "enabled_sensors": [s.category_name for s in config.get_enabled_sensors()],
+        })
+    except Exception as e:
+        _Logger.error("Error toggling sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/sensors/set_entity")
+def set_sensor_entity():
+    """
+    Set the entity ID for a sensor category.
+    
+    Works for both core and experimental sensors.
+    
+    Request body:
+    {
+        "category_name": "outdoor_temp",
+        "entity_id": "sensor.my_outdoor_temperature"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Entity ID for 'outdoor_temp' set to 'sensor.my_outdoor_temperature'",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        category_name = data.get("category_name")
+        entity_id = data.get("entity_id", "").strip()
+        
+        if not category_name:
+            return jsonify({
+                "status": "error",
+                "message": "category_name is required",
+            }), 400
+        
+        if not entity_id:
+            return jsonify({
+                "status": "error",
+                "message": "entity_id is required and cannot be empty",
+            }), 400
+        
+        # Verify sensor exists
+        sensor_def = get_sensor_definition(category_name)
+        if sensor_def is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Unknown sensor category: {category_name}",
+            }), 400
+        
+        config = get_sensor_category_config()
+        result = config.set_entity_id(category_name, entity_id)
+        
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to set entity ID for '{category_name}'",
+            }), 500
+        
+        # Save configuration
+        config.save()
+        
+        sensor_config = config.get_sensor_config(category_name)
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Entity ID for '{category_name}' set to '{entity_id}'",
+            "sensor": {
+                "category_name": category_name,
+                "display_name": sensor_def.display_name,
+                "entity_id": sensor_config.entity_id,
+                "enabled": sensor_config.enabled,
+                "is_core": sensor_def.is_core,
+            },
+        })
+    except Exception as e:
+        _Logger.error("Error setting sensor entity ID: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/sensors/set_unit")
+def set_sensor_unit():
+    """
+    Set the unit for a sensor category.
+    
+    Works for both core and experimental sensors.
+    
+    Request body:
+    {
+        "category_name": "outdoor_temp",
+        "unit": "°C"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Unit for 'outdoor_temp' set to '°C'",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        category_name = data.get("category_name")
+        unit = data.get("unit", "").strip()
+        
+        if not category_name:
+            return jsonify({
+                "status": "error",
+                "message": "category_name is required",
+            }), 400
+        
+        # Unit can be empty to clear/reset it
+        
+        # Verify sensor exists
+        sensor_def = get_sensor_definition(category_name)
+        if sensor_def is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Unknown sensor category: {category_name}",
+            }), 400
+        
+        config = get_sensor_category_config()
+        result = config.set_unit(category_name, unit)
+        
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"Failed to set unit for '{category_name}'",
+            }), 500
+        
+        # Save configuration
+        config.save()
+        
+        sensor_config = config.get_sensor_config(category_name)
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Unit for '{category_name}' set to '{unit}'" if unit else f"Unit for '{category_name}' cleared",
+            "sensor": {
+                "category_name": category_name,
+                "display_name": sensor_def.display_name,
+                "entity_id": sensor_config.entity_id,
+                "unit": sensor_config.unit,
+                "enabled": sensor_config.enabled,
+                "is_core": sensor_def.is_core,
+            },
+        })
+    except Exception as e:
+        _Logger.error("Error setting sensor unit: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.get("/api/sensors/definitions")
+def get_sensor_definitions_api():
+    """
+    Get all sensor definitions (metadata).
+    
+    Returns the complete list of available sensors with their metadata,
+    including core/experimental status, description, and units.
+    
+    Response:
+    {
+        "status": "success",
+        "core_sensors": [...],
+        "experimental_sensors": [...],
+        "total_count": 11
+    }
+    """
+    try:
+        core_list = [s.to_dict() for s in CORE_SENSORS]
+        experimental_list = [s.to_dict() for s in EXPERIMENTAL_SENSORS]
+        
+        return jsonify({
+            "status": "success",
+            "core_sensors": core_list,
+            "experimental_sensors": experimental_list,
+            "total_count": len(core_list) + len(experimental_list),
+        })
+    except Exception as e:
+        _Logger.error("Error getting sensor definitions: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =============================================================================
+# VIRTUAL SENSORS ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/virtual_sensors/list")
+def list_virtual_sensors():
+    """
+    Get list of all virtual sensors.
+    
+    Response:
+    {
+        "status": "success",
+        "sensors": [...],
+        "count": 5
+    }
+    """
+    try:
+        config = get_virtual_sensors_config()
+        sensors = config.get_all_sensors()
+        
+        return jsonify({
+            "status": "success",
+            "sensors": [s.to_dict() for s in sensors],
+            "count": len(sensors),
+        })
+    except Exception as e:
+        _Logger.error("Error listing virtual sensors: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/virtual_sensors/add")
+def add_virtual_sensor():
+    """
+    Add a new virtual sensor.
+    
+    Request body:
+    {
+        "name": "temp_delta",
+        "display_name": "Temperature Delta",
+        "description": "Difference between target and indoor temperature",
+        "source_sensor1": "target_temp",
+        "source_sensor2": "indoor_temp",
+        "operation": "subtract",
+        "unit": "°C"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Virtual sensor 'temp_delta' created",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        # Validate required fields
+        required_fields = ["name", "display_name", "description", "source_sensor1", "source_sensor2", "operation"]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({
+                    "status": "error",
+                    "message": f"'{field}' is required",
+                }), 400
+        
+        # Validate operation
+        try:
+            operation = VirtualSensorOperation(data["operation"])
+        except ValueError:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid operation. Must be one of: {[op.value for op in VirtualSensorOperation]}",
+            }), 400
+        
+        # Create virtual sensor definition
+        sensor = VirtualSensorDefinition(
+            name=data["name"],
+            display_name=data["display_name"],
+            description=data["description"],
+            source_sensor1=data["source_sensor1"],
+            source_sensor2=data["source_sensor2"],
+            operation=operation,
+            unit=data.get("unit", ""),
+            enabled=data.get("enabled", True),
+        )
+        
+        # Add to configuration
+        config = get_virtual_sensors_config()
+        if not config.add_sensor(sensor):
+            return jsonify({
+                "status": "error",
+                "message": f"Virtual sensor '{sensor.name}' already exists",
+            }), 400
+        
+        # Save configuration
+        config.save()
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Virtual sensor '{sensor.name}' created",
+            "sensor": sensor.to_dict(),
+        })
+    except Exception as e:
+        _Logger.error("Error adding virtual sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.delete("/api/virtual_sensors/<name>")
+def delete_virtual_sensor(name: str):
+    """
+    Delete a virtual sensor.
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Virtual sensor deleted"
+    }
+    """
+    try:
+        config = get_virtual_sensors_config()
+        
+        if not config.remove_sensor(name):
+            return jsonify({
+                "status": "error",
+                "message": f"Virtual sensor '{name}' not found",
+            }), 404
+        
+        # Save configuration
+        config.save()
+        
+        return jsonify({
+            "status": "success",
+            "message": "Virtual sensor deleted",
+        })
+    except Exception as e:
+        _Logger.error("Error deleting virtual sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/virtual_sensors/<name>/toggle")
+def toggle_virtual_sensor(name: str):
+    """
+    Enable or disable a virtual sensor.
+    
+    Request body:
+    {
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Virtual sensor enabled",
+        "sensor": {...}
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or "enabled" not in data:
+            return jsonify({
+                "status": "error",
+                "message": "enabled field is required",
+            }), 400
+        
+        config = get_virtual_sensors_config()
+        sensor = config.get_sensor(name)
+        
+        if sensor is None:
+            return jsonify({
+                "status": "error",
+                "message": f"Virtual sensor '{name}' not found",
+            }), 404
+        
+        enabled = bool(data["enabled"])
+        
+        if enabled:
+            config.enable_sensor(name)
+        else:
+            config.disable_sensor(name)
+        
+        # Save configuration
+        config.save()
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Virtual sensor {status}",
+            "sensor": sensor.to_dict(),
+        })
+    except Exception as e:
+        _Logger.error("Error toggling virtual sensor: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =============================================================================
+# FEATURE STATS CONFIGURATION ENDPOINTS
+# =============================================================================
+
+
+@app.get("/api/feature_stats/config")
+def get_feature_stats_config_api():
+    """
+    Get feature statistics configuration for all sensors.
+    
+    Shows which time-based statistics (avg_1h, avg_6h, avg_24h, avg_7d)
+    are enabled for each sensor.
+    
+    Response:
+    {
+        "status": "success",
+        "sensors": {
+            "outdoor_temp": {
+                "enabled_stats": ["avg_1h", "avg_6h", "avg_24h"],
+                "stat_categories": ["outdoor_temp_avg_1h", "outdoor_temp_avg_6h", "outdoor_temp_avg_24h"]
+            },
+            ...
+        },
+        "all_stat_types": ["avg_1h", "avg_6h", "avg_24h", "avg_7d"]
+    }
+    """
+    try:
+        stats_config = get_feature_stats_config()
+        sensor_category_config = get_sensor_category_config()
+        virtual_sensors_config = get_virtual_sensors_config()
+        
+        # Get all available sensors (raw + virtual)
+        all_sensors = []
+        
+        # Add raw sensors
+        for sensor_config in sensor_category_config.get_enabled_sensors():
+            all_sensors.append({
+                "name": sensor_config.category_name,
+                "type": "raw",
+                "enabled": sensor_config.enabled,
+            })
+        
+        # Add virtual sensors
+        for virtual_sensor in virtual_sensors_config.get_enabled_sensors():
+            all_sensors.append({
+                "name": virtual_sensor.name,
+                "type": "virtual",
+                "enabled": virtual_sensor.enabled,
+            })
+        
+        # Build response with stats configuration for each sensor
+        sensors_with_stats = {}
+        for sensor in all_sensors:
+            sensor_name = sensor["name"]
+            enabled_stats = stats_config.get_enabled_stats_for_sensor(sensor_name)
+            stat_categories = [
+                stats_config.get_sensor_config(sensor_name).get_stat_category_name(stat)
+                for stat in enabled_stats
+            ]
+            
+            sensors_with_stats[sensor_name] = {
+                "sensor_type": sensor["type"],
+                "enabled_stats": [s.value for s in enabled_stats],
+                "stat_categories": stat_categories,
+            }
+        
+        return jsonify({
+            "status": "success",
+            "sensors": sensors_with_stats,
+            "all_stat_types": [s.value for s in StatType],
+        })
+    except Exception as e:
+        _Logger.error("Error getting feature stats config: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/feature_stats/set")
+def set_feature_stat():
+    """
+    Enable or disable a specific statistic for a sensor.
+    
+    Request body:
+    {
+        "sensor_name": "outdoor_temp",
+        "stat_type": "avg_1h",
+        "enabled": true
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Statistic 'avg_1h' for 'outdoor_temp' enabled",
+        "enabled_stats": ["avg_1h", "avg_6h", "avg_24h"]
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "Request body required",
+            }), 400
+        
+        sensor_name = data.get("sensor_name")
+        stat_type_str = data.get("stat_type")
+        enabled = data.get("enabled")
+        
+        if not sensor_name or not stat_type_str or enabled is None:
+            return jsonify({
+                "status": "error",
+                "message": "sensor_name, stat_type, and enabled are required",
+            }), 400
+        
+        # Validate stat_type
+        try:
+            stat_type = StatType(stat_type_str)
+        except ValueError:
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid stat_type. Must be one of: {[s.value for s in StatType]}",
+            }), 400
+        
+        # Update configuration
+        config = get_feature_stats_config()
+        config.set_stat_enabled(sensor_name, stat_type, bool(enabled))
+        
+        # Save configuration
+        config.save()
+        
+        # Get updated stats for this sensor
+        enabled_stats = config.get_enabled_stats_for_sensor(sensor_name)
+        
+        status = "enabled" if enabled else "disabled"
+        return jsonify({
+            "status": "success",
+            "message": f"Statistic '{stat_type.value}' for '{sensor_name}' {status}",
+            "enabled_stats": [s.value for s in enabled_stats],
+        })
+    except Exception as e:
+        _Logger.error("Error setting feature stat: %s", e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

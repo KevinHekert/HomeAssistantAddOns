@@ -1,4 +1,3 @@
-import os
 import logging
 import time
 import threading
@@ -8,24 +7,31 @@ from db.core import test_db_connection, init_db_schema
 from db.samples import get_latest_sample_timestamp
 from db.sync_state import get_sync_status
 from db.sync_config import get_sensor_sync_interval, get_sensor_loop_interval
+from db.sensor_category_config import get_configured_sensor_entities
 from ha.ha_api import sync_history_for_entity
 
 _Logger = logging.getLogger(__name__)
 
-# Let op: entity_id’s mogen geen spaties hebben – pas deze defaults aan naar jouw echte IDs
-SENSOR_ENTITIES = [
-    os.environ.get("WIND_ENTITY_ID", "sensor.knmi_windsnelheid"),
-    os.environ.get("OUTDOOR_TEMP_ENTITY_ID", "sensor.smile_outdoor_temperature"),
-    os.environ.get("FLOW_TEMP_ENTITY_ID", "sensor.opentherm_water_temperature"),
-    os.environ.get("RETURN_TEMP_ENTITY_ID", "sensor.opentherm_return_temperature"),
-    os.environ.get("HUMIDITY_ENTITY_ID", "sensor.knmi_luchtvochtigheid"),
-    os.environ.get("PRESSURE_ENTITY_ID", "sensor.knmi_luchtdruk"),
-    os.environ.get("HP_KWH_TOTAL_ENTITY_ID", "sensor.extra_total"),
-    os.environ.get("DHW_TEMP_ENTITY_ID", "sensor.opentherm_dhw_temperature"),
-    os.environ.get("INDOOR_TEMP_ENTITY_ID", "sensor.anna_temperature"),
-    os.environ.get("TARGET_TEMP_ENTITY_ID", "sensor.anna_setpoint"),
-    os.environ.get("DHW_ACTIVE_ENTITY_ID", "binary_sensor.dhw_active"),
-]
+
+def _get_sensor_entities() -> list[str]:
+    """
+    Get the list of sensor entity IDs to sync.
+    
+    Uses the new sensor category configuration system which supports:
+    - Core sensors (always enabled)
+    - Experimental sensors (optionally enabled)
+    
+    Entity IDs are loaded from /data/sensor_category_config.json.
+    On first run, values are migrated from environment variables (config.yaml).
+    
+    Returns:
+        List of entity IDs for all enabled sensors.
+    """
+    entities = get_configured_sensor_entities()
+    if not entities:
+        _Logger.warning("No sensor entities configured. Check sensor configuration.")
+    return entities
+
 
 _sensor_worker_started = False
 
@@ -87,7 +93,7 @@ def _sync_entity(entity_id: str) -> None:
             effective_since = None
 
         _Logger.debug(
-            "Effective since voor %s vóór sync: %s",
+            "Effective since voor %s voor sync: %s",
             entity_id,
             effective_since,
         )
@@ -151,7 +157,10 @@ def sensor_logging_worker():
             test_db_connection()
             init_db_schema()
 
-            for entity_id in SENSOR_ENTITIES:
+            # Get sensor entities from configuration (supports Core + Experimental sensors)
+            sensor_entities = _get_sensor_entities()
+            
+            for entity_id in sensor_entities:
                 try:
                     _sync_entity(entity_id)
                 except Exception as e:

@@ -1,5 +1,5 @@
 name: Energy Orchestrator
-version: "0.0.0.72"
+version: "0.0.0.118"
 slug: energy_orchestrator
 description: Flask UI voor toekomstige energie-optimisatie.
 arch:
@@ -16,11 +16,17 @@ build_from:
 
 homeassistant_api: true
 
+# Resource limits to prevent OOM kills during optimizer runs
+map_ram: 1024
+max_ram: 2048
+
 options:
   db_host: core-mariadb
   db_user: energy_orchestrator
   db_password: ""
   db_name: energy_orchestrator
+  # Sensor entity IDs - these are used for initial migration only.
+  # After first run, configure sensors via the UI Configuration tab.
   wind_entity_id: sensor.knmi_windsnelheid
   outdoor_temp_entity_id: sensor.smile_outdoor_temperature
   flow_temp_entity_id: sensor.opentherm_water_temperature
@@ -38,6 +44,7 @@ schema:
   db_user: str
   db_password: str
   db_name: str
+  # Sensor entity IDs are optional - migrated to UI configuration on first run
   wind_entity_id: str?
   outdoor_temp_entity_id: str?
   flow_temp_entity_id: str?

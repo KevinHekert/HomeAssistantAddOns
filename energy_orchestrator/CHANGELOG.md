@@ -2,6 +2,18 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.114] - 2025-12-03
+
+- **Disabled Automatic Test Runs on PR Commits**
+  - **Issue**: Tests were running automatically on every commit in a PR, causing excessive test runs when there are many commits
+  - **Problem**: Tests take a long time, and multiple commits in one PR created many unnecessary test runs
+  - **Solution**: Removed `pull_request_target` trigger from the test workflow
+  - **Impact**: Tests no longer run automatically on PR commits, reducing CI load and runtime
+  - **Manual Testing**: Tests can still be triggered manually via GitHub Actions workflow_dispatch
+    - Go to Actions tab → "Run Tests (Energy Orchestrator)" → "Run workflow" → Select branch
+  - **Automatic Testing**: Tests still run automatically when code is merged to main/master branches
+  - **Files Changed**: `.github/workflows/test-energy-orchestrator.yml`
+
 ## [0.0.0.113] - 2025-12-03
 
 - **Fix Optimizer Results Application**

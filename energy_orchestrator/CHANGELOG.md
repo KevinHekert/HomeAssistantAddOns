@@ -2,6 +2,35 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.115] - 2025-12-03
+
+- **Fixed JavaScript Null Reference Error in Optimizer Tab**
+  - **Issue**: JavaScript error "Cannot read properties of null (reading 'style')" when loading optimizer results
+  - **Root Cause**: Multiple functions were using incorrect DOM element IDs that didn't match the actual HTML elements
+    - Used `optimizerStatus` instead of `optimizerStatusDisplay`
+    - Used `optimizerResults` instead of `optimizerResultsTable`
+    - Used `optimizerBestResult` instead of `optimizerBestResultCard`
+  - **Solution**: 
+    - Corrected all DOM element ID references to match actual HTML IDs in 4 functions:
+      - `loadLatestOptimizerResults()`
+      - `getOptimizerStatus()`
+      - `applyOptimizerResult()`
+      - `applyResultById()`
+    - Added defensive null checks before accessing element properties to prevent future errors
+    - Functions now fail gracefully if elements are missing
+  - **Impact**: Optimizer tab now loads properly without JavaScript errors when switching tabs
+  - **Files Changed**: `energy_orchestrator/app/templates/index.html`
+
+- **Added Refresh Results Button to Optimizer Tab**
+  - **Feature**: Added a "🔄 Refresh Results" button to manually reload the optimization results table
+  - **Location**: Top-right corner of the "Optimization Results (Top 30)" card in the Optimizer tab
+  - **Behavior**: 
+    - Button is disabled during loading to prevent multiple simultaneous requests
+    - Shows "Loading results..." message while fetching data
+    - Re-enables after loading completes or on error
+  - **Use Case**: Allows users to manually refresh the results table without switching tabs or reloading the page
+  - **Files Changed**: `energy_orchestrator/app/templates/index.html`
+
 ## [0.0.0.114] - 2025-12-03
 
 - **Disabled Automatic Test Runs on PR Commits**

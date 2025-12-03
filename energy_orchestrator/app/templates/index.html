@@ -879,7 +879,10 @@
 
         <!-- Results Table (always visible, shows top 30) -->
         <div class="card">
-            <h3>📊 Optimization Results (Top 30)</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="margin: 0;">📊 Optimization Results (Top 30)</h3>
+                <button class="action-btn secondary" id="refreshResultsBtn" onclick="loadOptimizerResultsTable()" style="padding: 0.5rem 1rem;">🔄 Refresh Results</button>
+            </div>
             <p class="example-description">Click on a row to view features used in training. Results are automatically loaded from the last optimizer run.</p>
             <div id="optimizerResultsTable"></div>
         </div>
@@ -3182,6 +3185,10 @@
 
         async function loadOptimizerResultsTable() {
             const resultsTable = document.getElementById('optimizerResultsTable');
+            const refreshBtn = document.getElementById('refreshResultsBtn');
+            
+            if (refreshBtn) refreshBtn.disabled = true;
+            if (resultsTable) resultsTable.innerHTML = '<p style="color: var(--text-secondary);">Loading results...</p>';
             
             try {
                 const response = await fetch('api/optimizer/latest');
@@ -3245,6 +3252,8 @@
                 }
             } catch (error) {
                 resultsTable.innerHTML = '<p style="color: var(--error-text);">Error loading results: ' + error.message + '</p>';
+            } finally {
+                if (refreshBtn) refreshBtn.disabled = false;
             }
         }
 
@@ -3337,8 +3346,10 @@
         }
 
         async function getOptimizerStatus() {
-            const statusDiv = document.getElementById('optimizerStatus');
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
             const btn = document.getElementById('optimizerStatusBtn');
+            
+            if (!btn || !statusDiv) return;
             
             btn.disabled = true;
             statusDiv.className = 'status-message loading';
@@ -3389,14 +3400,17 @@
         }
 
         async function applyOptimizerResult() {
-            const statusDiv = document.getElementById('optimizerStatus');
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
             const btn = document.getElementById('applyOptimizerBtn');
             
             if (!confirm('Apply the best configuration found by the optimizer? This will save the new settings.')) {
                 return;
             }
             
+            if (!statusDiv || !btn) return;
+            
             btn.disabled = true;
+            statusDiv.style.display = 'block';
             statusDiv.className = 'status-message loading';
             statusDiv.textContent = 'Applying best configuration...';
             
@@ -3439,7 +3453,11 @@
                 return;
             }
             
-            const statusDiv = document.getElementById('optimizerStatus');
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
+            
+            if (!statusDiv) return;
+            
+            statusDiv.style.display = 'block';
             statusDiv.className = 'status-message loading';
             statusDiv.textContent = 'Applying configuration...';
             
@@ -3476,11 +3494,11 @@
         }
 
         async function loadLatestOptimizerResults() {
-            const statusDiv = document.getElementById('optimizerStatus');
+            const statusDiv = document.getElementById('optimizerStatusDisplay');
             const logDiv = document.getElementById('optimizerLog');
             const logContent = document.getElementById('optimizerLogContent');
-            const resultsDiv = document.getElementById('optimizerResults');
-            const bestResultDiv = document.getElementById('optimizerBestResult');
+            const resultsDiv = document.getElementById('optimizerResultsTable');
+            const bestResultDiv = document.getElementById('optimizerBestResultCard');
             const applyBtn = document.getElementById('applyOptimizerBtn');
             
             try {
@@ -3491,7 +3509,7 @@
                     const run = data.run;
                     
                     // Show log if available
-                    if (run.start_time) {
+                    if (run.start_time && logDiv && logContent) {
                         logDiv.style.display = 'block';
                         const startTime = new Date(run.start_time).toLocaleString();
                         const endTime = run.end_time ? new Date(run.end_time).toLocaleString() : 'In progress';
@@ -3499,20 +3517,26 @@
                     }
                     
                     // Show best result if available
-                    if (run.best_result) {
+                    if (run.best_result && bestResultDiv) {
                         bestResultDiv.style.display = 'block';
-                        document.getElementById('optimizerBestConfig').textContent = run.best_result.config_name;
-                        document.getElementById('optimizerBestModel').textContent = run.best_result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step';
-                        document.getElementById('optimizerBestMape').textContent = run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A';
-                        applyBtn.style.display = 'inline-block';
+                        const bestConfigEl = document.getElementById('optimizerBestConfig');
+                        const bestModelEl = document.getElementById('optimizerBestModel');
+                        const bestMapeEl = document.getElementById('optimizerBestMape');
                         
-                        statusDiv.className = 'status-message success';
-                        statusDiv.textContent = '✓ Previous optimization results loaded. Best Val MAPE: ' + 
-                            (run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A');
+                        if (bestConfigEl) bestConfigEl.textContent = run.best_result.config_name;
+                        if (bestModelEl) bestModelEl.textContent = run.best_result.model_type === 'two_step' ? 'Two-Step' : 'Single-Step';
+                        if (bestMapeEl) bestMapeEl.textContent = run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A';
+                        if (applyBtn) applyBtn.style.display = 'inline-block';
+                        
+                        if (statusDiv) {
+                            statusDiv.className = 'status-message success';
+                            statusDiv.textContent = '✓ Previous optimization results loaded. Best Val MAPE: ' + 
+                                (run.best_result.val_mape_pct !== null ? run.best_result.val_mape_pct + '%' : 'N/A');
+                        }
                     }
                     
                     // Show results table
-                    if (run.results && run.results.length > 0) {
+                    if (run.results && run.results.length > 0 && resultsDiv) {
                         const maxResults = 30;
                         const totalResults = run.results.length;
                         let html = '<h4 style="margin-bottom: 0.5rem;">Results from Previous Run - Top ' + Math.min(maxResults, totalResults);
@@ -3571,8 +3595,10 @@
                     }
                 } else {
                     // No previous results
-                    statusDiv.className = 'status-message info';
-                    statusDiv.textContent = 'ℹ️ No previous optimization results found. Click "Run Optimizer" to start.';
+                    if (statusDiv) {
+                        statusDiv.className = 'status-message info';
+                        statusDiv.textContent = 'ℹ️ No previous optimization results found. Click "Run Optimizer" to start.';
+                    }
                 }
             } catch (error) {
                 console.error('Error loading latest optimizer results:', error);

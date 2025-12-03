@@ -2,7 +2,7 @@
 
 All notable changes to this add-on will be documented in this file.
 
-## [0.0.0.99] - 2025-12-03
+## [0.0.0.100] - 2025-12-03
 
 - **Reduce Optimizer Memory Usage**
   - Reduced max_workers from 3 to 1 in the model optimizer to prevent high RAM usage and OOM (Out Of Memory) kills

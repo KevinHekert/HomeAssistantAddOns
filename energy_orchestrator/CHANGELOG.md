@@ -2,6 +2,35 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.117] - 2025-12-03
+
+- **Background Resampling with Progress Monitoring**
+  - **Feature**: Resampling now runs in a background thread with real-time progress tracking
+  - **Changes**:
+    - Added `ResampleProgress` dataclass to track resampling progress
+    - Modified `resample_all_categories()` to accept optional `progress_callback` parameter
+    - Resampling reports progress every 50 slots with hour-based progress (e.g., "1/50 hours")
+    - Added `/api/resample/status` endpoint to poll for resampling progress
+    - Modified `/resample` endpoint to start resampling in background thread
+    - Added "Check Status" button to UI to manually check resampling progress
+    - Progress display shows:
+      - Current phase (initializing, resampling, calculating_stats, complete, error)
+      - Progress as hours and slots (e.g., "5/50 hours (60/600 slots)")
+      - Last 15 log messages with timestamps
+      - Real-time updates via polling every 2 seconds
+    - UI automatically starts polling when resample is triggered
+    - UI stops polling when resampling completes or errors
+  - **Benefits**:
+    - Users can navigate away while resampling runs
+    - Progress is visible throughout the operation
+    - No more waiting for long operations to complete
+  - **Files Changed**: 
+    - `energy_orchestrator/app/db/resample.py` - Added progress tracking
+    - `energy_orchestrator/app/app.py` - Added background threading and status endpoint
+    - `energy_orchestrator/app/templates/index.html` - Added status button and progress display
+    - `energy_orchestrator/config.yaml` - Version bump to 0.0.0.117
+    - `energy_orchestrator/CHANGELOG.md` - This entry
+
 ## [0.0.0.116] - 2025-12-03
 
 - **Improved Sensor Information Tab Organization**

@@ -67,6 +67,10 @@ from db.optimizer_storage import (
     get_optimizer_result_by_id,
     list_optimizer_runs,
 )
+from db.optimizer_config import (
+    get_optimizer_config,
+    set_optimizer_config,
+)
 from ml.heating_features import (
     build_heating_feature_dataset,
     compute_scenario_historical_features,
@@ -3248,9 +3252,12 @@ def _run_optimizer_in_thread():
             with _optimizer_lock:
                 _optimizer_progress = progress
         
+        # Get optimizer configuration from database
+        optimizer_config = get_optimizer_config()
+        configured_max_workers = optimizer_config.get("max_workers", None)
+        
         # Run the optimization with adaptive parallelism and memory throttling
-        # max_workers is now auto-calculated based on system resources
-        # max_memory_mb can be set via UI (TODO: add UI setting)
+        # configured_max_workers is read from UI settings (None or 0 = auto-calculate)
         progress = run_optimization(
             train_single_step_fn=train_heating_demand_model,
             train_two_step_fn=train_two_step_heating_demand_model,
@@ -3259,6 +3266,7 @@ def _run_optimizer_in_thread():
             min_samples=50,
             include_derived_features=True,  # Include derived features in optimization
             max_memory_mb=None,  # None = auto-detect (75% of available RAM)
+            configured_max_workers=configured_max_workers,  # From UI config
         )
         
         with _optimizer_lock:
@@ -3283,6 +3291,100 @@ def _run_optimizer_in_thread():
     finally:
         with _optimizer_lock:
             _optimizer_running = False
+
+
+@app.get("/api/optimizer/config")
+def get_optimizer_config_endpoint():
+    """
+    Get the current optimizer configuration.
+    
+    Returns the optimizer settings including max_workers.
+    
+    Response:
+    {
+        "status": "success",
+        "config": {
+            "max_workers": 5  // or null for auto-calculate
+        }
+    }
+    """
+    try:
+        config = get_optimizer_config()
+        return jsonify({
+            "status": "success",
+            "config": config,
+        })
+    except Exception as e:
+        _Logger.error("Error getting optimizer config: %s", e, exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
+
+
+@app.post("/api/optimizer/config")
+def set_optimizer_config_endpoint():
+    """
+    Set the optimizer configuration.
+    
+    Updates optimizer settings including max_workers.
+    
+    Request body:
+    {
+        "max_workers": 5  // or null/0 for auto-calculate
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "message": "Configuration saved"
+    }
+    """
+    try:
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "No data provided",
+            }), 400
+        
+        max_workers = data.get("max_workers", None)
+        
+        # Validate max_workers
+        if max_workers is not None:
+            try:
+                max_workers = int(max_workers)
+                if max_workers < 0:
+                    return jsonify({
+                        "status": "error",
+                        "message": "max_workers must be >= 0 or null",
+                    }), 400
+            except (ValueError, TypeError):
+                return jsonify({
+                    "status": "error",
+                    "message": "max_workers must be an integer or null",
+                }), 400
+        
+        # Save configuration
+        success = set_optimizer_config(max_workers=max_workers)
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Configuration saved",
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to save configuration",
+            }), 500
+            
+    except Exception as e:
+        _Logger.error("Error setting optimizer config: %s", e, exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+        }), 500
 
 
 @app.post("/api/optimizer/run")

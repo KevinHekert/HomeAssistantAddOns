@@ -2,6 +2,28 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.105] - 2025-12-03
+
+- **Add Manual Worker Limit Configuration with Per-Worker Memory Reporting**
+  - **New Feature**: Added UI-configurable optimizer max_workers setting
+    - Users can now manually limit the number of parallel workers (0 = auto-calculate)
+    - Configuration accessible through new API endpoints: GET/POST `/api/optimizer/config`
+    - Settings stored in new `optimizer_config` database table
+  - **Memory Management Improvements**:
+    - Each worker now reports memory usage before, after, and post-cleanup for each training run
+    - Memory delta logging helps identify potential memory leaks
+    - Automatic memory flushing after each worker run (existing garbage collection enhanced)
+    - Worker lifecycle automatically managed by ThreadPoolExecutor
+  - **Changes Made**:
+    1. Created new `OptimizerConfig` database model for storing optimizer settings
+    2. Added `db/optimizer_config.py` module for configuration management
+    3. Added `configured_max_workers` parameter to `run_optimization()` function
+    4. Enhanced `_train_single_configuration()` with per-worker memory reporting
+    5. Updated optimizer to use configured max_workers or auto-calculate
+    6. Added API endpoints for getting/setting optimizer configuration
+    7. Created comprehensive test suite for new functionality
+  - **Testing**: Added 2 new test files with full coverage of configuration and memory reporting
+
 ## [0.0.0.104] - 2025-12-03
 
 - **Fix Failing Tests After Feature Set Reduction**

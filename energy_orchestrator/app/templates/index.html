@@ -746,6 +746,31 @@
                 Your current settings will be saved before starting and restored after completion.
             </p>
             
+            <!-- Optimizer Configuration -->
+            <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                <h4 style="margin-top: 0; margin-bottom: 0.75rem;">⚙️ Optimizer Settings</h4>
+                <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                    <label for="maxWorkersInput" style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="color: var(--text-secondary);">Max Workers:</span>
+                        <input 
+                            type="number" 
+                            id="maxWorkersInput" 
+                            min="0" 
+                            max="20" 
+                            placeholder="0 (auto)" 
+                            style="width: 80px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-primary); padding: 0.35rem 0.5rem;"
+                            onchange="saveOptimizerConfig()"
+                        />
+                        <span style="color: var(--text-secondary); font-size: 0.85rem;">(0 = auto-calculate)</span>
+                    </label>
+                    <div id="optimizerConfigStatus" style="color: var(--text-secondary); font-size: 0.85rem;"></div>
+                </div>
+                <p style="margin: 0.5rem 0 0 0; color: var(--text-secondary); font-size: 0.85rem;">
+                    <strong>Tip:</strong> Leave at 0 to auto-calculate based on available CPU and memory. 
+                    Manual limit useful to prevent OOM kills on systems with limited memory.
+                </p>
+            </div>
+            
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
                 <button class="action-btn success" id="runOptimizerBtn" onclick="runOptimizer()">🔍 Start Optimization</button>
                 <button class="action-btn secondary" id="optimizerStatusBtn" onclick="getOptimizerStatus()">Check Status</button>
@@ -896,6 +921,7 @@
             loadSyncConfig();
             loadTwoStepPredictionStatus();
             loadWeatherConfig();
+            loadOptimizerConfig();
             // Auto-load features for Configuration tab (default active tab)
             loadFeatureConfigAuto();
         });
@@ -2793,6 +2819,63 @@
         // =============================================================================
         // SETTINGS OPTIMIZER FUNCTIONS
         // =============================================================================
+
+        async function loadOptimizerConfig() {
+            try {
+                const response = await fetch('api/optimizer/config');
+                const data = await response.json();
+                
+                if (response.ok && data.config) {
+                    const maxWorkers = data.config.max_workers;
+                    const input = document.getElementById('maxWorkersInput');
+                    if (input) {
+                        input.value = maxWorkers === null ? '' : maxWorkers;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading optimizer config:', error);
+            }
+        }
+
+        async function saveOptimizerConfig() {
+            const input = document.getElementById('maxWorkersInput');
+            const statusDiv = document.getElementById('optimizerConfigStatus');
+            
+            const value = input.value.trim();
+            const maxWorkers = value === '' ? null : parseInt(value, 10);
+            
+            if (maxWorkers !== null && (isNaN(maxWorkers) || maxWorkers < 0)) {
+                statusDiv.textContent = '✗ Invalid value (must be >= 0)';
+                statusDiv.style.color = 'var(--error-red)';
+                return;
+            }
+            
+            try {
+                const response = await fetch('api/optimizer/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ max_workers: maxWorkers })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.textContent = '✓ Saved';
+                    statusDiv.style.color = 'var(--accent-green)';
+                    setTimeout(() => {
+                        statusDiv.textContent = '';
+                    }, 2000);
+                } else {
+                    statusDiv.textContent = '✗ ' + data.message;
+                    statusDiv.style.color = 'var(--error-red)';
+                }
+            } catch (error) {
+                statusDiv.textContent = '✗ Error: ' + error.message;
+                statusDiv.style.color = 'var(--error-red)';
+            }
+        }
 
         async function runOptimizer() {
             const btn = document.getElementById('runOptimizerBtn');

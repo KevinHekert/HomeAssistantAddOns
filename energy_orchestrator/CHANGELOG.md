@@ -2,6 +2,18 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.109] - 2025-12-03
+
+- **Optimizer Results UI Improvements**
+  - Limit results table to top 30 configurations (sorted by Val MAPE)
+  - Add expandable row details showing all features used in training:
+    - Core features (15 features, green tags) - always used
+    - Experimental features (orange tags) - tested in configuration
+    - Training and validation sample counts
+    - Total feature count summary
+  - Click-to-expand/collapse feature details
+  - Auto-refresh log during optimization runs (2-second polling)
+
 ## [0.0.0.108] - 2025-12-03
 
 - **Fix Optimizer "'type' object is not iterable" Error**

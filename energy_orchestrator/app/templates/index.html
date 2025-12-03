@@ -2973,6 +2973,15 @@
             
             html += `<p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0.75rem 0 0 0; font-style: italic;">Total: ${coreFeatures.length} core + ${Object.values(features || {}).filter(v => v === true).length} experimental features = ${coreFeatures.length + Object.values(features || {}).filter(v => v === true).length} features used</p>`;
             
+            // Add note about viewing training data details
+            html += '<div style="margin-top: 1rem; padding: 0.75rem; background: var(--bg-secondary); border-radius: 6px; border-left: 3px solid var(--accent-blue);">';
+            html += '<p style="margin: 0; font-size: 0.85rem; color: var(--text-secondary);">';
+            html += '<strong style="color: var(--text-primary);">💡 Tip:</strong> To view detailed training data (first/last row values for each sensor), ';
+            html += 'click <strong>Apply</strong> to use this configuration, then go to the <strong>Model Training</strong> tab and train the model. ';
+            html += 'The training results will show the complete training data range for all sensors.';
+            html += '</p>';
+            html += '</div>';
+            
             html += '</div>';
             detailsCell.innerHTML = html;
             detailsRow.appendChild(detailsCell);

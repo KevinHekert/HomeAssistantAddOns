@@ -2,7 +2,7 @@
 
 All notable changes to this add-on will be documented in this file.
 
-## [Unreleased]
+## [0.0.0.105] - 2025-12-03
 
 - **Add Manual Worker Limit Configuration with Per-Worker Memory Reporting**
   - **New Feature**: Added UI-configurable optimizer max_workers setting

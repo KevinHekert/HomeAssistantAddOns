@@ -2,6 +2,26 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.112] - 2025-12-03
+
+- **Fix Training Data Popup - Display Correct First and Last Rows of Training Split**
+  - **Issue**: Optimizer results popup showed incorrect first/last rows of training data
+  - **Root Cause**: Code captured `df.iloc[0]` and `df.iloc[-1]` which are the first and last rows of the FULL dataset
+    - Training uses 80% of data (rows 0-79), validation uses 20% (rows 80-99)
+    - Old code captured row 0 (correct) and row 99 (incorrect - this is validation data!)
+    - Should have captured row 0 (first training row) and row 79 (last training row)
+  - **Solution**: Use `metrics.train_samples` to calculate the correct training split boundary
+    - Changed from `df.iloc[-1]` to `df.iloc[train_samples - 1]`
+    - Added logic to handle both single-step (`metrics.train_samples`) and two-step (`metrics.regressor_train_samples`) models
+  - **Testing**: Added comprehensive tests to verify correct row capture for both model types
+    - `test_train_single_configuration_captures_training_rows`: Verifies single-step model with 100-row dataset (trains on 0-79, captures row 79)
+    - `test_train_single_configuration_two_step_captures_training_rows`: Verifies two-step model with same logic
+  - **Impact**: Popup now correctly displays the actual first and last rows used during training, not the full dataset
+  - **Files Changed**: 
+    - `energy_orchestrator/app/ml/optimizer.py` (lines 864-897): Fixed row capture logic
+    - `energy_orchestrator/app/tests/test_optimizer_parallel.py`: Added 2 new tests
+  - **Why This Matters**: Users can now see the actual training data boundaries to understand what time ranges were used for model training
+
 ## [0.0.0.111] - 2025-12-03
 
 - **Fix onClick JavaScript Syntax Error in Optimizer Results Table**

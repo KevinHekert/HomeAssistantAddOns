@@ -160,9 +160,12 @@ def test_loadFeatureConfig_has_no_missing_button_reference():
     func_start = content.find('async function loadFeatureConfig()')
     assert func_start != -1, "loadFeatureConfig function should exist"
     
-    # Find the end of the function (next function definition)
-    func_end = content.find('async function toggleFeature(', func_start)
-    assert func_end != -1, "toggleFeature function should exist after loadFeatureConfig"
+    # Find the end of the function - look for next async function or end of script
+    # Look for the next function definition or closing script tag
+    func_end = content.find('async function ', func_start + 10)
+    if func_end == -1:
+        func_end = content.find('</script>', func_start)
+    assert func_end != -1, "Should be able to find end of loadFeatureConfig function"
     
     # Extract the function content
     func_content = content[func_start:func_end]

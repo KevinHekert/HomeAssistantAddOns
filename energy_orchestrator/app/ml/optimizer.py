@@ -973,7 +973,7 @@ def _train_single_configuration(
             config_name=config_name,
             model_type=model_type,
             experimental_features=combo.copy(),
-            complete_feature_config={},  # Empty on error since we don't have config captured
+            complete_feature_config=None,  # None on error since we don't have config captured
             val_mape_pct=None,
             val_mae_kwh=None,
             val_r2=None,

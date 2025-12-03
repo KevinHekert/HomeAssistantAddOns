@@ -1,3 +1,6 @@
+## 1.2.24 - 2025-12-03
+- Added CPU throttling to 50% (cpu_shares: 512) to prevent container from being killed due to high resource usage
+
 ## 1.2.23 - 2025-11-25
 - Removed depricated code, adjusted comments in code.
 

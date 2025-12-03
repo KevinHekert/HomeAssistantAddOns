@@ -1,6 +1,6 @@
 name: "Minecraft Server for HA"
 description: "Minecraft Bedrock Server tailored for Home Assistant"
-version: "1.2.23"
+version: "1.2.24"
 slug: "minecraft_server_for_ha"
 url: https://github.com/KevinHekert/HomeAssistantAddOns/blob/main/minecraftserver/README.md
 apparmor: true
@@ -11,6 +11,7 @@ ingress_port: 8789
 panel_icon: mdi:minecraft
 panel_title: "Minecraft Server"
 host_network: true
+cpu_shares: 512
 arch:
   - amd64
 map:

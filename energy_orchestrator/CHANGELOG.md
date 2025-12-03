@@ -2,6 +2,35 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.106] - 2025-12-03
+
+- **Fix Optimizer Crash: Memory-Efficient Streaming Architecture**
+  - **Problem**: Optimizer crashed with 52 features generating 2^52 (4+ quadrillion) combinations, filling all memory
+  - **Root Cause**: `_get_all_available_features()` included derived features from config, not just EXPERIMENTAL_FEATURES
+  - **Solution**: Implemented three major improvements:
+    1. **Limited Feature Selection**: Only use EXPERIMENTAL_FEATURES (not derived), reducing from 52 to 4 features (2^4 = 16 combinations)
+    2. **Streaming Database Storage**: Results saved immediately to database instead of keeping all in memory
+    3. **Batch Worker Recycling**: Workers process 20 tasks then restart, preventing memory accumulation
+  - **Changes Made**:
+    1. Fixed `_get_all_available_features()` to exclude derived features
+    2. Changed `include_derived_features` default from True to False in `run_optimization()`
+    3. Added `batch_size` parameter (default: 20) for worker recycling
+    4. Removed `results` list from `OptimizerProgress` dataclass
+    5. Added `run_id` and `best_result_db_id` to `OptimizerProgress` for database tracking
+    6. Implemented streaming storage functions: `create_optimizer_run()`, `save_optimizer_result()`, `update_optimizer_run_progress()`, `complete_optimizer_run()`, `get_optimizer_run_top_results()`
+    7. Rewrote optimization loop to use batch worker recycling with ThreadPoolExecutor recycling
+    8. Updated API endpoint `/api/optimizer/status` to query database for results instead of memory
+    9. Updated `save_optimizer_run()` to handle streaming mode (legacy compatibility)
+    10. Updated tests to work with database-backed results
+  - **Memory Management**:
+    - Results streamed to database immediately (NOT kept in memory)
+    - Workers recreated every 20 tasks to prevent memory leaks
+    - Only summary data (best result, progress, logs) kept in memory
+    - Logs limited to last 10 messages
+  - **UI Impact**: Progress now shows `run_id` and `top_results` from database
+  - **Testing**: Updated test suite for streaming architecture
+  - **Version bumped to 0.0.0.106**
+
 ## [0.0.0.105] - 2025-12-03
 
 - **Add Manual Worker Limit Configuration with Per-Worker Memory Reporting**

@@ -2,7 +2,7 @@
 
 All notable changes to this add-on will be documented in this file.
 
-## [Unreleased]
+## [0.0.0.116] - 2025-12-03
 
 - **Improved Sensor Information Tab Organization**
   - **Feature**: Reorganized UI to better group sensor-related functionality
@@ -23,6 +23,11 @@ All notable changes to this add-on will be documented in this file.
   - **Rationale**: This information is already shown in the results table with a 👑 crown icon for the best result
   - **Impact**: Cleaner Optimizer tab UI without duplicate information
   - **Files Changed**: `energy_orchestrator/app/templates/index.html`
+
+- **Code Quality Improvements**
+  - Improved comment clarity in `loadResampledSensorInfo()` function
+  - Extracted hardcoded limit to a named constant for maintainability
+  - Added comprehensive UI structure tests (10 tests, all passing)
 
 ## [0.0.0.115] - 2025-12-03
 

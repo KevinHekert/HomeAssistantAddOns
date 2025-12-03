@@ -1680,7 +1680,9 @@
             
             try {
                 // Get unique categories from resampled data
-                const response = await fetch('api/resampled_data?limit=1000');
+                // Note: Limit set to 1000 to balance between data coverage and performance
+                const RESAMPLED_DATA_LIMIT = 1000;
+                const response = await fetch(`api/resampled_data?limit=${RESAMPLED_DATA_LIMIT}`);
                 const data = await response.json();
                 
                 if (response.ok && data.data && data.data.length > 0) {
@@ -1702,7 +1704,9 @@
                         const stats = sensorStats[sample.category];
                         stats.count++;
                         
-                        // Update first/last timestamps (data is sorted desc, so reverse logic)
+                        // Update first/last timestamps
+                        // Data from API is sorted by slot_start DESC (most recent first)
+                        // So we track min (earliest/first) and max (latest/last) as we iterate
                         if (sample.slot_start < stats.first_timestamp) {
                             stats.first_timestamp = sample.slot_start;
                         }
@@ -1713,7 +1717,7 @@
                     
                     const sensorList = Object.values(sensorStats);
                     statusDiv.className = 'status-message success';
-                    statusDiv.textContent = `✓ Found ${sensorList.length} resampled sensor categories (showing up to 1000 samples per category)`;
+                    statusDiv.textContent = `✓ Found ${sensorList.length} resampled sensor categories (showing up to ${RESAMPLED_DATA_LIMIT} samples per category)`;
                     
                     let html = '<table class="sensor-table"><thead><tr>';
                     html += '<th>Category</th><th>Unit</th><th>Type</th><th>First Timestamp</th><th>Last Timestamp</th><th>Sample Count</th>';

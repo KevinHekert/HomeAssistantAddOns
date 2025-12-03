@@ -2,6 +2,16 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.97] - 2025-12-03
+
+- **Fix: Enable virtual sensor derived features in configuration page**
+  - Fixed issue where derived features from virtual sensors (e.g., `temp_delta_avg_1h`) couldn't be selected in the UI
+  - Updated `_is_derived_sensor_stat_feature()` method to check both raw sensors and virtual sensors
+  - Updated `_create_derived_feature_metadata()` method to create proper metadata for virtual sensor derived features
+  - Users can now enable/disable derived features from virtual sensors via checkboxes in the configuration page
+  - Added comprehensive test coverage (5 new tests) in `test_virtual_sensor_derived_features.py`
+  - All tests pass (53/53 tests in feature config module)
+
 ## [0.0.0.96] - 2025-12-03
 
 - **Parallel Optimizer with Derived Feature Support**

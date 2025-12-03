@@ -16,6 +16,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Callable, Optional
 
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
@@ -456,7 +457,7 @@ def _align_to_boundary(dt: datetime, sample_rate_minutes: int) -> datetime:
 def resample_all_categories(
     sample_rate_minutes: int | None = None, 
     flush: bool = False,
-    progress_callback: callable | None = None
+    progress_callback: Optional[Callable] = None
 ) -> ResampleStats:
     """
     Resample raw sensor samples into time slots for all configured categories.

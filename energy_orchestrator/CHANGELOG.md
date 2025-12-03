@@ -2,6 +2,18 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.119] - 2025-12-03
+
+- **Critical Fix: Python 3.9 Compatibility for Type Hints**
+  - **Fix**: Changed `callable | None` to `Optional[Callable]` in function parameter default values
+  - **Issue**: Python 3.9 (used in Alpine base image) doesn't support union type syntax (`Type | None`) in default parameter values, causing `TypeError: unsupported operand type(s) for |` at module import time
+  - **Root Cause**: While `from __future__ import annotations` allows `Type | None` in annotations, default parameter values are evaluated at runtime and require `Optional[Type]` syntax for Python 3.9 compatibility
+  - **Impact**: Fixes startup crash where the add-on would fail to start with incomplete traceback at line 20 of app.py
+  - **Files Changed**: 
+    - `energy_orchestrator/app/db/resample.py`: Added `from typing import Callable, Optional` and changed `progress_callback: callable | None = None` to `progress_callback: Optional[Callable] = None`
+    - `energy_orchestrator/run.sh`: Added `-u` flag to Python command for unbuffered output to ensure complete error messages in logs
+  - **Testing**: All 64 resample tests pass successfully
+
 ## [0.0.0.118] - 2025-12-03
 
 - **Python Type Hint Compatibility Fix**

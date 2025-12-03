@@ -2,6 +2,22 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.93] - 2025-12-03
+
+- **Fixed Feature Statistics Not Being Generated**
+  - **Issue**: When enabling derived features like `wind_avg_1h` or `wind_avg_6h` in the feature configuration, the `feature_statistics` table stayed empty - no statistics were being calculated or stored
+  - **Root Cause**: The `calculate_feature_statistics()` function was using a hard-coded start time of 7 days after the first resampled sample, regardless of which statistics were actually enabled. This meant:
+    1. If you only had 1-2 days of data but enabled `wind_avg_1h` (only needs 1 hour of history), no statistics would be calculated because the start time was 7 days in the future
+    2. The function was checking ALL sensors for their enabled statistics, including auto-created defaults which included AVG_24H, making the problem worse
+  - **Fix**:
+    - Modified start_time calculation to use the maximum window size from EXPLICITLY CONFIGURED sensors only, not auto-created defaults
+    - Start time is now based on actual enabled statistics rather than always using 7 days
+    - If only `wind_avg_1h` is enabled (60 minutes window), calculations start after 1 hour instead of 7 days
+    - If `wind_avg_6h` is enabled (360 minutes window), calculations start after 6 hours
+  - **Impact**: Feature statistics (`wind_avg_1h`, `wind_avg_6h`, `wind_avg_24h`, etc.) are now properly calculated and stored in the `feature_statistics` table when enabled, even with limited historical data
+  - Added comprehensive test coverage in `test_feature_stats_fix.py` with 3 test cases validating the fix
+  - All existing tests continue to pass
+
 ## [0.0.0.92] - 2025-12-02
 
 - **Fixed Sensor Statistics Configuration Overwrite Bug**

@@ -879,7 +879,10 @@
 
         <!-- Results Table (always visible, shows top 30) -->
         <div class="card">
-            <h3>📊 Optimization Results (Top 30)</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <h3 style="margin: 0;">📊 Optimization Results (Top 30)</h3>
+                <button class="action-btn secondary" id="refreshResultsBtn" onclick="loadOptimizerResultsTable()" style="padding: 0.5rem 1rem;">🔄 Refresh Results</button>
+            </div>
             <p class="example-description">Click on a row to view features used in training. Results are automatically loaded from the last optimizer run.</p>
             <div id="optimizerResultsTable"></div>
         </div>
@@ -3182,6 +3185,10 @@
 
         async function loadOptimizerResultsTable() {
             const resultsTable = document.getElementById('optimizerResultsTable');
+            const refreshBtn = document.getElementById('refreshResultsBtn');
+            
+            if (refreshBtn) refreshBtn.disabled = true;
+            if (resultsTable) resultsTable.innerHTML = '<p style="color: var(--text-secondary);">Loading results...</p>';
             
             try {
                 const response = await fetch('api/optimizer/latest');
@@ -3245,6 +3252,8 @@
                 }
             } catch (error) {
                 resultsTable.innerHTML = '<p style="color: var(--error-text);">Error loading results: ' + error.message + '</p>';
+            } finally {
+                if (refreshBtn) refreshBtn.disabled = false;
             }
         }
 

@@ -90,8 +90,8 @@ def set_optimizer_config(
             
             if config:
                 # Update existing config
-                if max_workers is not None or max_workers == 0:
-                    config.max_workers = max_workers
+                # Always update max_workers (including None for auto-calculate)
+                config.max_workers = max_workers
                 if max_combinations is not None:
                     config.max_combinations = max_combinations
                 config.updated_at = datetime.now(timezone.utc)

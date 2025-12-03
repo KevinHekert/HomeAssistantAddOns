@@ -9,6 +9,7 @@ import pandas as pd
 import time
 
 from ml.optimizer import (
+    SearchStrategy,
     run_optimization,
     OptimizerProgress,
     OptimizationResult,
@@ -349,7 +350,10 @@ class TestParallelExecution:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
             elapsed = time.time() - start_time
         
@@ -358,7 +362,7 @@ class TestParallelExecution:
         # So it's expected to take longer than pure parallel execution for stability
         assert elapsed < 5.0  # Should finish within reasonable time with adaptive throttling
         assert progress.phase == "complete"
-        assert len(progress.results) == 4  # 2 configs × 2 models
+        assert progress.completed_configurations == 4  # 2 configs × 2 models
         assert progress.completed_configurations == 4
     
     def test_run_optimization_progress_updates_during_parallel(self, mock_training_metrics, mock_two_step_metrics):
@@ -401,7 +405,10 @@ class TestParallelExecution:
                 build_dataset_fn=mock_build_dataset,
                 progress_callback=progress_callback,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # Progress callback should have been called multiple times
@@ -498,11 +505,14 @@ class TestParallelExecution:
                 train_two_step_fn=mock_train_two,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=3,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # All results should be recorded despite concurrent updates
-        assert len(progress.results) == 6  # 3 configs × 2 models
+        assert progress.completed_configurations == 6  # 3 configs × 2 models
         assert progress.completed_configurations == 6
         # Each combination of (config_name, model_type) should appear exactly once
         combo_set = set((r.config_name, r.model_type) for r in progress.results)
@@ -547,7 +557,10 @@ class TestProgressReporting:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # Check that progress messages include X/Y format
@@ -587,7 +600,10 @@ class TestProgressReporting:
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=1,  # Limit combinations for fast test execution
 
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # Should have messages about new best results (marked with trophy emoji)

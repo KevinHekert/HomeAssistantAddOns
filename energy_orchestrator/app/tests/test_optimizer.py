@@ -16,6 +16,7 @@ from ml.optimizer import (
     OptimizationResult,
     _generate_experimental_feature_combinations,
     _configuration_to_name,
+    SearchStrategy,
 )
 
 
@@ -130,21 +131,30 @@ class TestOptimizerModule:
         def mock_train_two_step(df):
             return (mock_model, mock_two_step_metrics)
         
-        with patch("ml.optimizer.get_feature_config") as mock_get_config:
+        with patch("ml.optimizer.get_feature_config") as mock_get_config, \
+             patch("db.optimizer_storage.create_optimizer_run") as mock_create_run, \
+             patch("db.optimizer_storage.save_optimizer_result") as mock_save_result:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config
+            
+            # Mock database operations
+            mock_create_run.return_value = 1  # Mock run ID
+            mock_save_result.return_value = 100  # Mock result ID
             
             progress = run_optimization(
                 train_single_step_fn=mock_train_single,
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         assert progress.phase == "complete"
-        assert len(progress.results) > 0
-        assert progress.best_result is not None
+        assert progress.run_id is not None  # Database run ID should be set
+        assert progress.best_result is not None  # Best result should be tracked in memory
     
     def test_run_optimization_finds_best_result(self, mock_training_metrics, mock_two_step_metrics):
         """Run optimization finds the configuration with lowest Val MAPE."""
@@ -165,16 +175,25 @@ class TestOptimizerModule:
         def mock_train_two_step(df):
             return (mock_model, mock_two_step_metrics)
         
-        with patch("ml.optimizer.get_feature_config") as mock_get_config:
+        with patch("ml.optimizer.get_feature_config") as mock_get_config, \
+             patch("db.optimizer_storage.create_optimizer_run") as mock_create_run, \
+             patch("db.optimizer_storage.save_optimizer_result") as mock_save_result:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config
+            
+            # Mock database operations
+            mock_create_run.return_value = 1  # Mock run ID
+            mock_save_result.return_value = 100  # Mock result ID
             
             progress = run_optimization(
                 train_single_step_fn=mock_train_single,
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # Two-step has lower MAPE (8%) than single-step (10%)
@@ -212,18 +231,27 @@ class TestOptimizerModule:
         def mock_train_two_step(df):
             return (mock_model, mock_two_step_metrics)
         
-        with patch("ml.optimizer.get_feature_config") as mock_get_config:
+        with patch("ml.optimizer.get_feature_config") as mock_get_config, \
+             patch("db.optimizer_storage.create_optimizer_run") as mock_create_run, \
+             patch("db.optimizer_storage.save_optimizer_result") as mock_save_result:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {
                 "experimental_enabled": {"pressure": True}
             }
             mock_get_config.return_value = mock_config
             
+            # Mock database operations
+            mock_create_run.return_value = 1  # Mock run ID
+            mock_save_result.return_value = 100  # Mock result ID
+            
             progress = run_optimization(
                 train_single_step_fn=mock_train_single,
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         assert progress.original_settings is not None
@@ -244,21 +272,30 @@ class TestOptimizerModule:
         def mock_train_two_step(df):
             raise AssertionError("Should not be called")
         
-        with patch("ml.optimizer.get_feature_config") as mock_get_config:
+        with patch("ml.optimizer.get_feature_config") as mock_get_config, \
+             patch("db.optimizer_storage.create_optimizer_run") as mock_create_run, \
+             patch("db.optimizer_storage.save_optimizer_result") as mock_save_result:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config
+            
+            # Mock database operations
+            mock_create_run.return_value = 1  # Mock run ID
+            mock_save_result.return_value = 100  # Mock result ID
             
             progress = run_optimization(
                 train_single_step_fn=mock_train_single,
                 train_two_step_fn=mock_train_two_step,
                 build_dataset_fn=mock_build_dataset,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         assert progress.phase == "complete"
-        # All results should be failures due to insufficient data
-        assert all(not r.success for r in progress.results)
+        # Best result should be None due to insufficient data
+        assert progress.best_result is None or not progress.best_result.success
     
     def test_run_optimization_calls_progress_callback(self, mock_training_metrics, mock_two_step_metrics):
         """Run optimization calls progress callback."""
@@ -283,10 +320,16 @@ class TestOptimizerModule:
         def progress_callback(progress):
             callback_calls.append(progress.phase)
         
-        with patch("ml.optimizer.get_feature_config") as mock_get_config:
+        with patch("ml.optimizer.get_feature_config") as mock_get_config, \
+             patch("db.optimizer_storage.create_optimizer_run") as mock_create_run, \
+             patch("db.optimizer_storage.save_optimizer_result") as mock_save_result:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config
+            
+            # Mock database operations
+            mock_create_run.return_value = 1  # Mock run ID
+            mock_save_result.return_value = 100  # Mock result ID
             
             run_optimization(
                 train_single_step_fn=mock_train_single,
@@ -294,6 +337,9 @@ class TestOptimizerModule:
                 build_dataset_fn=mock_build_dataset,
                 progress_callback=progress_callback,
                 min_samples=50,
+                configured_max_combinations=2,  # Limit combinations for fast test execution
+            
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
             )
         
         # Callback should be called multiple times

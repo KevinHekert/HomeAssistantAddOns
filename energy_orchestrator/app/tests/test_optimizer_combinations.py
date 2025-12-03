@@ -16,6 +16,7 @@ from math import comb
 from itertools import combinations as iter_combinations
 
 from ml.optimizer import (
+    SearchStrategy,
     _generate_experimental_feature_combinations,
     run_optimization,
     _train_single_configuration,
@@ -448,25 +449,29 @@ class TestThreadSafety:
         
         with patch("ml.optimizer.get_feature_config") as mock_get_config:
             mock_config = MagicMock()
-            mock_config.to_dict.return_value = {"experimental_enabled": {}}
+            # Return proper dictionaries that can be JSON serialized
+            mock_config.to_dict.return_value = {
+                "experimental_enabled": {},
+                "core_enabled": {},
+                "derived_enabled": {},
+                "two_step_prediction_enabled": False,
+                "timezone": "Europe/Amsterdam"
+            }
             mock_config.experimental_enabled = {}
+            # Mock get_complete_feature_state to return a simple dict
+            mock_config.get_complete_feature_state.return_value = {"pressure": False, "outdoor_temp_avg_6h": False}
             mock_get_config.return_value = mock_config
             
-            # Run optimization with limited combinations (first 2 for faster test)
-            # Generate combinations first  
-            combos_gen = _generate_experimental_feature_combinations(include_derived=False, max_combinations=None)
-            combos = list(combos_gen)
+            # Run optimization with limited combinations for faster test
+            progress = run_optimization(
+                train_single_step_fn=mock_train_single,
+                train_two_step_fn=mock_train_two_step,
+                build_dataset_fn=mock_build_dataset,
+                min_samples=50,
+                configured_max_combinations=2,  # Limit to 2 combinations for fast test
             
-            # Mock to return only first 2 combinations
-            with patch("ml.optimizer._generate_experimental_feature_combinations") as mock_combos:
-                mock_combos.return_value = iter(combos[:2])  # Return generator of first 2
-                
-                progress = run_optimization(
-                    train_single_step_fn=mock_train_single,
-                    train_two_step_fn=mock_train_two_step,
-                    build_dataset_fn=mock_build_dataset,
-                    min_samples=50,
-                )
+                search_strategy=SearchStrategy.EXHAUSTIVE,  # Use exhaustive search for predictable test behavior
+            )
         
         # Should have 2 combinations × 2 models = 4 results in database
         assert progress.run_id is not None, "Run ID should be set"

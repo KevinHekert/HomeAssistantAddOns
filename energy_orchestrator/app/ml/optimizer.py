@@ -346,6 +346,12 @@ def _train_single_configuration(
         - Training happens outside the lock and uses the built dataset
         - Original config is restored after all parallel tasks complete
     
+    Memory Management:
+        - Reports memory usage before and after training
+        - Explicitly deletes DataFrames and models after training
+        - Forces garbage collection to free memory immediately
+        - Worker process is automatically restarted after each run (managed by caller)
+    
     Args:
         config_name: Human-readable name for this configuration
         combo: Feature enable/disable dictionary
@@ -358,6 +364,10 @@ def _train_single_configuration(
         OptimizationResult with training metrics
     """
     try:
+        # Report worker memory before training
+        thread_id = threading.get_ident()
+        process_id = os.getpid()
+        mem_before = _log_memory_usage(f"Worker {process_id} (thread {thread_id}) BEFORE training {config_name} ({model_type})"):
         # Use lock to ensure feature configuration and dataset building are atomic
         # This prevents race conditions where Thread A's config could be overwritten
         # by Thread B before Thread A finishes building its dataset.
@@ -396,6 +406,17 @@ def _train_single_configuration(
         # Train model
         model, metrics = train_fn(df)
         
+        # Report worker memory after training
+        mem_after = _log_memory_usage(f"Worker {process_id} (thread {thread_id}) AFTER training {config_name} ({model_type})")
+        
+        # Log memory delta
+        if mem_before and mem_after and 'rss_mb' in mem_before and 'rss_mb' in mem_after:
+            delta_mb = mem_after['rss_mb'] - mem_before['rss_mb']
+            _Logger.info(
+                "Worker %d memory delta for %s (%s): %.1f MB (before: %.1f MB, after: %.1f MB)",
+                process_id, config_name, model_type, delta_mb, mem_before['rss_mb'], mem_after['rss_mb']
+            )
+        
         # Explicitly delete DataFrame and model to free memory immediately
         # This is critical for long-running optimizations (2048 trainings)
         # to prevent memory accumulation and OOM kills
@@ -404,6 +425,9 @@ def _train_single_configuration(
         
         # Force garbage collection to free memory immediately
         gc.collect()
+        
+        # Report memory after cleanup
+        mem_final = _log_memory_usage(f"Worker {process_id} (thread {thread_id}) AFTER cleanup {config_name} ({model_type})")
         
         # Add a small delay to allow garbage collector to complete
         # This prevents memory accumulation during rapid sequential training
@@ -484,34 +508,38 @@ def run_optimization(
     min_samples: int = 50,
     include_derived_features: bool = True,
     max_memory_mb: Optional[float] = None,
+    configured_max_workers: Optional[int] = None,
 ) -> OptimizerProgress:
     """
     Run the settings optimizer to find the best configuration.
     
     This function:
     1. Saves current settings
-    2. Automatically calculates optimal number of workers based on system resources
+    2. Determines number of workers (configured or auto-calculated)
     3. Iterates through ALL feature combinations (2^N)
     4. Trains both single-step and two-step models with adaptive parallelism
     5. Compares Val MAPE to find the best configuration
     6. Reports progress via callback
     7. Logs memory usage at INFO level for monitoring
+    8. Reports per-worker memory usage before/after each training
     
     For 10 experimental features, this tests 1024 combinations × 2 models = 2048 trainings.
     
     Memory Management:
-    - Auto-calculates optimal workers based on available memory and CPU cores
+    - Auto-calculates optimal workers based on available memory and CPU cores (if not configured)
     - Uses adaptive parallelism based on real-time memory availability
     - Throttles parallel workers when memory exceeds max_memory_mb threshold
     - Falls back to sequential processing when memory is constrained
+    - Each worker reports memory usage before and after training
     - Adds 0.5s delay after each training to allow garbage collection
     - Forces garbage collection every 10 iterations
     - Logs memory usage every 10 iterations at INFO level
     - Explicitly deletes DataFrames and models after each training
     
     Worker Calculation:
-    - Automatically determines optimal workers from system resources
-    - Considers: available memory, CPU cores, estimated task memory (~200MB)
+    - If configured_max_workers is set (> 0), uses that value
+    - If configured_max_workers is None or 0, auto-calculates from system resources
+    - Auto-calculation considers: available memory, CPU cores, estimated task memory (~200MB)
     - Formula: min(memory_workers, cpu_workers, 10)
     - Example: 4GB RAM, 4 cores → min(20, 3, 10) = 3 workers
     
@@ -525,13 +553,20 @@ def run_optimization(
         max_memory_mb: Maximum memory in MB before throttling parallel execution.
                        If None, defaults to 1536 MB (75% of 2GB limit).
                        Set via UI optimizer settings.
+        configured_max_workers: Maximum number of workers to use (from UI config).
+                               If None or 0, auto-calculates from system resources.
         
     Returns:
         OptimizerProgress with all results and the best configuration.
         Use progress.get_top_results(20) to get the top 20 results for UI display.
     """
-    # Auto-calculate optimal number of workers based on system resources
-    max_workers = _calculate_optimal_workers(max_memory_mb)
+    # Determine number of workers: use configured value or auto-calculate
+    if configured_max_workers is not None and configured_max_workers > 0:
+        max_workers = configured_max_workers
+        _Logger.info("Using configured max_workers: %d", max_workers)
+    else:
+        # Auto-calculate optimal number of workers based on system resources
+        max_workers = _calculate_optimal_workers(max_memory_mb)
     
     # Initialize progress
     combinations = _get_experimental_feature_combinations(
@@ -564,11 +599,12 @@ def run_optimization(
     
     # Log memory settings
     mem_limit_str = f"{max_memory_mb:.0f} MB" if max_memory_mb else "1536 MB (default)"
+    worker_source = "configured" if (configured_max_workers is not None and configured_max_workers > 0) else "auto-calculated"
     progress.add_log_message(
-        f"[{datetime.now().strftime('%H:%M:%S')}] Memory limit: {mem_limit_str}, Max workers: {max_workers}"
+        f"[{datetime.now().strftime('%H:%M:%S')}] Memory limit: {mem_limit_str}, Max workers: {max_workers} ({worker_source})"
     )
     progress.add_log_message(
-        f"[{datetime.now().strftime('%H:%M:%S')}] Using adaptive parallelism with memory-based throttling"
+        f"[{datetime.now().strftime('%H:%M:%S')}] Using adaptive parallelism with memory-based throttling and per-worker memory reporting"
     )
     
     if progress_callback:

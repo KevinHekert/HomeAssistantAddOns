@@ -26,7 +26,8 @@ def get_optimizer_config() -> dict:
     Returns:
         Dictionary with optimizer configuration:
         {
-            "max_workers": int or None  # None or 0 = auto-calculate
+            "max_workers": int or None,  # None or 0 = auto-calculate
+            "max_combinations": int or None,  # None = default (1024)
         }
     """
     try:
@@ -37,25 +38,32 @@ def get_optimizer_config() -> dict:
             if config:
                 return {
                     "max_workers": config.max_workers,
+                    "max_combinations": config.max_combinations,
                 }
             else:
                 # No config exists, return defaults
                 return {
                     "max_workers": None,  # Auto-calculate
+                    "max_combinations": None,  # Default (1024)
                 }
     except Exception as e:
         _Logger.error("Error getting optimizer config: %s", e, exc_info=True)
         return {
             "max_workers": None,
+            "max_combinations": None,
         }
 
 
-def set_optimizer_config(max_workers: Optional[int] = None) -> bool:
+def set_optimizer_config(
+    max_workers: Optional[int] = None,
+    max_combinations: Optional[int] = None,
+) -> bool:
     """
     Set the optimizer configuration.
     
     Args:
         max_workers: Maximum number of workers (None or 0 = auto-calculate)
+        max_combinations: Maximum feature combinations to test (None = default 1024)
         
     Returns:
         True if successfully saved, False otherwise
@@ -64,6 +72,11 @@ def set_optimizer_config(max_workers: Optional[int] = None) -> bool:
         # Validate max_workers
         if max_workers is not None and max_workers < 0:
             _Logger.error("Invalid max_workers value: %d (must be >= 0 or None)", max_workers)
+            return False
+        
+        # Validate max_combinations
+        if max_combinations is not None and max_combinations < 1:
+            _Logger.error("Invalid max_combinations value: %d (must be >= 1 or None)", max_combinations)
             return False
         
         # Convert 0 to None for consistency
@@ -77,18 +90,26 @@ def set_optimizer_config(max_workers: Optional[int] = None) -> bool:
             
             if config:
                 # Update existing config
-                config.max_workers = max_workers
+                if max_workers is not None or max_workers == 0:
+                    config.max_workers = max_workers
+                if max_combinations is not None:
+                    config.max_combinations = max_combinations
                 config.updated_at = datetime.now(timezone.utc)
             else:
                 # Create new config
                 config = OptimizerConfig(
                     max_workers=max_workers,
+                    max_combinations=max_combinations,
                     updated_at=datetime.now(timezone.utc),
                 )
                 session.add(config)
             
             session.commit()
-            _Logger.info("Optimizer config saved: max_workers=%s", max_workers)
+            _Logger.info(
+                "Optimizer config saved: max_workers=%s, max_combinations=%s",
+                max_workers,
+                max_combinations
+            )
             return True
             
     except Exception as e:

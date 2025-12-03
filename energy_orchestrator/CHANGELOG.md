@@ -2,6 +2,67 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.107] - 2025-12-03
+
+- **Implement Hybrid Genetic Algorithm + Bayesian Optimization for Feature Selection**
+  - **Problem**: Need to find best feature combination from 52+ features without testing all 2^52 combinations
+  - **Solution**: Implemented intelligent search strategies that scale to ANY number of features
+  - **Hybrid Strategy (Default)**: Genetic Algorithm + Bayesian Optimization
+    - Phase 1: Genetic Algorithm (100 generations × 50 population = 5,000 combinations)
+    - Phase 2: Bayesian Optimization (100 strategic iterations)
+    - Total: 5,100 combinations × 2 models = 10,200 trainings (feasible for any feature count)
+    - vs Exhaustive: 2^52 = 4.5 quadrillion combinations (impossible)
+  - **Changes Made**:
+    1. Added `SearchStrategy` enum with options: EXHAUSTIVE, GENETIC, BAYESIAN, HYBRID_GENETIC_BAYESIAN
+    2. Implemented `_generate_genetic_algorithm_combinations()` with evolution-based search
+    3. Implemented `_generate_hybrid_genetic_bayesian_combinations()` combining GA + Bayesian
+    4. Added parameters: `search_strategy`, `genetic_population_size`, `genetic_num_generations`, `genetic_mutation_rate`, `bayesian_iterations`
+    5. Updated `run_optimization()` to support strategy selection
+    6. Added `max_combinations` to `OptimizerConfig` database model
+    7. Updated config functions to handle `max_combinations` parameter
+    8. Genetic Algorithm features: population, crossover, mutation, elitism, tournament selection
+    9. Bayesian phase: strategically tests diverse combinations to exploit GA findings
+    10. All strategies use lazy generators for memory efficiency
+    11. Tests use only 4 experimental features (2^4 = 16 combinations) for speed
+    12. Production uses ALL features (experimental + derived) with intelligent search
+  - **Search Strategy Details**:
+    - **HYBRID (Default)**: 5,100 combinations (10,200 trainings) - Best balance of exploration + exploitation
+    - **GENETIC**: Configurable generations × population - Pure evolution-based search
+    - **EXHAUSTIVE**: Up to max_combinations limit - Brute force with safety limit
+  - **Scalability**: Works with 52, 100, or 1000+ features without memory issues
+  - **Configurability**: Population size, generations, mutation rate all adjustable for scale up/down
+  - **User Feedback Addressed**: @KevinHekert requested not limiting features + scalable solution
+  - **Version bumped to 0.0.0.107**
+
+## [0.0.0.106] - 2025-12-03
+
+- **Fix Optimizer Crash: Memory-Efficient Streaming Architecture**
+  - **Problem**: Optimizer crashed with 52 features generating 2^52 (4+ quadrillion) combinations, filling all memory
+  - **Root Cause**: `_get_all_available_features()` included derived features from config, not just EXPERIMENTAL_FEATURES
+  - **Solution**: Implemented three major improvements:
+    1. **Limited Feature Selection**: Only use EXPERIMENTAL_FEATURES (not derived), reducing from 52 to 4 features (2^4 = 16 combinations)
+    2. **Streaming Database Storage**: Results saved immediately to database instead of keeping all in memory
+    3. **Batch Worker Recycling**: Workers process 20 tasks then restart, preventing memory accumulation
+  - **Changes Made**:
+    1. Fixed `_get_all_available_features()` to exclude derived features
+    2. Changed `include_derived_features` default from True to False in `run_optimization()`
+    3. Added `batch_size` parameter (default: 20) for worker recycling
+    4. Removed `results` list from `OptimizerProgress` dataclass
+    5. Added `run_id` and `best_result_db_id` to `OptimizerProgress` for database tracking
+    6. Implemented streaming storage functions: `create_optimizer_run()`, `save_optimizer_result()`, `update_optimizer_run_progress()`, `complete_optimizer_run()`, `get_optimizer_run_top_results()`
+    7. Rewrote optimization loop to use batch worker recycling with ThreadPoolExecutor recycling
+    8. Updated API endpoint `/api/optimizer/status` to query database for results instead of memory
+    9. Updated `save_optimizer_run()` to handle streaming mode (legacy compatibility)
+    10. Updated tests to work with database-backed results
+  - **Memory Management**:
+    - Results streamed to database immediately (NOT kept in memory)
+    - Workers recreated every 20 tasks to prevent memory leaks
+    - Only summary data (best result, progress, logs) kept in memory
+    - Logs limited to last 10 messages
+  - **UI Impact**: Progress now shows `run_id` and `top_results` from database
+  - **Testing**: Updated test suite for streaming architecture
+  - **Version bumped to 0.0.0.106**
+
 ## [0.0.0.105] - 2025-12-03
 
 - **Add Manual Worker Limit Configuration with Per-Worker Memory Reporting**

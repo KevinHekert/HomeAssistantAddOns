@@ -115,6 +115,7 @@ from ml.optimizer import (
     run_optimization,
     apply_best_configuration,
     OptimizerProgress,
+    SearchStrategy,
 )
 
 
@@ -3255,18 +3256,25 @@ def _run_optimizer_in_thread():
         # Get optimizer configuration from database
         optimizer_config = get_optimizer_config()
         configured_max_workers = optimizer_config.get("max_workers", None)
+        configured_max_combinations = optimizer_config.get("max_combinations", None)
         
         # Run the optimization with adaptive parallelism and memory throttling
         # configured_max_workers is read from UI settings (None or 0 = auto-calculate)
+        # configured_max_combinations limits exhaustive search (None = default 1024)
+        # Default strategy: HYBRID_GENETIC_BAYESIAN for scalable feature selection
         progress = run_optimization(
             train_single_step_fn=train_heating_demand_model,
             train_two_step_fn=train_two_step_heating_demand_model,
             build_dataset_fn=build_heating_feature_dataset,
             progress_callback=progress_callback,
             min_samples=50,
-            include_derived_features=True,  # Include derived features in optimization
+            include_derived_features=True,  # Include ALL derived features (52+)
             max_memory_mb=None,  # None = auto-detect (75% of available RAM)
             configured_max_workers=configured_max_workers,  # From UI config
+            configured_max_combinations=configured_max_combinations,  # From UI config (for exhaustive only)
+            # Genetic Algorithm + Bayesian Optimization parameters (default values)
+            # search_strategy defaults to HYBRID_GENETIC_BAYESIAN in function signature
+            # genetic_population_size=50, genetic_num_generations=100, bayesian_iterations=100
         )
         
         with _optimizer_lock:
@@ -3487,31 +3495,20 @@ def get_optimizer_status():
             "current_configuration": progress.current_configuration,
             "current_model_type": progress.current_model_type,
             "log": progress.log_messages,
+            "run_id": progress.run_id,  # Include run_id for database queries
         },
     }
     
-    # Include full results if optimization is complete
-    if progress.phase in ["complete", "error"] and not is_running:
-        # Try to load results from database (which have IDs)
-        latest_run = get_latest_optimizer_run()
-        if latest_run and latest_run.get("results"):
-            response_data["progress"]["results"] = latest_run["results"]
-        else:
-            # Fallback to in-memory results (without IDs)
-            response_data["progress"]["results"] = [
-                {
-                    "config_name": r.config_name,
-                    "model_type": r.model_type,
-                    "val_mape_pct": round(r.val_mape_pct, 2) if r.val_mape_pct is not None else None,
-                    "val_mae_kwh": round(r.val_mae_kwh, 4) if r.val_mae_kwh is not None else None,
-                    "val_r2": round(r.val_r2, 4) if r.val_r2 is not None else None,
-                    "success": r.success,
-                    "error_message": r.error_message,
-                }
-                for r in progress.results
-            ]
+    # Include results from database if optimization is complete or in progress
+    if progress.run_id:
+        # Get top 20 results from database (sorted by MAPE)
+        from db.optimizer_storage import get_optimizer_run_top_results
+        top_results = get_optimizer_run_top_results(progress.run_id, limit=20)
+        if top_results:
+            response_data["progress"]["top_results"] = top_results
         
-        if progress.error_message:
+        # Include error message if phase is error
+        if progress.phase == "error" and progress.error_message:
             response_data["progress"]["error"] = progress.error_message
     
     if progress.best_result:

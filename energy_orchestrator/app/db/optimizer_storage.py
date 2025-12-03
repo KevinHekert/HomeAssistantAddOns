@@ -22,16 +22,239 @@ from ml.optimizer import OptimizerProgress, OptimizationResult
 _Logger = logging.getLogger(__name__)
 
 
-def save_optimizer_run(progress: OptimizerProgress) -> Optional[int]:
+def create_optimizer_run(
+    start_time: datetime,
+    total_configurations: int,
+) -> Optional[int]:
     """
-    Save an optimizer run and all its results to the database.
+    Create a new optimizer run record in the database.
+    
+    This is used to initialize a run before streaming results.
     
     Args:
-        progress: The OptimizerProgress object containing run data and results
+        start_time: When the optimization started
+        total_configurations: Total number of configurations to test
         
     Returns:
-        The ID of the saved run, or None if save failed
+        The ID of the created run, or None if creation failed
     """
+    try:
+        with Session(engine) as session:
+            run = OptimizerRun(
+                start_time=start_time,
+                end_time=None,
+                phase="initializing",
+                total_configurations=total_configurations,
+                completed_configurations=0,
+                error_message=None,
+            )
+            session.add(run)
+            session.commit()
+            _Logger.info("Created optimizer run %d with %d total configurations", run.id, total_configurations)
+            return run.id
+            
+    except Exception as e:
+        _Logger.error("Error creating optimizer run: %s", e, exc_info=True)
+        return None
+
+
+def save_optimizer_result(
+    run_id: int,
+    result: OptimizationResult,
+) -> Optional[int]:
+    """
+    Save a single optimizer result to the database (streaming mode).
+    
+    This allows results to be saved immediately as they complete,
+    rather than keeping all results in memory.
+    
+    Args:
+        run_id: The ID of the run this result belongs to
+        result: The OptimizationResult to save
+        
+    Returns:
+        The ID of the saved result, or None if save failed
+    """
+    try:
+        with Session(engine) as session:
+            result_record = OptimizerResult(
+                run_id=run_id,
+                config_name=result.config_name,
+                model_type=result.model_type,
+                experimental_features_json=json.dumps(result.experimental_features),
+                val_mape_pct=result.val_mape_pct,
+                val_mae_kwh=result.val_mae_kwh,
+                val_r2=result.val_r2,
+                train_samples=result.train_samples,
+                val_samples=result.val_samples,
+                success=result.success,
+                error_message=result.error_message,
+                training_timestamp=result.training_timestamp,
+            )
+            session.add(result_record)
+            session.commit()
+            return result_record.id
+            
+    except Exception as e:
+        _Logger.error("Error saving optimizer result: %s", e, exc_info=True)
+        return None
+
+
+def update_optimizer_run_progress(
+    run_id: int,
+    completed_configurations: int,
+    phase: str,
+    best_result_id: Optional[int] = None,
+) -> bool:
+    """
+    Update the progress of an optimizer run.
+    
+    Args:
+        run_id: The ID of the run to update
+        completed_configurations: Number of completed configurations
+        phase: Current phase (e.g., "training", "complete")
+        best_result_id: Optional ID of the best result so far
+        
+    Returns:
+        True if update succeeded, False otherwise
+    """
+    try:
+        with Session(engine) as session:
+            stmt = (
+                update(OptimizerRun)
+                .where(OptimizerRun.id == run_id)
+                .values(
+                    completed_configurations=completed_configurations,
+                    phase=phase,
+                    best_result_id=best_result_id if best_result_id else OptimizerRun.best_result_id,
+                )
+            )
+            session.execute(stmt)
+            session.commit()
+            return True
+            
+    except Exception as e:
+        _Logger.error("Error updating optimizer run progress: %s", e, exc_info=True)
+        return False
+
+
+def complete_optimizer_run(
+    run_id: int,
+    end_time: datetime,
+    phase: str = "complete",
+    error_message: Optional[str] = None,
+) -> bool:
+    """
+    Mark an optimizer run as complete.
+    
+    Args:
+        run_id: The ID of the run to complete
+        end_time: When the optimization ended
+        phase: Final phase (e.g., "complete" or "error")
+        error_message: Optional error message if phase is "error"
+        
+    Returns:
+        True if update succeeded, False otherwise
+    """
+    try:
+        with Session(engine) as session:
+            stmt = (
+                update(OptimizerRun)
+                .where(OptimizerRun.id == run_id)
+                .values(
+                    end_time=end_time,
+                    phase=phase,
+                    error_message=error_message,
+                )
+            )
+            session.execute(stmt)
+            session.commit()
+            _Logger.info("Completed optimizer run %d with phase '%s'", run_id, phase)
+            return True
+            
+    except Exception as e:
+        _Logger.error("Error completing optimizer run: %s", e, exc_info=True)
+        return False
+
+
+def get_optimizer_run_best_result(run_id: int) -> Optional[dict]:
+    """
+    Get the best result for a specific optimizer run.
+    
+    Args:
+        run_id: The ID of the run
+        
+    Returns:
+        Dictionary with best result data, or None if not found
+    """
+    try:
+        with Session(engine) as session:
+            # Get the run to find best_result_id
+            run = session.get(OptimizerRun, run_id)
+            if not run or not run.best_result_id:
+                return None
+            
+            # Get the best result
+            result = session.get(OptimizerResult, run.best_result_id)
+            if not result:
+                return None
+            
+            return _result_to_dict(result)
+            
+    except Exception as e:
+        _Logger.error("Error getting best result for run %d: %s", run_id, e, exc_info=True)
+        return None
+
+
+def get_optimizer_run_top_results(run_id: int, limit: int = 20) -> list[dict]:
+    """
+    Get the top N results for a specific optimizer run, sorted by MAPE.
+    
+    Args:
+        run_id: The ID of the run
+        limit: Maximum number of results to return
+        
+    Returns:
+        List of result dictionaries sorted by val_mape_pct (ascending)
+    """
+    try:
+        with Session(engine) as session:
+            stmt = (
+                select(OptimizerResult)
+                .where(OptimizerResult.run_id == run_id)
+                .where(OptimizerResult.success == True)
+                .where(OptimizerResult.val_mape_pct.isnot(None))
+                .order_by(OptimizerResult.val_mape_pct.asc())
+                .limit(limit)
+            )
+            results = session.scalars(stmt).all()
+            
+            return [_result_to_dict(r) for r in results]
+            
+    except Exception as e:
+        _Logger.error("Error getting top results for run %d: %s", run_id, e, exc_info=True)
+        return []
+
+
+def save_optimizer_run(progress: OptimizerProgress) -> Optional[int]:
+    """
+    Save an optimizer run (legacy function - kept for backward compatibility).
+    
+    NOTE: This function is now primarily for saving runs that weren't
+    already saved via streaming. New code should use create_optimizer_run()
+    and save_optimizer_result() for streaming saves.
+    
+    Args:
+        progress: The OptimizerProgress object containing run data
+        
+    Returns:
+        The ID of the saved run (or existing run_id if already saved), or None if save failed
+    """
+    # If run was already saved via streaming, just return the run_id
+    if progress.run_id is not None:
+        _Logger.info("Optimizer run %d already saved via streaming", progress.run_id)
+        return progress.run_id
+    
     try:
         with Session(engine) as session:
             # Create the run record
@@ -47,37 +270,13 @@ def save_optimizer_run(progress: OptimizerProgress) -> Optional[int]:
             session.flush()  # Get the run ID
             
             run_id = run.id
-            best_result_db_id = None
             
-            # Save all results
-            for result in progress.results:
-                result_record = OptimizerResult(
-                    run_id=run_id,
-                    config_name=result.config_name,
-                    model_type=result.model_type,
-                    experimental_features_json=json.dumps(result.experimental_features),
-                    val_mape_pct=result.val_mape_pct,
-                    val_mae_kwh=result.val_mae_kwh,
-                    val_r2=result.val_r2,
-                    train_samples=result.train_samples,
-                    val_samples=result.val_samples,
-                    success=result.success,
-                    error_message=result.error_message,
-                    training_timestamp=result.training_timestamp,
-                )
-                session.add(result_record)
-                session.flush()
-                
-                # Track the best result
-                if progress.best_result and result is progress.best_result:
-                    best_result_db_id = result_record.id
-            
-            # Update the run with the best result ID
-            if best_result_db_id:
-                run.best_result_id = best_result_db_id
+            # Update the run with the best result ID if available
+            if progress.best_result_db_id:
+                run.best_result_id = progress.best_result_db_id
             
             session.commit()
-            _Logger.info("Saved optimizer run %d with %d results", run_id, len(progress.results))
+            _Logger.info("Saved optimizer run %d (no results in memory - use streaming instead)", run_id)
             return run_id
             
     except Exception as e:

@@ -36,6 +36,7 @@ def init_db_schema() -> None:
         # Run migrations for schema updates
         _migrate_add_is_derived_column()
         _migrate_add_optimizer_row_data_columns()
+        _migrate_add_complete_feature_config_column()
     except SQLAlchemyError as e:
         _Logger.error("Fout bij aanmaken schema in MariaDB: %s", e)
 
@@ -127,3 +128,35 @@ def _migrate_add_optimizer_row_data_columns() -> None:
                 _Logger.debug("last_row_json column already exists in optimizer_results table")
     except SQLAlchemyError as e:
         _Logger.warning("Could not add optimizer row data columns (may already exist): %s", e)
+
+
+def _migrate_add_complete_feature_config_column() -> None:
+    """Add complete_feature_config_json column to optimizer_results table if it doesn't exist.
+    
+    This migration adds a text column to store the complete feature configuration
+    (all features with their enabled/disabled state) for each optimizer result.
+    """
+    try:
+        with engine.connect() as conn:
+            # Check if column already exists
+            result = conn.execute(text("""
+                SELECT COUNT(*) 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                AND TABLE_NAME = 'optimizer_results' 
+                AND COLUMN_NAME = 'complete_feature_config_json'
+            """))
+            exists = result.scalar() > 0
+            
+            if not exists:
+                _Logger.info("Adding complete_feature_config_json column to optimizer_results table...")
+                conn.execute(text("""
+                    ALTER TABLE optimizer_results 
+                    ADD COLUMN complete_feature_config_json TEXT NULL
+                """))
+                conn.commit()
+                _Logger.info("Successfully added complete_feature_config_json column to optimizer_results table")
+            else:
+                _Logger.debug("complete_feature_config_json column already exists in optimizer_results table")
+    except SQLAlchemyError as e:
+        _Logger.warning("Could not add complete_feature_config_json column (may already exist): %s", e)

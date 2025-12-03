@@ -2,6 +2,40 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.114] - 2025-12-03
+
+- **Add Dedicated Optimizer Tab with Persistent Results Display**
+  - **Issue**: Optimizer results weren't shown anymore and UI was confusing
+    - Results table was hidden after completion
+    - Status check and progress updates overwrote each other
+    - Optimizer functionality was mixed with model training controls
+    - No easy way to re-train with a specific optimizer result's configuration
+  - **Solution**: 
+    - Created dedicated "Optimizer" tab separate from "Model Training" tab
+    - Moved all optimizer-related controls/visuals to new Optimizer tab
+    - Results table now always shows top 30 results (never hidden)
+    - Results persist across page loads by loading from database
+    - Separated progress display (for running optimization) from status display (for status checks)
+    - Added re-train functionality to re-train model using selected result's configuration
+    - Added "Select" button to each result for easy re-training
+  - **Database Migration**: Added schema migration for `complete_feature_config_json` column
+    - Fixes `OperationalError: (1054, "Unknown column 'complete_feature_config_json' in 'field list'")` error
+    - Added `_migrate_add_complete_feature_config_column()` function to `db/core.py`
+    - Migration runs automatically on app startup via `init_db_schema()`
+  - **UI Improvements**:
+    - Progress display shows real-time optimization progress with log updates
+    - Status check displays current optimizer state without interfering with progress
+    - Best result card always visible when results exist
+    - Results table automatically loads latest results when opening Optimizer tab
+    - Each result row is clickable to view detailed feature configuration
+    - "Apply" button on each result to apply that configuration
+    - "Select" button on each result to select it for re-training
+  - **Files Changed**: 
+    - `energy_orchestrator/app/templates/index.html`: Added Optimizer tab, moved optimizer UI, separated displays
+    - `energy_orchestrator/app/db/core.py`: Added schema migration for complete_feature_config_json
+  - **Impact**: Users can now easily view, compare, and re-use optimizer results without confusion
+  - **Why This Matters**: Optimizer is a key feature for finding optimal configurations - users need clear visibility into results and easy ways to apply or re-test configurations
+
 ## [0.0.0.113] - 2025-12-03
 
 - **Fix Optimizer Results Application**

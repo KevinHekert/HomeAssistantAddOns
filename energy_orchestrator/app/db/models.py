@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, Double, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
@@ -133,4 +133,4 @@ class OptimizerConfig(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     max_workers: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None or 0 = auto-calculate
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

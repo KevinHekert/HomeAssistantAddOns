@@ -3341,7 +3341,7 @@ def set_optimizer_config_endpoint():
     }
     """
     try:
-        data = request.get_json()
+        data = request.get_json(force=True, silent=True)
         if not data:
             return jsonify({
                 "status": "error",

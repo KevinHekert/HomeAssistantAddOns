@@ -8,7 +8,7 @@ This module provides functions to:
 
 import logging
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -78,12 +78,12 @@ def set_optimizer_config(max_workers: Optional[int] = None) -> bool:
             if config:
                 # Update existing config
                 config.max_workers = max_workers
-                config.updated_at = datetime.utcnow()
+                config.updated_at = datetime.now(timezone.utc)
             else:
                 # Create new config
                 config = OptimizerConfig(
                     max_workers=max_workers,
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 session.add(config)
             

@@ -163,7 +163,8 @@ class TestOptimizerConfigAPI:
     
     def test_set_optimizer_config_endpoint_no_data(self, client):
         """POST /api/optimizer/config rejects empty request."""
-        response = client.post('/api/optimizer/config')
+        response = client.post('/api/optimizer/config', 
+                               headers={'Content-Type': 'application/json'})
         
         assert response.status_code == 400
         data = response.get_json()

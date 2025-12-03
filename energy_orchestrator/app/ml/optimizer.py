@@ -367,7 +367,8 @@ def _train_single_configuration(
         # Report worker memory before training
         thread_id = threading.get_ident()
         process_id = os.getpid()
-        mem_before = _log_memory_usage(f"Worker {process_id} (thread {thread_id}) BEFORE training {config_name} ({model_type})"):
+        mem_before = _log_memory_usage(f"Worker {process_id} (thread {thread_id}) BEFORE training {config_name} ({model_type})")
+        
         # Use lock to ensure feature configuration and dataset building are atomic
         # This prevents race conditions where Thread A's config could be overwritten
         # by Thread B before Thread A finishes building its dataset.

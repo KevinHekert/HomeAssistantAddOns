@@ -2,6 +2,14 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [0.0.0.118] - 2025-12-03
+
+- **Python Type Hint Compatibility Fix**
+  - **Fix**: Added `from __future__ import annotations` to `db/resample.py`
+  - **Issue**: Python 3.9+ requires either `from __future__ import annotations` or `Callable` from typing for union type hints with `callable | None`
+  - **Impact**: Fixes import errors when loading the application
+  - **Files Changed**: `energy_orchestrator/app/db/resample.py`
+
 ## [0.0.0.117] - 2025-12-03
 
 - **Background Resampling with Progress Monitoring**

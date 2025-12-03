@@ -861,17 +861,25 @@ def _train_single_configuration(
         # Train model
         model, metrics = train_fn(df)
         
-        # Capture first and last row of actual training data before cleanup
+        # Capture first and last row of actual training data (not validation) before cleanup
         first_row_data = None
         last_row_data = None
-        if df is not None and len(df) > 0:
+        if df is not None and len(df) > 0 and metrics.train_samples > 0:
             try:
-                # Convert first and last rows to dict, handling NaN values
+                import math as _math
+                
+                # Calculate the training split index based on actual train_samples
+                # This ensures we capture the TRAINING data boundaries, not the full dataset
+                train_samples = metrics.train_samples
+                
+                # Get first row of training data (always row 0)
                 first_row = df.iloc[0].to_dict()
-                last_row = df.iloc[-1].to_dict()
+                
+                # Get last row of training data (row before validation split)
+                # The training data goes from index 0 to train_samples-1
+                last_row = df.iloc[train_samples - 1].to_dict()
                 
                 # Replace NaN with None for JSON serialization
-                import math as _math
                 first_row_data = {k: (None if isinstance(v, float) and _math.isnan(v) else float(v) if isinstance(v, (int, float)) else v) 
                                  for k, v in first_row.items()}
                 last_row_data = {k: (None if isinstance(v, float) and _math.isnan(v) else float(v) if isinstance(v, (int, float)) else v) 

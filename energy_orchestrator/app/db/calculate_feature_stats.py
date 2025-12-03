@@ -205,8 +205,27 @@ def calculate_feature_statistics(
                     )
                 
                 if start_time is None:
-                    # Start from the earliest time where we have enough history for the longest window (7 days)
-                    start_time = db_start + timedelta(minutes=STAT_TYPE_WINDOWS[StatType.AVG_7D])
+                    # Start from the earliest time where we have enough history
+                    # Use the maximum enabled window size across all sensors that have explicit configuration
+                    max_window_minutes = 0
+                    for sensor_name_check in sensor_names:
+                        # Only check sensors that are explicitly configured
+                        if sensor_name_check in stats_config.sensor_configs:
+                            sensor_config_check = stats_config.sensor_configs[sensor_name_check]
+                            for stat_type in sensor_config_check.enabled_stats:
+                                window_minutes = STAT_TYPE_WINDOWS.get(stat_type, 0)
+                                max_window_minutes = max(max_window_minutes, window_minutes)
+                    
+                    # If no stats are explicitly enabled, use 1 hour as minimum
+                    if max_window_minutes == 0:
+                        max_window_minutes = STAT_TYPE_WINDOWS[StatType.AVG_1H]
+                    
+                    start_time = db_start + timedelta(minutes=max_window_minutes)
+                    _Logger.info(
+                        "Auto-determined start_time based on max window of %d minutes: %s",
+                        max_window_minutes,
+                        start_time
+                    )
                 
                 if end_time is None:
                     end_time = db_end

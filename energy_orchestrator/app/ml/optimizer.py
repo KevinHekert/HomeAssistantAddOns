@@ -35,6 +35,13 @@ _Logger = logging.getLogger(__name__)
 # Lock for thread-safe progress updates
 _progress_lock = threading.Lock()
 
+# Lock for thread-safe feature configuration modifications
+# This ensures that feature config changes and dataset building happen atomically
+_config_lock = threading.Lock()
+
+# Minimum number of features required to create a logical group combination
+MIN_FEATURES_FOR_GROUP = 2
+
 
 @dataclass
 class OptimizationResult:
@@ -129,7 +136,7 @@ def _get_experimental_feature_combinations(include_derived: bool = True) -> list
     # 3. Logical groups: time-related features together
     time_features = ["day_of_week", "is_weekend", "is_night"]
     matching_time = [f for f in feature_names if f in time_features]
-    if len(matching_time) >= 2:
+    if len(matching_time) >= MIN_FEATURES_FOR_GROUP:
         config = {name: False for name in feature_names}
         for tf in matching_time:
             config[tf] = True
@@ -138,7 +145,7 @@ def _get_experimental_feature_combinations(include_derived: bool = True) -> list
     # 4. All weather aggregations
     weather_agg_features = ["pressure", "outdoor_temp_avg_6h", "outdoor_temp_avg_7d"]
     matching_weather = [f for f in feature_names if f in weather_agg_features]
-    if len(matching_weather) >= 2:
+    if len(matching_weather) >= MIN_FEATURES_FOR_GROUP:
         config = {name: False for name in feature_names}
         for wf in matching_weather:
             config[wf] = True
@@ -147,7 +154,7 @@ def _get_experimental_feature_combinations(include_derived: bool = True) -> list
     # 5. Heating-related features
     heating_features = ["heating_kwh_last_7d", "heating_degree_hours_24h", "heating_degree_hours_7d"]
     matching_heating = [f for f in feature_names if f in heating_features]
-    if len(matching_heating) >= 2:
+    if len(matching_heating) >= MIN_FEATURES_FOR_GROUP:
         config = {name: False for name in feature_names}
         for hf in matching_heating:
             config[hf] = True
@@ -185,16 +192,21 @@ def _train_single_configuration(
         OptimizationResult with training metrics
     """
     try:
-        # Apply configuration to a local copy (thread-safe)
-        config = get_feature_config()
-        for feature_name, enabled in combo.items():
-            if enabled:
-                config.enable_feature(feature_name)
-            else:
-                config.disable_feature(feature_name)
-        
-        # Build dataset with current configuration
-        df, stats = build_dataset_fn(min_samples=min_samples)
+        # Use lock to ensure feature configuration and dataset building are atomic
+        # This prevents race conditions where Thread A's config could be overwritten
+        # by Thread B before Thread A finishes building its dataset
+        with _config_lock:
+            config = get_feature_config()
+            # Apply this thread's feature configuration
+            for feature_name, enabled in combo.items():
+                if enabled:
+                    config.enable_feature(feature_name)
+                else:
+                    config.disable_feature(feature_name)
+            
+            # Build dataset with current configuration while holding the lock
+            # This ensures the config is consistent throughout dataset building
+            df, stats = build_dataset_fn(min_samples=min_samples)
         
         if df is None:
             return OptimizationResult(

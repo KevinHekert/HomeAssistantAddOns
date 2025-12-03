@@ -1,6 +1,39 @@
 # Changelog
 
 All notable changes to this add-on will be documented in this file.
+
+## [0.0.0.113] - 2025-12-03
+
+- **Fix Optimizer Results Application**
+  - **Issue**: When applying an optimizer result, the feature configuration wasn't being restored correctly
+    - Only experimental features that were tested were being applied
+    - Other features (core features, or experimental features not in the test) retained their current state
+    - This meant the "same settings" weren't actually being used - only partial settings
+  - **Root Cause**: Optimizer only stored `experimental_features` (the features being tested), not the complete configuration state
+  - **Solution**: 
+    - Added `complete_feature_config_json` column to `optimizer_results` database table
+    - Added `complete_feature_config` field to `OptimizationResult` dataclass
+    - Modified optimizer to capture complete feature state (all features, core + experimental) when storing results
+    - Updated `apply_best_configuration` to apply complete feature config if available, falls back to experimental_features for legacy results
+    - Added `get_complete_feature_state()` method to `FeatureConfiguration` class
+  - **Additional Fix**: Removed references to non-existent `loadFeaturesBtn` button that was causing JavaScript errors when applying optimizer results
+  - **Testing**: Added comprehensive tests to verify complete configuration storage and application
+    - `test_optimization_result_has_complete_feature_config`: Verifies result stores complete config
+    - `test_apply_complete_feature_config`: Verifies all features are restored when applying result
+    - `test_apply_legacy_experimental_features_only`: Verifies legacy results still work
+    - `test_get_complete_feature_state`: Verifies method returns all features
+  - **Files Changed**: 
+    - `energy_orchestrator/app/templates/index.html`: Fixed JavaScript error
+    - `energy_orchestrator/app/db/models.py`: Added `complete_feature_config_json` column
+    - `energy_orchestrator/app/db/optimizer_storage.py`: Updated save/load functions
+    - `energy_orchestrator/app/ml/feature_config.py`: Added `get_complete_feature_state()` method
+    - `energy_orchestrator/app/ml/optimizer.py`: Capture and apply complete feature config
+    - `energy_orchestrator/app/app.py`: Pass complete_feature_config to apply function
+    - `energy_orchestrator/app/tests/test_ui_structure.py`: Added tests for JavaScript fix
+    - `energy_orchestrator/app/tests/test_optimizer_complete_config.py`: Added tests for complete config
+  - **Impact**: Users can now reliably restore the exact same feature configuration used in any optimizer run, not just partial settings
+  - **Why This Matters**: When users want to reuse settings from a successful optimizer run, they get the COMPLETE configuration, ensuring reproducible results
+
 ## [0.0.0.112] - 2025-12-03
 
 - **Fix Training Data Popup - Display Correct First and Last Rows of Training Split**

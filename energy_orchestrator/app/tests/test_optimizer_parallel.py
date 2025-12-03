@@ -13,7 +13,7 @@ from ml.optimizer import (
     OptimizerProgress,
     OptimizationResult,
     _get_all_available_features,
-    _get_experimental_feature_combinations,
+    _generate_experimental_feature_combinations,
     _train_single_configuration,
 )
 
@@ -78,7 +78,7 @@ class TestDerivedFeatureDiscovery:
             assert "outdoor_temp_avg_6h" in features
             assert "avatar_avg_24h" in features
     
-    def test_get_experimental_feature_combinations_with_derived(self):
+    def test_generate_experimental_feature_combinations_with_derived(self):
         """Get feature combinations includes derived features when requested."""
         with patch("ml.optimizer._get_all_available_features") as mock_get_all:
             mock_get_all.return_value = [
@@ -87,7 +87,7 @@ class TestDerivedFeatureDiscovery:
                 "outdoor_temp_avg_6h",
             ]
             
-            combos = _get_experimental_feature_combinations(include_derived=True)
+            combos = list(_generate_experimental_feature_combinations(include_derived=True))
             
             # Should have generated combinations with derived features
             assert len(combos) > 0
@@ -96,14 +96,14 @@ class TestDerivedFeatureDiscovery:
             # Should have individual feature combinations
             assert any(combo.get("wind_avg_1h") for combo in combos)
     
-    def test_get_experimental_feature_combinations_without_derived(self):
+    def test_generate_experimental_feature_combinations_without_derived(self):
         """Get feature combinations excludes derived features when not requested."""
         with patch("ml.optimizer.EXPERIMENTAL_FEATURES") as mock_exp_features:
             mock_feature = MagicMock()
             mock_feature.name = "pressure"
             mock_exp_features.__iter__.return_value = [mock_feature]
             
-            combos = _get_experimental_feature_combinations(include_derived=False)
+            combos = list(_generate_experimental_feature_combinations(include_derived=False))
             
             # Should only have experimental features, not derived
             assert len(combos) > 0
@@ -234,7 +234,7 @@ class TestParallelExecution:
             return (mock_model, mock_two_step_metrics)
         
         with patch("ml.optimizer.get_feature_config") as mock_get_config, \
-             patch("ml.optimizer._get_experimental_feature_combinations") as mock_combos:
+             patch("ml.optimizer._generate_experimental_feature_combinations") as mock_combos:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config
@@ -287,7 +287,7 @@ class TestParallelExecution:
             progress_updates.append(progress.completed_configurations)
         
         with patch("ml.optimizer.get_feature_config") as mock_get_config, \
-             patch("ml.optimizer._get_experimental_feature_combinations") as mock_combos:
+             patch("ml.optimizer._generate_experimental_feature_combinations") as mock_combos:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config
@@ -330,7 +330,7 @@ class TestParallelExecution:
             return (mock_model, mock_two_step_metrics)
         
         with patch("ml.optimizer.get_feature_config") as mock_get_config, \
-             patch("ml.optimizer._get_experimental_feature_combinations") as mock_combos:
+             patch("ml.optimizer._generate_experimental_feature_combinations") as mock_combos:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config
@@ -383,7 +383,7 @@ class TestParallelExecution:
             return (mock_model, mock_two_step_metrics)
         
         with patch("ml.optimizer.get_feature_config") as mock_get_config, \
-             patch("ml.optimizer._get_experimental_feature_combinations") as mock_combos:
+             patch("ml.optimizer._generate_experimental_feature_combinations") as mock_combos:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config
@@ -434,7 +434,7 @@ class TestProgressReporting:
             return (mock_model, mock_two_step_metrics)
         
         with patch("ml.optimizer.get_feature_config") as mock_get_config, \
-             patch("ml.optimizer._get_experimental_feature_combinations") as mock_combos:
+             patch("ml.optimizer._generate_experimental_feature_combinations") as mock_combos:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config
@@ -475,7 +475,7 @@ class TestProgressReporting:
             return (mock_model, mock_two_step_metrics)
         
         with patch("ml.optimizer.get_feature_config") as mock_get_config, \
-             patch("ml.optimizer._get_experimental_feature_combinations") as mock_combos:
+             patch("ml.optimizer._generate_experimental_feature_combinations") as mock_combos:
             mock_config = MagicMock()
             mock_config.to_dict.return_value = {"experimental_enabled": {}}
             mock_get_config.return_value = mock_config

@@ -205,27 +205,10 @@ def calculate_feature_statistics(
                     )
                 
                 if start_time is None:
-                    # Start from the earliest time where we have enough history
-                    # Use the maximum enabled window size across all sensors that have explicit configuration
-                    max_window_minutes = 0
-                    for sensor_name_check in sensor_names:
-                        # Only check sensors that are explicitly configured
-                        if sensor_name_check in stats_config.sensor_configs:
-                            sensor_config_check = stats_config.sensor_configs[sensor_name_check]
-                            for stat_type in sensor_config_check.enabled_stats:
-                                window_minutes = STAT_TYPE_WINDOWS.get(stat_type, 0)
-                                max_window_minutes = max(max_window_minutes, window_minutes)
-                    
-                    # If no stats are explicitly enabled, use 1 hour as minimum
-                    if max_window_minutes == 0:
-                        max_window_minutes = STAT_TYPE_WINDOWS[StatType.AVG_1H]
-                    
-                    start_time = db_start + timedelta(minutes=max_window_minutes)
-                    _Logger.info(
-                        "Auto-determined start_time based on max window of %d minutes: %s",
-                        max_window_minutes,
-                        start_time
-                    )
+                    # Use earliest data point as default start
+                    # We'll calculate appropriate start times per stat type below
+                    start_time = db_start
+                    _Logger.info("Using earliest data point as base start_time: %s", start_time)
                 
                 if end_time is None:
                     end_time = db_end
@@ -242,12 +225,24 @@ def calculate_feature_statistics(
             stat_types_used = set()
             
             # Process each sensor
+            sensors_with_stats = 0
+            sensors_skipped_no_config = 0
+            sensors_skipped_no_data = 0
+            
             for sensor_name in sensor_names:
-                sensor_config = stats_config.get_sensor_config(sensor_name)
+                # Check if sensor has explicit configuration
+                # Don't create defaults automatically
+                if sensor_name not in stats_config.sensor_configs:
+                    _Logger.debug("No configuration for sensor '%s', skipping", sensor_name)
+                    sensors_skipped_no_config += 1
+                    continue
+                
+                sensor_config = stats_config.sensor_configs[sensor_name]
                 enabled_stats = sensor_config.enabled_stats
                 
                 if not enabled_stats:
                     _Logger.debug("No statistics enabled for sensor '%s', skipping", sensor_name)
+                    sensors_skipped_no_config += 1
                     continue
                 
                 # Get all time slots for this sensor in the range
@@ -259,7 +254,10 @@ def calculate_feature_statistics(
                 
                 if not slots:
                     _Logger.debug("No resampled data for sensor '%s' in time range", sensor_name)
+                    sensors_skipped_no_data += 1
                     continue
+                
+                sensors_with_stats += 1
                 
                 # Get unit from first sample
                 first_sample = session.query(ResampledSample).filter(
@@ -276,8 +274,41 @@ def calculate_feature_statistics(
                     
                     stat_types_used.add(stat_type.value)
                     
+                    # Calculate stat-type-specific start time
+                    # Each stat type needs enough history for its window
+                    stat_start_time = start_time + timedelta(minutes=window_minutes)
+                    
+                    # Validate this stat type has enough data
+                    if stat_start_time > end_time:
+                        data_span_minutes = int((end_time - start_time).total_seconds() / 60)
+                        _Logger.debug(
+                            "Insufficient data for %s on sensor '%s': need %d minutes, have %d minutes. Skipping this stat type.",
+                            stat_type.value,
+                            sensor_name,
+                            window_minutes,
+                            data_span_minutes
+                        )
+                        continue
+                    
+                    # Get time slots for this sensor in the stat-type-specific range
+                    stat_slots = session.query(ResampledSample.slot_start).filter(
+                        ResampledSample.category == sensor_name,
+                        ResampledSample.slot_start >= stat_start_time,
+                        ResampledSample.slot_start <= end_time,
+                    ).distinct().order_by(ResampledSample.slot_start).all()
+                    
+                    if not stat_slots:
+                        _Logger.debug(
+                            "No slots available for %s on sensor '%s' (need data from %s to %s)",
+                            stat_type.value,
+                            sensor_name,
+                            stat_start_time,
+                            end_time
+                        )
+                        continue
+                    
                     # Calculate for each time slot
-                    for (slot_start,) in slots:
+                    for (slot_start,) in stat_slots:
                         stats_calculated += 1
                         
                         avg_value, sample_count = calculate_rolling_average(
@@ -321,10 +352,14 @@ def calculate_feature_statistics(
             session.commit()
             
             _Logger.info(
-                "Feature statistics calculation complete: %d calculated, %d saved, %d sensors processed",
+                "Feature statistics calculation complete: %d calculated, %d saved, %d sensors processed "
+                "(%d with stats, %d skipped - no config, %d skipped - no data)",
                 stats_calculated,
                 stats_saved,
                 len(sensor_names),
+                sensors_with_stats,
+                sensors_skipped_no_config,
+                sensors_skipped_no_data,
             )
             
             return FeatureStatsCalculationResult(

@@ -2924,32 +2924,54 @@
             const detailsCell = document.createElement('td');
             detailsCell.colSpan = 7;  // Span all columns
             
+            // Core features (15 features - always used in their configured state)
+            const coreFeatures = [
+                'outdoor_temp', 'wind', 'humidity', 'indoor_temp', 'target_temp',
+                'outdoor_temp_avg_1h', 'outdoor_temp_avg_24h', 'indoor_temp_avg_6h', 
+                'indoor_temp_avg_24h', 'target_temp_avg_6h', 'target_temp_avg_24h',
+                'hour_of_day', 'is_weekend', 'is_night', 'hp_kwh_prev_1h'
+            ];
+            
             // Build features display
             let html = '<div class="feature-details-content">';
             html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">';
-            html += '<h5 style="margin: 0;">Experimental Features Used:</h5>';
+            html += '<h5 style="margin: 0;">Features Used in Training:</h5>';
             html += '<div style="color: var(--text-secondary); font-size: 0.9rem;">';
             html += `Training: <strong>${trainSamples || 0}</strong> rows | Validation: <strong>${valSamples || 0}</strong> rows`;
             html += '</div>';
             html += '</div>';
             
+            // Show core features
+            html += '<div style="margin-bottom: 1rem;">';
+            html += '<h6 style="margin: 0 0 0.5rem 0; color: var(--accent-green); font-size: 0.9rem;">Core Features (always used):</h6>';
+            html += '<div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">';
+            for (const coreFeat of coreFeatures) {
+                html += `<span class="feature-tag" style="background: var(--accent-green);">${coreFeat} (${trainSamples || 0} rows)</span>`;
+            }
+            html += '</div>';
+            html += '</div>';
+            
+            // Show experimental features
+            html += '<div>';
+            html += '<h6 style="margin: 0 0 0.5rem 0; color: var(--accent-orange); font-size: 0.9rem;">Experimental Features (tested in this configuration):</h6>';
             if (features && Object.keys(features).length > 0) {
                 const enabledFeatures = Object.entries(features).filter(([_, value]) => value === true);
                 
                 if (enabledFeatures.length > 0) {
                     html += '<div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">';
                     for (const [key, _] of enabledFeatures) {
-                        // Show feature name with row count in brackets (same for all features)
-                        html += `<span class="feature-tag">${key} (${trainSamples || 0} rows)</span>`;
+                        html += `<span class="feature-tag" style="background: var(--accent-orange);">${key} (${trainSamples || 0} rows)</span>`;
                     }
                     html += '</div>';
-                    html += `<p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0.5rem 0 0 0;">All features use the same ${trainSamples || 0} training rows and ${valSamples || 0} validation rows.</p>`;
                 } else {
-                    html += '<p style="color: var(--text-secondary); margin: 0;">No experimental features enabled (core features only)</p>';
+                    html += '<p style="color: var(--text-secondary); margin: 0;">None enabled (core features only)</p>';
                 }
             } else {
-                html += '<p style="color: var(--text-secondary); margin: 0;">No experimental features enabled (core features only)</p>';
+                html += '<p style="color: var(--text-secondary); margin: 0;">None enabled (core features only)</p>';
             }
+            html += '</div>';
+            
+            html += `<p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0.75rem 0 0 0; font-style: italic;">Total: ${coreFeatures.length} core + ${Object.values(features || {}).filter(v => v === true).length} experimental features = ${coreFeatures.length + Object.values(features || {}).filter(v => v === true).length} features used</p>`;
             
             html += '</div>';
             detailsCell.innerHTML = html;

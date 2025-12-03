@@ -20,10 +20,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 import copy
+import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from itertools import combinations
 import gc
+import time
+import psutil
+import os
 
 from ml.feature_config import (
     FeatureConfiguration,
@@ -40,6 +44,135 @@ _progress_lock = threading.Lock()
 # Lock for thread-safe feature configuration modifications
 # This ensures that feature config changes and dataset building happen atomically
 _config_lock = threading.Lock()
+
+
+def _calculate_optimal_workers(max_memory_mb: Optional[float] = None) -> int:
+    """
+    Automatically calculate the optimal number of parallel workers based on system resources.
+    
+    This function considers:
+    1. Available system memory
+    2. Number of CPU cores
+    3. Estimated memory per training task (~100-200 MB)
+    4. User-defined memory limit (if provided)
+    
+    Args:
+        max_memory_mb: Optional user-defined maximum memory in MB.
+                       If None, uses 75% of available system memory.
+    
+    Returns:
+        Optimal number of workers (minimum 1, maximum 10)
+    """
+    try:
+        # Get system resources
+        cpu_count = os.cpu_count() or 1
+        sys_mem = psutil.virtual_memory()
+        
+        # Determine available memory for optimizer
+        if max_memory_mb is not None:
+            available_for_optimizer = max_memory_mb
+        else:
+            # Use 75% of available system memory as default
+            total_mb = sys_mem.total / 1024 / 1024
+            available_for_optimizer = total_mb * 0.75
+        
+        # Estimate memory per training task
+        # Typical: 100-200 MB per task (DataFrame + model + overhead)
+        # Conservative estimate: 200 MB
+        estimated_memory_per_task = 200
+        
+        # Calculate max workers based on memory
+        workers_by_memory = max(1, int(available_for_optimizer / estimated_memory_per_task))
+        
+        # Calculate max workers based on CPU (leave 1 core for system)
+        workers_by_cpu = max(1, cpu_count - 1)
+        
+        # Take the minimum to avoid oversubscribing either resource
+        optimal_workers = min(workers_by_memory, workers_by_cpu, 10)  # Cap at 10
+        
+        _Logger.info(
+            "Auto-calculated optimal workers: %d (Memory: %.0f MB → %d workers, CPU: %d cores → %d workers)",
+            optimal_workers, available_for_optimizer, workers_by_memory, cpu_count, workers_by_cpu
+        )
+        
+        return optimal_workers
+        
+    except Exception as e:
+        _Logger.warning("Failed to calculate optimal workers, defaulting to 1: %s", e)
+        return 1
+
+
+def _log_memory_usage(label: str) -> dict[str, float]:
+    """
+    Log current memory usage at INFO level.
+    
+    Args:
+        label: Descriptive label for this memory check
+        
+    Returns:
+        Dictionary with memory stats in MB
+    """
+    try:
+        process = psutil.Process(os.getpid())
+        mem_info = process.memory_info()
+        rss_mb = mem_info.rss / 1024 / 1024  # Resident Set Size in MB
+        vms_mb = mem_info.vms / 1024 / 1024  # Virtual Memory Size in MB
+        
+        # Get system-wide memory if available
+        sys_mem = psutil.virtual_memory()
+        available_mb = sys_mem.available / 1024 / 1024
+        percent_used = sys_mem.percent
+        
+        _Logger.info(
+            "%s - Memory: RSS=%.1f MB, VMS=%.1f MB, System Available=%.1f MB (%.1f%% used)",
+            label, rss_mb, vms_mb, available_mb, percent_used
+        )
+        
+        return {
+            "rss_mb": rss_mb,
+            "vms_mb": vms_mb,
+            "available_mb": available_mb,
+            "percent_used": percent_used,
+        }
+    except Exception as e:
+        _Logger.warning("Failed to get memory usage: %s", e)
+        return {}
+
+
+def _should_allow_parallel_task(max_memory_mb: Optional[float] = None) -> bool:
+    """
+    Check if we have enough memory to start another parallel task.
+    
+    This function implements memory-based throttling to prevent OOM kills.
+    If current memory usage exceeds the threshold, parallel tasks are throttled.
+    
+    Args:
+        max_memory_mb: Maximum allowed memory in MB. If None, defaults to 1536 MB (75% of 2GB limit)
+        
+    Returns:
+        True if we can safely start another parallel task, False otherwise
+    """
+    if max_memory_mb is None:
+        max_memory_mb = 1536  # Default to 1.5GB (75% of typical 2GB container limit)
+    
+    try:
+        process = psutil.Process(os.getpid())
+        mem_info = process.memory_info()
+        rss_mb = mem_info.rss / 1024 / 1024
+        
+        # Check if we're below the threshold
+        if rss_mb < max_memory_mb:
+            return True
+        else:
+            _Logger.debug(
+                "Memory throttle active: RSS=%.1f MB exceeds threshold %.1f MB",
+                rss_mb, max_memory_mb
+            )
+            return False
+    except Exception as e:
+        _Logger.warning("Failed to check memory for throttling: %s", e)
+        # If we can't check memory, be conservative and don't allow parallel
+        return False
 
 
 @dataclass
@@ -270,6 +403,13 @@ def _train_single_configuration(
         del df
         del model
         
+        # Force garbage collection to free memory immediately
+        gc.collect()
+        
+        # Add a small delay to allow garbage collector to complete
+        # This prevents memory accumulation during rapid sequential training
+        time.sleep(0.5)
+        
         # Extract metrics based on model type
         if model_type == "single_step":
             val_mape_pct = None
@@ -305,9 +445,6 @@ def _train_single_configuration(
                 success=True,
                 training_timestamp=datetime.now(),
             )
-        
-        # Force garbage collection to free memory immediately
-        gc.collect()
         
         return result
             
@@ -346,20 +483,38 @@ def run_optimization(
     build_dataset_fn: Callable,
     progress_callback: Optional[Callable[[OptimizerProgress], None]] = None,
     min_samples: int = 50,
-    max_workers: int = 1,
     include_derived_features: bool = True,
+    max_memory_mb: Optional[float] = None,
 ) -> OptimizerProgress:
     """
     Run the settings optimizer to find the best configuration.
     
     This function:
     1. Saves current settings
-    2. Iterates through ALL feature combinations (2^N)
-    3. Trains both single-step and two-step models (in parallel)
-    4. Compares Val MAPE to find the best configuration
-    5. Reports progress via callback
+    2. Automatically calculates optimal number of workers based on system resources
+    3. Iterates through ALL feature combinations (2^N)
+    4. Trains both single-step and two-step models with adaptive parallelism
+    5. Compares Val MAPE to find the best configuration
+    6. Reports progress via callback
+    7. Logs memory usage at INFO level for monitoring
     
     For 10 experimental features, this tests 1024 combinations × 2 models = 2048 trainings.
+    
+    Memory Management:
+    - Auto-calculates optimal workers based on available memory and CPU cores
+    - Uses adaptive parallelism based on real-time memory availability
+    - Throttles parallel workers when memory exceeds max_memory_mb threshold
+    - Falls back to sequential processing when memory is constrained
+    - Adds 0.5s delay after each training to allow garbage collection
+    - Forces garbage collection every 10 iterations
+    - Logs memory usage every 10 iterations at INFO level
+    - Explicitly deletes DataFrames and models after each training
+    
+    Worker Calculation:
+    - Automatically determines optimal workers from system resources
+    - Considers: available memory, CPU cores, estimated task memory (~200MB)
+    - Formula: min(memory_workers, cpu_workers, 10)
+    - Example: 4GB RAM, 4 cores → min(20, 3, 10) = 3 workers
     
     Args:
         train_single_step_fn: Function to train single-step model (df) -> (model, metrics)
@@ -367,13 +522,18 @@ def run_optimization(
         build_dataset_fn: Function to build feature dataset (min_samples) -> (df, stats)
         progress_callback: Optional callback for progress updates
         min_samples: Minimum samples required for training
-        max_workers: Maximum number of parallel workers (default: 1, reduced from 3 to prevent OOM)
         include_derived_features: Whether to include derived features in combinations (default: True)
+        max_memory_mb: Maximum memory in MB before throttling parallel execution.
+                       If None, defaults to 1536 MB (75% of 2GB limit).
+                       Set via UI optimizer settings.
         
     Returns:
         OptimizerProgress with all results and the best configuration.
         Use progress.get_top_results(20) to get the top 20 results for UI display.
     """
+    # Auto-calculate optimal number of workers based on system resources
+    max_workers = _calculate_optimal_workers(max_memory_mb)
+    
     # Initialize progress
     combinations = _get_experimental_feature_combinations(
         include_derived=include_derived_features,
@@ -403,8 +563,13 @@ def run_optimization(
         f"[{datetime.now().strftime('%H:%M:%S')}] Testing {len(combinations)} configurations with 2 models each ({total_configs} total trainings)"
     )
     
+    # Log memory settings
+    mem_limit_str = f"{max_memory_mb:.0f} MB" if max_memory_mb else "1536 MB (default)"
     progress.add_log_message(
-        f"[{datetime.now().strftime('%H:%M:%S')}] Using {max_workers} parallel workers for training"
+        f"[{datetime.now().strftime('%H:%M:%S')}] Memory limit: {mem_limit_str}, Max workers: {max_workers}"
+    )
+    progress.add_log_message(
+        f"[{datetime.now().strftime('%H:%M:%S')}] Using adaptive parallelism with memory-based throttling"
     )
     
     if progress_callback:
@@ -413,6 +578,9 @@ def run_optimization(
     try:
         progress.phase = "training"
         
+        # Log initial memory state
+        _log_memory_usage("Optimizer start")
+        
         # Create a list of all training tasks (config + model_type combinations)
         training_tasks = []
         for combo in combinations:
@@ -420,75 +588,116 @@ def run_optimization(
             training_tasks.append((config_name, combo, "single_step", train_single_step_fn))
             training_tasks.append((config_name, combo, "two_step", train_two_step_fn))
         
-        # Use ThreadPoolExecutor for parallel training
+        # ADAPTIVE PARALLEL PROCESSING with memory throttling
+        # Uses ThreadPoolExecutor but limits active workers based on memory usage
+        # Falls back to sequential when memory is constrained
+        _Logger.info(
+            "Processing %d training tasks with adaptive parallelism (max %d workers, memory limit %s)",
+            len(training_tasks), max_workers, mem_limit_str
+        )
+        
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all training tasks
-            future_to_task = {}
-            for config_name, combo, model_type, train_fn in training_tasks:
-                future = executor.submit(
-                    _train_single_configuration,
-                    config_name,
-                    combo,
-                    model_type,
-                    train_fn,
-                    build_dataset_fn,
-                    min_samples,
-                )
-                future_to_task[future] = (config_name, model_type)
+            # Track active futures and pending tasks
+            active_futures = {}
+            pending_tasks = list(enumerate(training_tasks, start=1))
+            pending_tasks.reverse()  # Use as a stack (pop from end)
             
-            # Process completed tasks as they finish
-            for idx, future in enumerate(as_completed(future_to_task), start=1):
-                config_name, model_type = future_to_task[future]
+            # Process tasks with memory-aware throttling
+            while pending_tasks or active_futures:
+                # Submit new tasks if memory allows and we have capacity
+                while (
+                    len(active_futures) < max_workers 
+                    and pending_tasks 
+                    and _should_allow_parallel_task(max_memory_mb)
+                ):
+                    idx, (config_name, combo, model_type, train_fn) = pending_tasks.pop()
+                    
+                    future = executor.submit(
+                        _train_single_configuration,
+                        config_name,
+                        combo,
+                        model_type,
+                        train_fn,
+                        build_dataset_fn,
+                        min_samples,
+                    )
+                    active_futures[future] = (idx, config_name, model_type)
+                    _Logger.debug("Submitted task %d/%d: %s (%s)", idx, total_configs, config_name, model_type)
                 
-                try:
-                    result = future.result()
+                # Wait for at least one task to complete if we have any active
+                if active_futures:
+                    # Use timeout to periodically check memory even if no tasks complete
+                    done, _ = concurrent.futures.wait(
+                        active_futures.keys(),
+                        timeout=2.0,
+                        return_when=concurrent.futures.FIRST_COMPLETED
+                    )
                     
-                    # Thread-safe progress update
-                    with _progress_lock:
-                        progress.results.append(result)
-                        progress.completed_configurations += 1
-                        progress.current_configuration = config_name
-                        progress.current_model_type = model_type
+                    # Process completed tasks
+                    for future in done:
+                        idx, config_name, model_type = active_futures.pop(future)
                         
-                        # Log the result
-                        if result.success:
-                            mape_str = f"{result.val_mape_pct:.2f}%" if result.val_mape_pct is not None else "N/A"
-                            progress.add_log_message(
-                                f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Val MAPE = {mape_str}"
-                            )
-                        else:
-                            progress.add_log_message(
-                                f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Failed - {result.error_message}"
-                            )
-                        
-                        # Update best result if this is better
-                        if result.success and result.val_mape_pct is not None:
-                            if (
-                                progress.best_result is None
-                                or progress.best_result.val_mape_pct is None
-                                or result.val_mape_pct < progress.best_result.val_mape_pct
-                            ):
-                                progress.best_result = result
+                        try:
+                            result = future.result()
+                            
+                            # Log memory periodically
+                            if idx % 10 == 1:
+                                _log_memory_usage(f"After task {idx}/{total_configs}")
+                            
+                            # Update progress
+                            with _progress_lock:
+                                progress.results.append(result)
+                                progress.completed_configurations += 1
+                                progress.current_configuration = config_name
+                                progress.current_model_type = model_type
+                                
+                                # Log the result
+                                if result.success:
+                                    mape_str = f"{result.val_mape_pct:.2f}%" if result.val_mape_pct is not None else "N/A"
+                                    progress.add_log_message(
+                                        f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Val MAPE = {mape_str}"
+                                    )
+                                else:
+                                    progress.add_log_message(
+                                        f"[{datetime.now().strftime('%H:%M:%S')}] [{progress.completed_configurations}/{total_configs}] {config_name} ({model_type}): Failed - {result.error_message}"
+                                    )
+                                
+                                # Update best result if this is better
+                                if result.success and result.val_mape_pct is not None:
+                                    if (
+                                        progress.best_result is None
+                                        or progress.best_result.val_mape_pct is None
+                                        or result.val_mape_pct < progress.best_result.val_mape_pct
+                                    ):
+                                        progress.best_result = result
+                                        progress.add_log_message(
+                                            f"[{datetime.now().strftime('%H:%M:%S')}] 🏆 New best: {config_name} ({model_type}) with Val MAPE = {result.val_mape_pct:.2f}%"
+                                        )
+                            
+                            # Call progress callback outside the lock to avoid deadlocks
+                            if progress_callback:
+                                progress_callback(progress)
+                            
+                            # Garbage collection every 10 completed tasks
+                            if progress.completed_configurations % 10 == 0:
+                                gc.collect()
+                                _log_memory_usage(f"After GC at {progress.completed_configurations}/{total_configs}")
+                                _Logger.info("Garbage collection completed at %d/%d", progress.completed_configurations, total_configs)
+                                
+                        except Exception as e:
+                            _Logger.error("Error processing result for %s (%s): %s", config_name, model_type, e)
+                            with _progress_lock:
                                 progress.add_log_message(
-                                    f"[{datetime.now().strftime('%H:%M:%S')}] 🏆 New best: {config_name} ({model_type}) with Val MAPE = {result.val_mape_pct:.2f}%"
+                                    f"[{datetime.now().strftime('%H:%M:%S')}] Error processing result: {str(e)}"
                                 )
-                    
-                    # Call progress callback outside the lock to avoid deadlocks
-                    if progress_callback:
-                        progress_callback(progress)
-                    
-                    # Periodically force garbage collection every 50 iterations
-                    # This helps prevent memory accumulation during long optimization runs
-                    if idx % 50 == 0:
-                        gc.collect()
-                        _Logger.debug("Periodic garbage collection at iteration %d", idx)
-                        
-                except Exception as e:
-                    _Logger.error("Error processing result for %s (%s): %s", config_name, model_type, e)
-                    with _progress_lock:
-                        progress.add_log_message(
-                            f"[{datetime.now().strftime('%H:%M:%S')}] Error processing result: {str(e)}"
-                        )
+                
+                # If memory is high and no tasks completed, wait a bit before checking again
+                elif pending_tasks:
+                    _Logger.debug("Memory limit reached, waiting for tasks to complete...")
+                    time.sleep(1.0)
+        
+        # Final memory log
+        _log_memory_usage("Optimizer complete")
         
         # Optimization complete
         progress.phase = "complete"

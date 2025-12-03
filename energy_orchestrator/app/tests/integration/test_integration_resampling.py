@@ -15,8 +15,6 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from db.models import Sample, SensorMapping, ResampledSample
-# Old API - needs to be updated to use resample_all_categories()
-# from db.resample import resample_category
 
 
 @pytest.mark.integration

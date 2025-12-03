@@ -15,8 +15,6 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from db.models import ResampledSample, FeatureStatistic, SensorMapping
-# Old API - needs to be updated to use calculate_feature_statistics()
-# from db.calculate_feature_stats import calculate_feature_stats_for_slot
 
 
 @pytest.mark.integration

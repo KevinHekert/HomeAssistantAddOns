@@ -17,14 +17,7 @@ from ha.weather_api import (
     convert_forecast_to_scenario_timeslots,
 )
 from workers import start_sensor_logging_worker
-from db.resample import (
-    resample_all_categories, 
-    get_sample_rate_minutes, 
-    set_sample_rate_minutes, 
-    VALID_SAMPLE_RATES, 
-    flush_resampled_samples,
-    ResampleProgress,
-)
+from db.resample import resample_all_categories, get_sample_rate_minutes, set_sample_rate_minutes, VALID_SAMPLE_RATES, flush_resampled_samples
 from db.core import init_db_schema, engine
 from db import ResampledSample, FeatureStatistic
 from db.sensor_config import sync_sensor_mappings
@@ -141,12 +134,6 @@ PREDICTION_DECIMAL_PLACES = 4
 _heating_model: HeatingDemandModel | None = None
 _two_step_model: TwoStepHeatingDemandModel | None = None
 
-# Global resampling state
-_resample_lock = threading.Lock()
-_resample_progress: Optional[ResampleProgress] = None
-_resample_running: bool = False
-_resample_thread: Optional[threading.Thread] = None
-
 
 def _get_model() -> HeatingDemandModel | None:
     """Get the global heating demand model, loading it if necessary."""
@@ -182,82 +169,9 @@ def index():
     )
 
 
-def _run_resample_in_thread(sample_rate: int | None, flush: bool):
-    """Background thread function to run resampling."""
-    global _resample_progress, _resample_running
-    
-    try:
-        _Logger.info("Starting resampling in background...")
-        
-        def progress_callback(progress):
-            """Update global progress state."""
-            global _resample_progress
-            with _resample_lock:
-                _resample_progress = progress
-        
-        # Run the resampling with progress callback
-        stats = resample_all_categories(
-            sample_rate_minutes=sample_rate,
-            flush=flush,
-            progress_callback=progress_callback,
-        )
-        
-        # Update progress with feature stats phase
-        with _resample_lock:
-            if _resample_progress:
-                _resample_progress.phase = "calculating_stats"
-                _resample_progress.add_log("Calculating feature statistics...")
-        
-        # Step 2: Automatically calculate feature statistics after successful resampling
-        try:
-            _Logger.info("Calculating feature statistics after resampling...")
-            # If we flushed resampled data, also flush feature statistics
-            if flush:
-                flush_feature_statistics()
-                _Logger.info("Flushed feature statistics due to flush=True")
-                if _resample_progress:
-                    with _resample_lock:
-                        _resample_progress.add_log("Flushed feature statistics")
-            
-            feature_stats_result = calculate_feature_statistics()
-            _Logger.info(
-                "Feature statistics calculated: %d stats saved for %d sensors",
-                feature_stats_result.stats_saved,
-                feature_stats_result.sensors_processed,
-            )
-            
-            with _resample_lock:
-                if _resample_progress:
-                    _resample_progress.add_log(
-                        f"Feature stats: {feature_stats_result.stats_saved} saved for " +
-                        f"{feature_stats_result.sensors_processed} sensors"
-                    )
-                    _resample_progress.phase = "complete"
-        except Exception as e:
-            # Log error but don't fail - resampling was successful
-            _Logger.error("Error calculating feature statistics: %s", e, exc_info=True)
-            with _resample_lock:
-                if _resample_progress:
-                    _resample_progress.add_log(f"Warning: Feature stats error: {str(e)}")
-                    _resample_progress.phase = "complete"
-        
-    except Exception as e:
-        _Logger.error("Error running resample: %s", e, exc_info=True)
-        # Update progress with error
-        with _resample_lock:
-            if _resample_progress:
-                _resample_progress.phase = "error"
-                _resample_progress.error_message = str(e)
-                _resample_progress.add_log(f"Error: {str(e)}")
-    
-    finally:
-        with _resample_lock:
-            _resample_running = False
-
-
 @app.post("/resample")
 def trigger_resample():
-    """Trigger resampling of all categories to configured time slots in background.
+    """Trigger resampling of all categories to configured time slots.
     
     Optionally accepts a JSON body with:
     {
@@ -273,19 +187,7 @@ def trigger_resample():
     
     After resampling completes, feature statistics (time-span averages) are
     automatically calculated from the resampled data.
-    
-    This endpoint starts resampling in the background and returns immediately.
-    Use /api/resample/status to poll for progress.
     """
-    global _resample_progress, _resample_running, _resample_thread
-    
-    with _resample_lock:
-        if _resample_running:
-            return jsonify({
-                "status": "error",
-                "message": "Resampling is already running",
-            }), 400
-    
     try:
         # Check if parameters were provided in the request
         sample_rate = None
@@ -305,107 +207,57 @@ def trigger_resample():
         
         _Logger.info("Resample triggered via UI with sample_rate=%s, flush=%s", sample_rate or "default", flush)
         
-        # Initialize progress
-        with _resample_lock:
-            _resample_running = True
-            _resample_progress = ResampleProgress(
-                phase="initializing",
-                slots_processed=0,
-                slots_total=0,
-                slots_saved=0,
-                slots_skipped=0,
-                categories=[],
-                start_time=datetime.now(),
-                sample_rate_minutes=sample_rate or get_sample_rate_minutes(),
+        # Step 1: Always use resample_all_categories - it uses configured rate when sample_rate is None
+        stats = resample_all_categories(sample_rate, flush=flush)
+        
+        # Step 2: Automatically calculate feature statistics after successful resampling
+        feature_stats_result = None
+        try:
+            _Logger.info("Calculating feature statistics after resampling...")
+            # If we flushed resampled data, also flush feature statistics
+            if flush:
+                flush_feature_statistics()
+                _Logger.info("Flushed feature statistics due to flush=True")
+            
+            feature_stats_result = calculate_feature_statistics()
+            _Logger.info(
+                "Feature statistics calculated: %d stats saved for %d sensors",
+                feature_stats_result.stats_saved,
+                feature_stats_result.sensors_processed,
             )
-            _resample_progress.add_log("Initializing resampling...")
+        except Exception as e:
+            # Log error but don't fail the entire request
+            # Resampling was successful, feature stats calculation is secondary
+            _Logger.error("Error calculating feature statistics: %s", e, exc_info=True)
         
-        # Start resampling in background thread
-        _resample_thread = threading.Thread(
-            target=_run_resample_in_thread,
-            args=(sample_rate, flush),
-            daemon=True
-        )
-        _resample_thread.start()
-        
-        _Logger.info("Resample thread started")
-        
-        return jsonify({
+        response = {
             "status": "success",
-            "message": "Resampling started in background. Use /api/resample/status to check progress.",
-            "running": True,
-        })
-        
-    except Exception as e:
-        with _resample_lock:
-            _resample_running = False
-        _Logger.error("Error starting resample: %s", e, exc_info=True)
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-        }), 500
-
-
-@app.get("/api/resample/status")
-def get_resample_status():
-    """Get the current status of the resampling operation.
-    
-    Response:
-    {
-        "status": "success",
-        "running": false,
-        "progress": {
-            "phase": "complete",
-            "slots_processed": 1000,
-            "slots_total": 1000,
-            "slots_saved": 950,
-            "slots_skipped": 50,
-            "hours_processed": 83,
-            "hours_total": 83,
-            "categories": ["outdoor_temp", "indoor_temp", ...],
-            "current_slot": "2024-12-03T10:00:00",
-            "log": ["[10:00:00] Starting resample...", ...],
-            "sample_rate_minutes": 5
+            "message": "Resampling completed successfully",
+            "stats": {
+                "slots_processed": stats.slots_processed,
+                "slots_saved": stats.slots_saved,
+                "slots_skipped": stats.slots_skipped,
+                "categories": stats.categories,
+                "start_time": stats.start_time.isoformat() if stats.start_time else None,
+                "end_time": stats.end_time.isoformat() if stats.end_time else None,
+                "sample_rate_minutes": stats.sample_rate_minutes,
+                "table_flushed": stats.table_flushed,
+            },
         }
-    }
-    """
-    global _resample_progress, _resample_running
-    
-    with _resample_lock:
-        if _resample_progress is None:
-            return jsonify({
-                "status": "success",
-                "running": _resample_running,
-                "progress": None,
-                "message": "No resampling has been run yet",
-            })
         
-        progress = _resample_progress
-        is_running = _resample_running
-    
-    response_data = {
-        "status": "success",
-        "running": is_running,
-        "progress": {
-            "phase": progress.phase,
-            "slots_processed": progress.slots_processed,
-            "slots_total": progress.slots_total,
-            "slots_saved": progress.slots_saved,
-            "slots_skipped": progress.slots_skipped,
-            "hours_processed": progress.get_hours_processed(),
-            "hours_total": progress.get_hours_total(),
-            "categories": progress.categories,
-            "current_slot": progress.current_slot.isoformat() if progress.current_slot else None,
-            "log": progress.log_messages,
-            "sample_rate_minutes": progress.sample_rate_minutes,
-        },
-    }
-    
-    # Include error message if phase is error
-    if progress.phase == "error" and progress.error_message:
-        response_data["progress"]["error"] = progress.error_message
-    
-    return jsonify(response_data)
+        # Add feature statistics info to response if calculation succeeded
+        if feature_stats_result:
+            response["feature_stats"] = {
+                "stats_calculated": feature_stats_result.stats_calculated,
+                "stats_saved": feature_stats_result.stats_saved,
+                "sensors_processed": feature_stats_result.sensors_processed,
+                "stat_types": feature_stats_result.stat_types_processed,
+            }
+        
+        return jsonify(response)
+    except Exception as e:
+        _Logger.error("Error during resampling: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.get("/api/sample_rate")

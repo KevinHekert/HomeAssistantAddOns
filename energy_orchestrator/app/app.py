@@ -5,6 +5,9 @@ from typing import Optional
 from flask import Flask, render_template, jsonify, request
 from sqlalchemy.orm import Session
 import pandas as pd
+
+# Thread lock for optimizer state
+_optimizer_lock = threading.Lock()
 from ha.ha_api import get_entity_state
 from ha.weather_api import (
     get_weather_config,
@@ -3242,7 +3245,8 @@ def _run_optimizer_in_thread():
         def progress_callback(progress):
             """Update global progress state."""
             global _optimizer_progress
-            _optimizer_progress = progress
+            with _optimizer_lock:
+                _optimizer_progress = progress
         
         # Run the optimization
         progress = run_optimization(
@@ -3253,7 +3257,8 @@ def _run_optimizer_in_thread():
             min_samples=50,
         )
         
-        _optimizer_progress = progress
+        with _optimizer_lock:
+            _optimizer_progress = progress
         
         # Save results to database
         if progress:
@@ -3266,12 +3271,14 @@ def _run_optimizer_in_thread():
     except Exception as e:
         _Logger.error("Error running optimizer: %s", e, exc_info=True)
         # Update progress with error
-        if _optimizer_progress:
-            _optimizer_progress.phase = "error"
-            _optimizer_progress.error_message = str(e)
+        with _optimizer_lock:
+            if _optimizer_progress:
+                _optimizer_progress.phase = "error"
+                _optimizer_progress.error_message = str(e)
     
     finally:
-        _optimizer_running = False
+        with _optimizer_lock:
+            _optimizer_running = False
 
 
 @app.post("/api/optimizer/run")
@@ -3298,13 +3305,13 @@ def run_optimizer():
     """
     global _optimizer_progress, _optimizer_running, _optimizer_thread
     
-    if _optimizer_running:
-        return jsonify({
-            "status": "error",
-            "message": "Optimizer is already running",
-        }), 400
-    
-    try:
+    with _optimizer_lock:
+        if _optimizer_running:
+            return jsonify({
+                "status": "error",
+                "message": "Optimizer is already running",
+            }), 400
+        
         _optimizer_running = True
         _optimizer_progress = OptimizerProgress(
             total_configurations=0,
@@ -3314,7 +3321,8 @@ def run_optimizer():
             phase="initializing",
             start_time=datetime.now(),
         )
-        
+    
+    try:
         # Start optimizer in background thread
         _optimizer_thread = threading.Thread(target=_run_optimizer_in_thread, daemon=True)
         _optimizer_thread.start()
@@ -3328,7 +3336,8 @@ def run_optimizer():
         })
         
     except Exception as e:
-        _optimizer_running = False
+        with _optimizer_lock:
+            _optimizer_running = False
         _Logger.error("Error starting optimizer: %s", e, exc_info=True)
         return jsonify({
             "status": "error",
@@ -3350,19 +3359,21 @@ def get_optimizer_status():
     """
     global _optimizer_progress, _optimizer_running
     
-    if _optimizer_progress is None:
-        return jsonify({
-            "status": "success",
-            "running": _optimizer_running,
-            "progress": None,
-            "message": "No optimization has been run yet",
-        })
-    
-    progress = _optimizer_progress
+    with _optimizer_lock:
+        if _optimizer_progress is None:
+            return jsonify({
+                "status": "success",
+                "running": _optimizer_running,
+                "progress": None,
+                "message": "No optimization has been run yet",
+            })
+        
+        progress = _optimizer_progress
+        is_running = _optimizer_running
     
     response_data = {
         "status": "success",
-        "running": _optimizer_running,
+        "running": is_running,
         "progress": {
             "phase": progress.phase,
             "total_configurations": progress.total_configurations,
@@ -3374,19 +3385,25 @@ def get_optimizer_status():
     }
     
     # Include full results if optimization is complete
-    if progress.phase in ["complete", "error"] and not _optimizer_running:
-        response_data["progress"]["results"] = [
-            {
-                "config_name": r.config_name,
-                "model_type": r.model_type,
-                "val_mape_pct": round(r.val_mape_pct, 2) if r.val_mape_pct is not None else None,
-                "val_mae_kwh": round(r.val_mae_kwh, 4) if r.val_mae_kwh is not None else None,
-                "val_r2": round(r.val_r2, 4) if r.val_r2 is not None else None,
-                "success": r.success,
-                "error_message": r.error_message,
-            }
-            for r in progress.results
-        ]
+    if progress.phase in ["complete", "error"] and not is_running:
+        # Try to load results from database (which have IDs)
+        latest_run = get_latest_optimizer_run()
+        if latest_run and latest_run.get("results"):
+            response_data["progress"]["results"] = latest_run["results"]
+        else:
+            # Fallback to in-memory results (without IDs)
+            response_data["progress"]["results"] = [
+                {
+                    "config_name": r.config_name,
+                    "model_type": r.model_type,
+                    "val_mape_pct": round(r.val_mape_pct, 2) if r.val_mape_pct is not None else None,
+                    "val_mae_kwh": round(r.val_mae_kwh, 4) if r.val_mae_kwh is not None else None,
+                    "val_r2": round(r.val_r2, 4) if r.val_r2 is not None else None,
+                    "success": r.success,
+                    "error_message": r.error_message,
+                }
+                for r in progress.results
+            ]
         
         if progress.error_message:
             response_data["progress"]["error"] = progress.error_message

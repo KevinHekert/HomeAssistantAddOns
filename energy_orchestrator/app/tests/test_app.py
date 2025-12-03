@@ -1221,30 +1221,29 @@ class TestResampleStatusEndpoint:
     def test_resample_status_with_progress(self, client):
         """Status endpoint returns progress when resampling is running."""
         # Simulate resampling in progress by setting global state
-        with (patch("app._resample_progress") as mock_progress,
-              patch("app._resample_running", True),
-              patch("app._resample_lock")):
-            
-            mock_progress.phase = "resampling"
-            mock_progress.slots_processed = 60
-            mock_progress.slots_total = 120
-            mock_progress.slots_saved = 55
-            mock_progress.slots_skipped = 5
-            mock_progress.categories = ["outdoor_temp", "indoor_temp"]
-            mock_progress.current_slot = datetime(2024, 12, 3, 10, 0, 0)
-            mock_progress.log_messages = ["Log line 1", "Log line 2"]
-            mock_progress.sample_rate_minutes = 5
-            mock_progress.get_hours_processed = lambda: 5
-            mock_progress.get_hours_total = lambda: 10
-            mock_progress.error_message = None
-            
-            response = client.get("/api/resample/status")
+        with patch("app._resample_progress") as mock_progress:
+            with patch("app._resample_running", True):
+                with patch("app._resample_lock"):
+                    mock_progress.phase = "resampling"
+                    mock_progress.slots_processed = 60
+                    mock_progress.slots_total = 120
+                    mock_progress.slots_saved = 55
+                    mock_progress.slots_skipped = 5
+                    mock_progress.categories = ["outdoor_temp", "indoor_temp"]
+                    mock_progress.current_slot = datetime(2024, 12, 3, 10, 0, 0)
+                    mock_progress.log_messages = ["Log line 1", "Log line 2"]
+                    mock_progress.sample_rate_minutes = 5
+                    mock_progress.get_hours_processed = lambda: 5
+                    mock_progress.get_hours_total = lambda: 10
+                    mock_progress.error_message = None
+                    
+                    response = client.get("/api/resample/status")
 
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data["status"] == "success"
-            assert data["running"] is True
-            assert data["progress"]["phase"] == "resampling"
+                    assert response.status_code == 200
+                    data = response.get_json()
+                    assert data["status"] == "success"
+                    assert data["running"] is True
+                    assert data["progress"]["phase"] == "resampling"
             assert data["progress"]["hours_processed"] == 5
             assert data["progress"]["hours_total"] == 10
             assert data["progress"]["slots_processed"] == 60

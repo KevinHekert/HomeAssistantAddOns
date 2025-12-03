@@ -238,14 +238,23 @@ def get_optimizer_run_top_results(run_id: int, limit: int = 20) -> list[dict]:
 
 def save_optimizer_run(progress: OptimizerProgress) -> Optional[int]:
     """
-    Save an optimizer run and all its results to the database.
+    Save an optimizer run (legacy function - kept for backward compatibility).
+    
+    NOTE: This function is now primarily for saving runs that weren't
+    already saved via streaming. New code should use create_optimizer_run()
+    and save_optimizer_result() for streaming saves.
     
     Args:
-        progress: The OptimizerProgress object containing run data and results
+        progress: The OptimizerProgress object containing run data
         
     Returns:
-        The ID of the saved run, or None if save failed
+        The ID of the saved run (or existing run_id if already saved), or None if save failed
     """
+    # If run was already saved via streaming, just return the run_id
+    if progress.run_id is not None:
+        _Logger.info("Optimizer run %d already saved via streaming", progress.run_id)
+        return progress.run_id
+    
     try:
         with Session(engine) as session:
             # Create the run record
@@ -261,37 +270,13 @@ def save_optimizer_run(progress: OptimizerProgress) -> Optional[int]:
             session.flush()  # Get the run ID
             
             run_id = run.id
-            best_result_db_id = None
             
-            # Save all results
-            for result in progress.results:
-                result_record = OptimizerResult(
-                    run_id=run_id,
-                    config_name=result.config_name,
-                    model_type=result.model_type,
-                    experimental_features_json=json.dumps(result.experimental_features),
-                    val_mape_pct=result.val_mape_pct,
-                    val_mae_kwh=result.val_mae_kwh,
-                    val_r2=result.val_r2,
-                    train_samples=result.train_samples,
-                    val_samples=result.val_samples,
-                    success=result.success,
-                    error_message=result.error_message,
-                    training_timestamp=result.training_timestamp,
-                )
-                session.add(result_record)
-                session.flush()
-                
-                # Track the best result
-                if progress.best_result and result is progress.best_result:
-                    best_result_db_id = result_record.id
-            
-            # Update the run with the best result ID
-            if best_result_db_id:
-                run.best_result_id = best_result_db_id
+            # Update the run with the best result ID if available
+            if progress.best_result_db_id:
+                run.best_result_id = progress.best_result_db_id
             
             session.commit()
-            _Logger.info("Saved optimizer run %d with %d results", run_id, len(progress.results))
+            _Logger.info("Saved optimizer run %d (no results in memory - use streaming instead)", run_id)
             return run_id
             
     except Exception as e:

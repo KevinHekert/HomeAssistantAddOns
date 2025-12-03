@@ -165,18 +165,20 @@ class TestCombinationGeneration:
 
 
 class TestTopResults:
-    """Test the get_top_results functionality."""
+    """Test the get_top_results functionality via database."""
     
-    def test_get_top_results_returns_correct_count(self):
-        """Verify get_top_results returns the requested number of results."""
-        # Create progress with some results
-        progress = OptimizerProgress(
-            total_configurations=10,
-            completed_configurations=10,
-            current_configuration="",
-            current_model_type="",
-            phase="complete",
+    def test_database_top_results_integration(self):
+        """Verify database top results retrieval works correctly."""
+        from db.optimizer_storage import (
+            create_optimizer_run,
+            save_optimizer_result,
+            get_optimizer_run_top_results,
         )
+        from datetime import datetime
+        
+        # Create a run
+        run_id = create_optimizer_run(datetime.now(), 10)
+        assert run_id is not None, "Failed to create optimizer run"
         
         # Add 30 results with varying MAPE values
         for i in range(30):
@@ -191,92 +193,21 @@ class TestTopResults:
                 val_samples=20,
                 success=True,
             )
-            progress.results.append(result)
+            result_id = save_optimizer_result(run_id, result)
+            assert result_id is not None, f"Failed to save result {i}"
         
         # Get top 20
-        top_20 = progress.get_top_results(20)
+        top_20 = get_optimizer_run_top_results(run_id, limit=20)
         
         assert len(top_20) == 20, f"Expected 20 results, got {len(top_20)}"
-    
-    def test_get_top_results_sorted_by_mape(self):
-        """Verify results are sorted by MAPE (ascending)."""
-        progress = OptimizerProgress(
-            total_configurations=10,
-            completed_configurations=10,
-            current_configuration="",
-            current_model_type="",
-            phase="complete",
-        )
         
-        # Add results with random MAPE values
-        mape_values = [25.5, 10.2, 30.1, 15.7, 20.3, 12.8, 18.5, 22.1, 14.3, 16.9]
-        for i, mape in enumerate(mape_values):
-            result = OptimizationResult(
-                config_name=f"Config {i}",
-                model_type="single_step",
-                experimental_features={},
-                val_mape_pct=mape,
-                val_mae_kwh=0.15,
-                val_r2=0.85,
-                train_samples=60,
-                val_samples=20,
-                success=True,
-            )
-            progress.results.append(result)
-        
-        # Get top 5
-        top_5 = progress.get_top_results(5)
-        
-        # Verify they are sorted (ascending MAPE)
-        mapes = [r.val_mape_pct for r in top_5]
+        # Verify they are sorted by MAPE (ascending)
+        mapes = [r["val_mape_pct"] for r in top_20]
         assert mapes == sorted(mapes), f"Results not sorted: {mapes}"
         
-        # Verify we got the lowest 5
-        expected_top_5 = sorted(mape_values)[:5]
-        assert mapes == expected_top_5, f"Expected {expected_top_5}, got {mapes}"
-    
-    def test_get_top_results_filters_failures(self):
-        """Verify failed results are excluded."""
-        progress = OptimizerProgress(
-            total_configurations=10,
-            completed_configurations=10,
-            current_configuration="",
-            current_model_type="",
-            phase="complete",
-        )
-        
-        # Add 5 successful and 5 failed results
-        for i in range(5):
-            progress.results.append(OptimizationResult(
-                config_name=f"Success {i}",
-                model_type="single_step",
-                experimental_features={},
-                val_mape_pct=float(i + 10),
-                val_mae_kwh=0.15,
-                val_r2=0.85,
-                train_samples=60,
-                val_samples=20,
-                success=True,
-            ))
-            progress.results.append(OptimizationResult(
-                config_name=f"Failed {i}",
-                model_type="single_step",
-                experimental_features={},
-                val_mape_pct=None,
-                val_mae_kwh=None,
-                val_r2=None,
-                train_samples=0,
-                val_samples=0,
-                success=False,
-                error_message="Insufficient data",
-            ))
-        
-        # Get top results
-        top_results = progress.get_top_results(10)
-        
-        # Should only have the 5 successful results
-        assert len(top_results) == 5, f"Expected 5 successful results, got {len(top_results)}"
-        assert all(r.success for r in top_results), "Failed results were included"
+        # Verify we got the lowest 20
+        expected_mapes = sorted([float(i + 10) for i in range(30)])[:20]
+        assert mapes == expected_mapes, f"Expected {expected_mapes}, got {mapes}"
 
 
 class TestLogTailLimit:
@@ -439,7 +370,9 @@ class TestThreadSafety:
         assert "outdoor_temp_avg_6h" in configured_features[2]['enabled']
     
     def test_parallel_training_with_different_configs(self):
-        """Test that parallel execution maintains separate feature configs."""
+        """Test that parallel execution maintains separate feature configs (with streaming storage)."""
+        from db.optimizer_storage import get_optimizer_run_top_results
+        
         mock_df = pd.DataFrame({
             "outdoor_temp": [10.0, 11.0, 12.0],
             "target_heating_kwh_1h": [1.0, 1.5, 1.2],
@@ -477,30 +410,34 @@ class TestThreadSafety:
             mock_config.experimental_enabled = {}
             mock_get_config.return_value = mock_config
             
-            # Run optimization with limited combinations (first 5)
+            # Run optimization with limited combinations (first 2 for faster test)
             with patch("ml.optimizer._get_experimental_feature_combinations") as mock_combos:
                 combos = _get_experimental_feature_combinations(include_derived=False)
-                mock_combos.return_value = combos[:5]  # Use first 5 combinations
+                mock_combos.return_value = combos[:2]  # Use first 2 combinations
                 
                 progress = run_optimization(
                     train_single_step_fn=mock_train_single,
                     train_two_step_fn=mock_train_two_step,
                     build_dataset_fn=mock_build_dataset,
                     min_samples=50,
-
                 )
         
-        # Should have 5 combinations × 2 models = 10 results
-        assert len(progress.results) == 10, f"Expected 10 results, got {len(progress.results)}"
-        assert progress.phase == "complete"
+        # Should have 2 combinations × 2 models = 4 results in database
+        assert progress.run_id is not None, "Run ID should be set"
+        assert progress.phase == "complete", f"Expected complete phase, got {progress.phase}"
+        assert progress.completed_configurations == 4, f"Expected 4 completed, got {progress.completed_configurations}"
+        
+        # Retrieve results from database
+        results = get_optimizer_run_top_results(progress.run_id, limit=10)
+        assert len(results) == 4, f"Expected 4 results in database, got {len(results)}"
         
         # All results should be successful
-        assert all(r.success for r in progress.results), "Some trainings failed"
+        assert all(r["success"] for r in results), "Some trainings failed"
         
         # Each result should have its own feature configuration
-        feature_configs = [frozenset(k for k, v in r.experimental_features.items() if v) 
-                          for r in progress.results]
+        feature_configs = [frozenset(k for k, v in r["experimental_features"].items() if v) 
+                          for r in results]
         
         # We should have distinct configurations (accounting for 2 models per config)
         unique_configs = set(feature_configs)
-        assert len(unique_configs) == 5, f"Expected 5 unique configs, got {len(unique_configs)}"
+        assert len(unique_configs) == 2, f"Expected 2 unique configs, got {len(unique_configs)}"

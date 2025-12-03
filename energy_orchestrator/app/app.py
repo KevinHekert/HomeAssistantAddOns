@@ -3487,31 +3487,20 @@ def get_optimizer_status():
             "current_configuration": progress.current_configuration,
             "current_model_type": progress.current_model_type,
             "log": progress.log_messages,
+            "run_id": progress.run_id,  # Include run_id for database queries
         },
     }
     
-    # Include full results if optimization is complete
-    if progress.phase in ["complete", "error"] and not is_running:
-        # Try to load results from database (which have IDs)
-        latest_run = get_latest_optimizer_run()
-        if latest_run and latest_run.get("results"):
-            response_data["progress"]["results"] = latest_run["results"]
-        else:
-            # Fallback to in-memory results (without IDs)
-            response_data["progress"]["results"] = [
-                {
-                    "config_name": r.config_name,
-                    "model_type": r.model_type,
-                    "val_mape_pct": round(r.val_mape_pct, 2) if r.val_mape_pct is not None else None,
-                    "val_mae_kwh": round(r.val_mae_kwh, 4) if r.val_mae_kwh is not None else None,
-                    "val_r2": round(r.val_r2, 4) if r.val_r2 is not None else None,
-                    "success": r.success,
-                    "error_message": r.error_message,
-                }
-                for r in progress.results
-            ]
+    # Include results from database if optimization is complete or in progress
+    if progress.run_id:
+        # Get top 20 results from database (sorted by MAPE)
+        from db.optimizer_storage import get_optimizer_run_top_results
+        top_results = get_optimizer_run_top_results(progress.run_id, limit=20)
+        if top_results:
+            response_data["progress"]["top_results"] = top_results
         
-        if progress.error_message:
+        # Include error message if phase is error
+        if progress.phase == "error" and progress.error_message:
             response_data["progress"]["error"] = progress.error_message
     
     if progress.best_result:

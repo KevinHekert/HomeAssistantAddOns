@@ -870,7 +870,8 @@ def _train_single_configuration(
                 attr_name = 'train_samples' if model_type == 'single_step' else 'regressor_train_samples'
                 train_samples = getattr(metrics, attr_name, 0)
                 
-                if train_samples > 0:
+                # Validate that train_samples is within DataFrame bounds
+                if train_samples > 0 and train_samples <= len(df):
                     # Calculate the training split index based on actual train_samples
                     # This ensures we capture the TRAINING data boundaries, not the full dataset
                     

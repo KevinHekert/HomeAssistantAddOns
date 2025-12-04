@@ -4,6 +4,18 @@ All notable changes to this add-on will be documented in this file.
 
 ## [Unreleased]
 
+- **Improvement: Reduced logging verbosity**
+  - **Changed**: Moved 41 verbose log statements from INFO to DEBUG level across ML modules
+  - **Changed**: Training details (metrics, splits, feature counts) now logged at DEBUG level
+  - **Changed**: Model save/load operations now logged at DEBUG level
+  - **Changed**: Memory tracking and worker details in optimizer now logged at DEBUG level
+  - **Kept**: High-level progress (optimizer start/end, phase transitions) remain at INFO level
+  - **Impact**: Cleaner stdout output showing only important progress and errors
+  - **Files Changed**:
+    - `energy_orchestrator/app/ml/two_step_model.py` (13 logs)
+    - `energy_orchestrator/app/ml/heating_demand_model.py` (8 logs)
+    - `energy_orchestrator/app/ml/optimizer.py` (20 logs)
+
 - **Feature: Complete Integration Test Environment with MariaDB**
   - **Added**: Full integration testing infrastructure with MariaDB 10.6+ for production-parity testing
   - **Added**: Docker Compose test environment with MariaDB, mock Home Assistant API, and Energy Orchestrator containers

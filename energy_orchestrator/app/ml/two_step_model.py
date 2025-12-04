@@ -267,7 +267,7 @@ def _compute_activity_threshold(
     # Ensure threshold is at least the minimum
     threshold = max(percentile_threshold, MIN_ACTIVITY_THRESHOLD)
     
-    _Logger.info(
+    _Logger.debug(
         "Computed activity threshold: %.4f kWh (percentile=%d, min=%.4f, "
         "positive_samples=%d, total_samples=%d)",
         threshold,
@@ -313,7 +313,7 @@ def train_two_step_heating_demand_model(
     # Identify feature columns
     feature_cols = [c for c in df.columns if c != target_col]
     
-    _Logger.info("Training two-step model with %d features: %s", len(feature_cols), feature_cols)
+    _Logger.debug("Training two-step model with %d features: %s", len(feature_cols), feature_cols)
     
     # Prepare data
     X = df[feature_cols].values
@@ -328,7 +328,7 @@ def train_two_step_heating_demand_model(
     active_count = int(y_binary.sum())
     inactive_count = len(y_binary) - active_count
     
-    _Logger.info(
+    _Logger.debug(
         "Activity threshold: %.4f kWh. Active samples: %d (%.1f%%), Inactive samples: %d (%.1f%%)",
         activity_threshold,
         active_count,
@@ -343,14 +343,14 @@ def train_two_step_heating_demand_model(
     y_train, y_val = y[:split_idx], y[split_idx:]
     y_binary_train, y_binary_val = y_binary[:split_idx], y_binary[split_idx:]
     
-    _Logger.info(
+    _Logger.debug(
         "Train/val split: %d training samples, %d validation samples",
         len(X_train),
         len(X_val),
     )
     
     # Step 2: Train classifier
-    _Logger.info("Training classifier...")
+    _Logger.debug("Training classifier...")
     classifier = GradientBoostingClassifier(
         n_estimators=100,
         max_depth=5,
@@ -370,7 +370,7 @@ def train_two_step_heating_demand_model(
     classifier_recall = recall_score(y_binary_val, y_binary_pred_val, zero_division=0)
     classifier_f1 = f1_score(y_binary_val, y_binary_pred_val, zero_division=0)
     
-    _Logger.info(
+    _Logger.debug(
         "Classifier metrics - Accuracy: %.4f, Precision: %.4f, Recall: %.4f, F1: %.4f",
         classifier_accuracy,
         classifier_precision,
@@ -379,7 +379,7 @@ def train_two_step_heating_demand_model(
     )
     
     # Step 3: Train regressor on ACTIVE samples only
-    _Logger.info("Training regressor on active samples only...")
+    _Logger.debug("Training regressor on active samples only...")
     
     # Filter to active samples for regressor training
     active_mask_train = y_binary_train == 1
@@ -390,7 +390,7 @@ def train_two_step_heating_demand_model(
     X_val_active = X_val[active_mask_val]
     y_val_active = y_val[active_mask_val]
     
-    _Logger.info(
+    _Logger.debug(
         "Regressor training: %d active training samples, %d active validation samples",
         len(X_train_active),
         len(X_val_active),
@@ -423,7 +423,7 @@ def train_two_step_heating_demand_model(
     
     regressor_val_r2 = r2_score(y_val_active, y_pred_val_active)
     
-    _Logger.info(
+    _Logger.debug(
         "Regressor metrics (active samples) - Train MAE: %.4f kWh, Val MAE: %.4f kWh, "
         "Val MAPE: %.2f%%, Val R²: %.4f",
         regressor_train_mae,
@@ -455,7 +455,7 @@ def train_two_step_heating_demand_model(
     }
     
     joblib.dump(model_data, model_path)
-    _Logger.info("Two-step model saved to %s", model_path)
+    _Logger.debug("Two-step model saved to %s", model_path)
     
     # Create model wrapper
     two_step_model = TwoStepHeatingDemandModel(
@@ -500,11 +500,11 @@ def load_two_step_heating_demand_model() -> Optional[TwoStepHeatingDemandModel]:
     model_path = _get_two_step_model_path()
     
     if not model_path.exists():
-        _Logger.info("No two-step model file found at %s", model_path)
+        _Logger.debug("No two-step model file found at %s", model_path)
         return None
     
     try:
-        _Logger.info("Loading two-step model from %s", model_path)
+        _Logger.debug("Loading two-step model from %s", model_path)
         model_data = joblib.load(model_path)
         
         model = TwoStepHeatingDemandModel(
@@ -515,7 +515,7 @@ def load_two_step_heating_demand_model() -> Optional[TwoStepHeatingDemandModel]:
             training_timestamp=model_data.get("training_timestamp"),
         )
         
-        _Logger.info(
+        _Logger.debug(
             "Two-step model loaded successfully. Threshold: %.4f kWh, Features: %s",
             model.activity_threshold_kwh,
             model.feature_names,

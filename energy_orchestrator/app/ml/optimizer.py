@@ -124,7 +124,7 @@ def _calculate_optimal_workers(max_memory_mb: Optional[float] = None) -> int:
 
 def _log_memory_usage(label: str) -> dict[str, float]:
     """
-    Log current memory usage at INFO level.
+    Log current memory usage at DEBUG level.
     
     Args:
         label: Descriptive label for this memory check
@@ -143,7 +143,7 @@ def _log_memory_usage(label: str) -> dict[str, float]:
         available_mb = sys_mem.available / 1024 / 1024
         percent_used = sys_mem.percent
         
-        _Logger.info(
+        _Logger.debug(
             "%s - Memory: RSS=%.1f MB, VMS=%.1f MB, System Available=%.1f MB (%.1f%% used)",
             label, rss_mb, vms_mb, available_mb, percent_used
         )
@@ -276,7 +276,7 @@ def _get_all_available_features() -> list[str]:
         if feature_name not in feature_names:
             feature_names.append(feature_name)
     
-    _Logger.info("Found %d total features for optimization (experimental + derived)", len(feature_names))
+    _Logger.debug("Found %d total features for optimization (experimental + derived)", len(feature_names))
     return feature_names
 
 
@@ -324,7 +324,7 @@ def _generate_experimental_feature_combinations(
         # For production long-runs with many features, set explicitly via config
         max_combinations = min(1024, total_possible)
     
-    _Logger.info(
+    _Logger.debug(
         "Generating feature combinations lazily (max %d of %d possible = 2^%d)",
         max_combinations,
         total_possible,
@@ -343,7 +343,7 @@ def _generate_experimental_feature_combinations(
         )
     
     if max_combinations > total_possible:
-        _Logger.info(
+        _Logger.debug(
             "max_combinations (%d) exceeds total possible (%d), using %d",
             max_combinations,
             total_possible,
@@ -356,7 +356,7 @@ def _generate_experimental_feature_combinations(
     # Generate combinations for each size from 0 to n_features
     for size in range(n_features + 1):
         if combinations_generated >= max_combinations:
-            _Logger.info("Reached max_combinations limit (%d), stopping generation", max_combinations)
+            _Logger.debug("Reached max_combinations limit (%d), stopping generation", max_combinations)
             break
         
         if size == 0:
@@ -367,7 +367,7 @@ def _generate_experimental_feature_combinations(
             # Generate combinations of this size
             for feature_combo in combinations(feature_names, size):
                 if combinations_generated >= max_combinations:
-                    _Logger.info("Reached max_combinations limit (%d), stopping generation", max_combinations)
+                    _Logger.debug("Reached max_combinations limit (%d), stopping generation", max_combinations)
                     return
                 
                 config = {name: False for name in feature_names}
@@ -377,7 +377,7 @@ def _generate_experimental_feature_combinations(
                 yield config
                 combinations_generated += 1
     
-    _Logger.info("Generated %d feature combinations (lazy)", combinations_generated)
+    _Logger.debug("Generated %d feature combinations (lazy)", combinations_generated)
 
 
 def _generate_genetic_algorithm_combinations(
@@ -492,7 +492,7 @@ def _generate_genetic_algorithm_combinations(
         }
         population.append(individual)
     
-    _Logger.info("Generation 0: Yielding initial random population of %d individuals", len(population))
+    _Logger.debug("Generation 0: Yielding initial random population of %d individuals", len(population))
     
     # Yield initial population
     for individual in population:
@@ -508,7 +508,7 @@ def _generate_genetic_algorithm_combinations(
     # The optimizer will filter and use the best ones
     
     for generation in range(1, num_generations):
-        _Logger.info("Generation %d: Evolving new population", generation)
+        _Logger.debug("Generation %d: Evolving new population", generation)
         
         new_population = []
         
@@ -550,7 +550,7 @@ def _generate_genetic_algorithm_combinations(
         for individual in population:
             yield individual.copy()
     
-    _Logger.info(
+    _Logger.debug(
         "Genetic algorithm complete: %d total evaluations over %d generations",
         total_evaluations,
         num_generations
@@ -707,7 +707,7 @@ def _generate_hybrid_genetic_bayesian_combinations(
         ga_count += 1
         yield individual
     
-    _Logger.info(
+    _Logger.debug(
         "Phase 1 complete: Generated %d GA combinations",
         ga_count
     )
@@ -772,7 +772,7 @@ def _generate_hybrid_genetic_bayesian_combinations(
         # Yield this Bayesian-selected combination
         yield combination
     
-    _Logger.info(
+    _Logger.debug(
         "Hybrid optimization complete: %d total evaluations "
         "(Phase 1 GA: %d, Phase 2 Bayesian: %d)",
         total_evaluations,
@@ -902,7 +902,7 @@ def _train_single_configuration(
         # Log memory delta
         if mem_before and mem_after and 'rss_mb' in mem_before and 'rss_mb' in mem_after:
             delta_mb = mem_after['rss_mb'] - mem_before['rss_mb']
-            _Logger.info(
+            _Logger.debug(
                 "Worker %d memory delta for %s (%s): %.1f MB (before: %.1f MB, after: %.1f MB)",
                 process_id, config_name, model_type, delta_mb, mem_before['rss_mb'], mem_after['rss_mb']
             )
@@ -1089,7 +1089,7 @@ def run_optimization(
     # Determine number of workers: use configured value or auto-calculate
     if configured_max_workers is not None and configured_max_workers > 0:
         max_workers = configured_max_workers
-        _Logger.info("Using configured max_workers: %d", max_workers)
+        _Logger.debug("Using configured max_workers: %d", max_workers)
     else:
         # Auto-calculate optimal number of workers based on system resources
         max_workers = _calculate_optimal_workers(max_memory_mb)
@@ -1177,7 +1177,7 @@ def run_optimization(
         return progress
     
     progress.run_id = run_id
-    _Logger.info("Created optimizer run %d in database", run_id)
+    _Logger.debug("Created optimizer run %d in database", run_id)
     
     if progress_callback:
         progress_callback(progress)
@@ -1198,7 +1198,7 @@ def run_optimization(
             # Calculate where Phase 1 (GA) ends and Phase 2 (Bayesian) begins
             ga_combinations = genetic_population_size * genetic_num_generations
             phase_1_end_index = ga_combinations * 2  # × 2 for both model types
-            _Logger.info(
+            _Logger.debug(
                 "Hybrid strategy: Phase 1 (GA) = tasks 1-%d, Phase 2 (Bayesian) = tasks %d-%d",
                 phase_1_end_index,
                 phase_1_end_index + 1,
@@ -1227,7 +1227,7 @@ def run_optimization(
             batch_end = min(task_index + batch_size, len(training_tasks))
             batch_tasks = training_tasks[batch_start:batch_end]
             
-            _Logger.info(
+            _Logger.debug(
                 "Starting batch %d: tasks %d-%d (of %d total)",
                 batch_number, batch_start + 1, batch_end, len(training_tasks)
             )
@@ -1363,7 +1363,7 @@ def run_optimization(
                                 if progress.completed_configurations % 10 == 0:
                                     gc.collect()
                                     _log_memory_usage(f"After GC at {progress.completed_configurations}/{total_configs}")
-                                    _Logger.info("Garbage collection completed at %d/%d", progress.completed_configurations, total_configs)
+                                    _Logger.debug("Garbage collection completed at %d/%d", progress.completed_configurations, total_configs)
                                     
                             except Exception as e:
                                 _Logger.error("Error processing result for %s (%s): %s", config_name, model_type, e)
@@ -1378,7 +1378,7 @@ def run_optimization(
                         time.sleep(1.0)
             
             # Batch complete - executor is shut down and workers are recycled
-            _Logger.info(
+            _Logger.debug(
                 "Batch %d complete: processed tasks %d-%d (of %d total)",
                 batch_number, batch_start + 1, batch_end, len(training_tasks)
             )

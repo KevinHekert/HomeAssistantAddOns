@@ -152,7 +152,7 @@ def train_heating_demand_model(
     # Identify feature columns (everything except target)
     feature_cols = [c for c in df.columns if c != target_col]
     
-    _Logger.info("Training model with %d features: %s", len(feature_cols), feature_cols)
+    _Logger.debug("Training model with %d features: %s", len(feature_cols), feature_cols)
     
     # Prepare data
     X = df[feature_cols].values
@@ -163,7 +163,7 @@ def train_heating_demand_model(
     X_train, X_val = X[:split_idx], X[split_idx:]
     y_train, y_val = y[:split_idx], y[split_idx:]
     
-    _Logger.info(
+    _Logger.debug(
         "Train/val split: %d training samples, %d validation samples",
         len(X_train),
         len(X_val),
@@ -179,7 +179,7 @@ def train_heating_demand_model(
         random_state=42,
     )
     
-    _Logger.info("Fitting model...")
+    _Logger.debug("Fitting model...")
     model.fit(X_train, y_train)
     
     # Evaluate
@@ -199,7 +199,7 @@ def train_heating_demand_model(
     
     val_r2 = r2_score(y_val, val_pred)
     
-    _Logger.info(
+    _Logger.debug(
         "Training complete. Train MAE: %.4f kWh, Val MAE: %.4f kWh, "
         "Val MAPE: %.2f%%, Val R²: %.4f",
         train_mae,
@@ -225,7 +225,7 @@ def train_heating_demand_model(
     }
     
     joblib.dump(model_data, model_path)
-    _Logger.info("Model saved to %s", model_path)
+    _Logger.debug("Model saved to %s", model_path)
     
     # Create model wrapper
     heating_model = HeatingDemandModel(
@@ -261,11 +261,11 @@ def load_heating_demand_model() -> Optional[HeatingDemandModel]:
     model_path = _get_model_path()
     
     if not model_path.exists():
-        _Logger.info("No model file found at %s", model_path)
+        _Logger.debug("No model file found at %s", model_path)
         return None
     
     try:
-        _Logger.info("Loading model from %s", model_path)
+        _Logger.debug("Loading model from %s", model_path)
         model_data = joblib.load(model_path)
         
         model = HeatingDemandModel(
@@ -274,7 +274,7 @@ def load_heating_demand_model() -> Optional[HeatingDemandModel]:
             training_timestamp=model_data.get("training_timestamp"),
         )
         
-        _Logger.info(
+        _Logger.debug(
             "Model loaded successfully. Features: %s",
             model.feature_names,
         )

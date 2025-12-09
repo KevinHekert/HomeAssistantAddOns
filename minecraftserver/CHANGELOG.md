@@ -1,3 +1,6 @@
+## 1.2.24 - 2025-12-09
+- Updated Bedrock Server from '1.21.124.2' to '1.21.130.4'
+
 ## 1.2.23 - 2025-11-25
 - Removed depricated code, adjusted comments in code.
 

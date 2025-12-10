@@ -110,7 +110,10 @@ export LEVEL_NAME="${LEVEL_NAME:-$(first_nonempty "$(optn '.world.level_name')" 
 WORLD_CONFIG_FILE="/data/worldconfiguration.json"
 WORLD_SEED=""
 if [[ -f "$WORLD_CONFIG_FILE" ]] && [[ -n "$LEVEL_NAME" ]]; then
-  WORLD_SEED=$(jq -r --arg world "$LEVEL_NAME" '.[$world].seed // empty' "$WORLD_CONFIG_FILE" 2>/dev/null || true)
+  if ! WORLD_SEED=$(jq -r --arg world "$LEVEL_NAME" '.[$world].seed // empty' "$WORLD_CONFIG_FILE" 2>&1); then
+    echo "⚠️ Warning: Failed to parse $WORLD_CONFIG_FILE: $WORLD_SEED"
+    WORLD_SEED=""
+  fi
 fi
 
 # Use world-specific seed if available, otherwise fall back to config

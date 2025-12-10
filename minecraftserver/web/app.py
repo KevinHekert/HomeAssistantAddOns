@@ -165,7 +165,11 @@ def get_world_config(world_name):
 
 
 def save_world_config(world_name, seed):
-    """Save configuration for a specific world (name and seed are immutable)"""
+    """Save configuration for a specific world (name and seed are immutable)
+    
+    Note: The 'name' field is stored alongside the key for data integrity
+    and to meet the requirement that "name should be unique and not changeable".
+    """
     world_configs = load_world_configs()
     if world_name not in world_configs:
         world_configs[world_name] = {
@@ -277,8 +281,8 @@ def index():
                 world_dir = os.path.join(WORLDS_DIR, new_world_name)
                 if not os.path.exists(world_dir):
                     os.makedirs(world_dir, exist_ok=True)
-                    # Save world configuration with seed
-                    save_world_config(new_world_name, level_seed_input)
+                # Always attempt to save world configuration (handles case where directory exists but config doesn't)
+                save_world_config(new_world_name, level_seed_input)
                 config["world"]["level_name"] = new_world_name
                 config["world"]["level_seed"] = level_seed_input
             elif selected_world:
@@ -291,7 +295,7 @@ def index():
                     # Fallback to current config seed if world config doesn't exist
                     config["world"]["level_seed"] = config["world"].get("level_seed", "")
             else:
-                # Geen selectie, terugvallen op huidige config or default
+                # No selection, fall back to current config or default
                 if not config["world"].get("level_name"):
                     config["world"]["level_name"] = DEFAULT_CONFIG["world"]["level_name"]
                 # Keep existing seed from config

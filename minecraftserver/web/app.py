@@ -138,7 +138,11 @@ def to_float(value, default=None):
 
 
 def load_world_configs():
-    """Load world configurations from /data/worldconfiguration.json"""
+    """Load world configurations from /data/worldconfiguration.json
+    
+    Returns:
+        dict: World configurations keyed by world name, or empty dict if file doesn't exist
+    """
     if not os.path.exists(WORLD_CONFIG_FILE):
         return {}
     try:
@@ -152,20 +156,38 @@ def load_world_configs():
 
 
 def save_world_configs(world_configs):
-    """Save world configurations to /data/worldconfiguration.json"""
+    """Save world configurations to /data/worldconfiguration.json
+    
+    Args:
+        world_configs (dict): Dictionary of world configurations keyed by world name
+    """
     ensure_dirs()
     with open(WORLD_CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(world_configs, f, indent=2, sort_keys=True)
 
 
 def get_world_config(world_name):
-    """Get configuration for a specific world"""
+    """Get configuration for a specific world
+    
+    Args:
+        world_name (str): Name of the world to retrieve
+    
+    Returns:
+        dict: World configuration dict with 'name' and 'seed', or None if not found
+    """
     world_configs = load_world_configs()
     return world_configs.get(world_name)
 
 
 def save_world_config(world_name, seed):
     """Save configuration for a specific world (name and seed are immutable)
+    
+    Args:
+        world_name (str): Unique name for the world
+        seed (str): World generation seed
+    
+    Returns:
+        bool: True if world config was saved (new world), False if world already exists
     
     Note: The 'name' field is stored alongside the key for data integrity
     and to meet the requirement that "name should be unique and not changeable".

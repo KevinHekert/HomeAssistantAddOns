@@ -18,6 +18,7 @@ PERMISSIONS_FILE = "/opt/bds/permissions.json"
 CONFIG_DIR = "/data/config"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "bedrock_for_ha_config.json")
 WORLDS_DIR = "/data/worlds"
+WORLD_CONFIG_FILE = "/data/worldconfiguration.json"
 
 # ---- Default config (zelfde structuur als 'options' in config.yaml) ----
 DEFAULT_CONFIG = {
@@ -136,6 +137,47 @@ def to_float(value, default=None):
         return default
 
 
+def load_world_configs():
+    """Load world configurations from /data/worldconfiguration.json"""
+    if not os.path.exists(WORLD_CONFIG_FILE):
+        return {}
+    try:
+        with open(WORLD_CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
+def save_world_configs(world_configs):
+    """Save world configurations to /data/worldconfiguration.json"""
+    ensure_dirs()
+    with open(WORLD_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(world_configs, f, indent=2, sort_keys=True)
+
+
+def get_world_config(world_name):
+    """Get configuration for a specific world"""
+    world_configs = load_world_configs()
+    return world_configs.get(world_name)
+
+
+def save_world_config(world_name, seed):
+    """Save configuration for a specific world (name and seed are immutable)"""
+    world_configs = load_world_configs()
+    if world_name not in world_configs:
+        world_configs[world_name] = {
+            "name": world_name,
+            "seed": seed
+        }
+        save_world_configs(world_configs)
+        app.logger.info(f"World created: name='{world_name}', seed='{seed}'")
+        return True
+    return False
+
+
 # ---- Routes ----
 @app.route("/api/permissions", methods=["GET"])
 def api_permissions():
@@ -217,7 +259,7 @@ def index():
             new_world_name = form.get("new_world_name", "").strip()
 
             # Seed, type, etc.
-            config["world"]["level_seed"] = form.get("level_seed", "").strip()
+            level_seed_input = form.get("level_seed", "").strip()
             config["world"]["level_type"] = form.get(
                 "level_type", DEFAULT_CONFIG["world"]["level_type"]
             )
@@ -231,17 +273,30 @@ def index():
 
             # World mapping:
             if new_world_name:
-                # Nieuwe wereld: map aanmaken als nodig
+                # New world: create directory and save world config
                 world_dir = os.path.join(WORLDS_DIR, new_world_name)
                 if not os.path.exists(world_dir):
                     os.makedirs(world_dir, exist_ok=True)
+                    # Save world configuration with seed
+                    save_world_config(new_world_name, level_seed_input)
                 config["world"]["level_name"] = new_world_name
+                config["world"]["level_seed"] = level_seed_input
             elif selected_world:
+                # Existing world: use saved seed from world config
                 config["world"]["level_name"] = selected_world
+                world_cfg = get_world_config(selected_world)
+                if world_cfg and "seed" in world_cfg:
+                    config["world"]["level_seed"] = world_cfg["seed"]
+                else:
+                    # Fallback to current config seed if world config doesn't exist
+                    config["world"]["level_seed"] = config["world"].get("level_seed", "")
             else:
-                # Geen selectie, terugvallen op huidige config of default
+                # Geen selectie, terugvallen op huidige config or default
                 if not config["world"].get("level_name"):
                     config["world"]["level_name"] = DEFAULT_CONFIG["world"]["level_name"]
+                # Keep existing seed from config
+                if not config["world"].get("level_seed"):
+                    config["world"]["level_seed"] = DEFAULT_CONFIG["world"]["level_seed"]
 
             # PLAYERS
             config["players"]["max_players"] = to_int(
@@ -335,11 +390,19 @@ def index():
         worlds.append(current_world)
         worlds.sort()
 
+    # Load world configurations
+    world_configs = load_world_configs()
+    
+    # Check if current world exists (has a directory)
+    current_world_exists = current_world and os.path.exists(os.path.join(WORLDS_DIR, current_world))
+
     return render_template_string(
         TEMPLATE,
         config=config,
         worlds=worlds,
         current_world=current_world,
+        current_world_exists=current_world_exists,
+        world_configs=world_configs,
         role_assignments_json=role_assignments_json,
         role_assignments=role_assignments_list,
     )
@@ -467,8 +530,15 @@ TEMPLATE = r"""
           <div class="mb-3">
             <label for="level_seed" class="form-label">Level seed</label>
             <input type="text" class="form-control form-control-sm bg-black text-light" id="level_seed" name="level_seed"
-                   value="{{ config.world.level_seed }}">
-            <div class="form-text text-muted">Leave empty for a random seed.</div>
+                   value="{{ config.world.level_seed }}"
+                   {% if current_world_exists %}readonly{% endif %}>
+            {% if current_world_exists %}
+            <div class="form-text text-warning">
+              <strong>Note:</strong> Seed is immutable for existing worlds. Create a new world to use a different seed.
+            </div>
+            {% else %}
+            <div class="form-text text-muted">Leave empty for a random seed. Seed cannot be changed once world is created.</div>
+            {% endif %}
           </div>
           <div class="mb-3">
             <label for="level_type" class="form-label">Level type</label>

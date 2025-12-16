@@ -1,4 +1,7 @@
 ## [Unreleased]
+- No unreleased changes yet.
+
+## 1.2.25 - 2025-12-16
 - Added world-specific seed configuration
 - Seeds are now saved per world in /data/worldconfiguration.json
 - World names and seeds are immutable once created

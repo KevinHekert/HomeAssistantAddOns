@@ -1,3 +1,6 @@
+## 1.3.2 - 2025-12-18
+- Avoid LD_PRELOAD warnings when `stdbuf` support is unavailable by falling back to direct log filtering.
+
 ## 1.3.1 - 2025-12-18
 - Allow additional helper binaries (e.g., `stdbuf`, `timeout`, `find`) in the AppArmor profile to prevent permission errors during logging and health checks.
 

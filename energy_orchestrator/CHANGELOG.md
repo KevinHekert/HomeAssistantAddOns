@@ -4,6 +4,10 @@ All notable changes to this add-on will be documented in this file.
 
 ## [Unreleased]
 
+- No unreleased changes yet.
+
+## [0.0.0.121] - 2025-12-16
+
 - **Feature: Complete Integration Test Environment with MariaDB**
   - **Added**: Full integration testing infrastructure with MariaDB 10.6+ for production-parity testing
   - **Added**: Docker Compose test environment with MariaDB, mock Home Assistant API, and Energy Orchestrator containers

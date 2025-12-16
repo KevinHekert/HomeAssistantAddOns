@@ -1,6 +1,9 @@
 ## [Unreleased]
 - No unreleased changes yet.
 
+## 1.2.26 - 2025-12-16
+- Updated Bedrock Server from '1.21.130.4' to preview build '1.26.0.25' (bin-linux-preview)
+
 ## 1.2.25 - 2025-12-16
 - Added world-specific seed configuration
 - Seeds are now saved per world in /data/worldconfiguration.json

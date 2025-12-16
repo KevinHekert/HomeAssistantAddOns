@@ -1,3 +1,6 @@
+## 1.2.30 - 2025-12-16
+- Updated Bedrock Server from '1.21.130.4' to '1.21.131.1'
+
 ## 1.2.29 - 2025-12-22
 - Permit `/usr/bin/rm` in AppArmor profile so startup cleanup can run.
 

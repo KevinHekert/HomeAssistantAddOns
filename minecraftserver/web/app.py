@@ -8,6 +8,7 @@ from copy import deepcopy
 from flask import Flask, request, redirect, url_for, render_template_string, jsonify
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get("DATA_DIR", "/data")
 
 app = Flask(
     __name__,
@@ -18,11 +19,11 @@ SESSION_COOKIE_NAME="mcserver_ha_session"  # ⬅️ ander cookie-naampje
 
 
 PERMISSIONS_FILE = "/opt/bds/permissions.json"
-CONFIG_DIR = "/data/config"
+CONFIG_DIR = os.path.join(DATA_DIR, "config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "bedrock_for_ha_config.json")
-WORLDS_DIR = "/data/worlds"
-WORLD_CONFIG_FILE = "/data/worldconfiguration.json"
-RUNTIME_DIR = "/data/run"
+WORLDS_DIR = os.path.join(DATA_DIR, "worlds")
+WORLD_CONFIG_FILE = os.path.join(DATA_DIR, "worldconfiguration.json")
+RUNTIME_DIR = os.path.join(DATA_DIR, "run")
 BEDROCK_PID_FILE = os.path.join(RUNTIME_DIR, "bedrock_server.pid")
 BEDROCK_ENTRYPOINT = "/opt/bedrock-entry.sh"
 SEND_COMMAND_BIN = "/usr/local/bin/send-command"
@@ -404,7 +405,7 @@ def api_permissions():
     Read-only endpoint: returns the current contents of permissions.json
     as JSON (or [] if missing/invalid), wrapped in an object.
     """
-    paths = [PERMISSIONS_FILE, "/data/permissions.json"]
+    paths = [PERMISSIONS_FILE, os.path.join(DATA_DIR, "permissions.json")]
     data = []
     error = None
     used_path = None

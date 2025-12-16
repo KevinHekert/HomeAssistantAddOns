@@ -2,7 +2,8 @@
 set -e
 
 FLASK_PORT="${FLASK_PORT:-8789}"
-RUNTIME_DIR="/data/run"
+DATA_DIR="${DATA_DIR:-/data}"
+RUNTIME_DIR="${DATA_DIR}/run"
 BEDROCK_PID_FILE="${RUNTIME_DIR}/bedrock_server.pid"
 STOP_MARKER="${RUNTIME_DIR}/bedrock_server.stopped"
 

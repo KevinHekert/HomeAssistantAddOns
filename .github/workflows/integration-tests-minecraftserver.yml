@@ -1,0 +1,100 @@
+name: Minecraft Server Integration Tests
+
+# Run minecraftserver integration tests when the add-on version changes
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'minecraftserver/**'
+      - '.github/workflows/integration-tests-minecraftserver.yml'
+  pull_request:
+    paths:
+      - 'minecraftserver/**'
+      - '.github/workflows/integration-tests-minecraftserver.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  detect-version-bump:
+    name: Detect version bump
+    runs-on: ubuntu-latest
+    outputs:
+      version-bumped: ${{ steps.check-version.outputs.bumped }}
+      old-version: ${{ steps.check-version.outputs.old_version }}
+      new-version: ${{ steps.check-version.outputs.new_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Minecraft Server version change
+        id: check-version
+        run: |
+          set -eo pipefail
+          VERSION_FILE="minecraftserver/config.yaml"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_REF="${{ github.event.before }}"
+          fi
+
+          if [ -z "$BASE_REF" ]; then
+            BASE_REF="$(git rev-parse HEAD^)"
+          fi
+
+          git fetch --no-tags origin "$BASE_REF"
+
+          if git show "$BASE_REF:$VERSION_FILE" > /tmp/old_version.yaml 2>/dev/null; then
+            OLD_VERSION=$(grep -E '^version:' /tmp/old_version.yaml | head -n1 | cut -d':' -f2- | tr -d ' "')
+          else
+            OLD_VERSION=""
+          fi
+
+          NEW_VERSION=$(grep -E '^version:' "$VERSION_FILE" | head -n1 | cut -d':' -f2- | tr -d ' "')
+
+          echo "old_version=$OLD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$NEW_VERSION" ] && [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  integration-tests:
+    name: Run integration tests
+    needs: detect-version-bump
+    if: needs.detect-version-bump.outputs.version-bumped == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest flask
+
+      - name: Run integration tests
+        run: |
+          python -m pytest minecraftserver/tests -v
+
+      - name: Display test summary
+        if: always()
+        run: |
+          echo "## Minecraft Server Integration Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Minecraft Server integration tests executed" >> $GITHUB_STEP_SUMMARY

@@ -105,7 +105,25 @@ export EULA="$(lower_bool "${EULA:-$(first_nonempty "$(optn '.general.eula')" "$
 
 # WORLD
 export LEVEL_NAME="${LEVEL_NAME:-$(first_nonempty "$(optn '.world.level_name')" "$(optf 'level_name')")}"
-export LEVEL_SEED="${LEVEL_SEED:-$(first_nonempty "$(optn '.world.level_seed')" "$(optf 'level_seed')")}"
+
+# Check world-specific seed from /data/worldconfiguration.json
+WORLD_CONFIG_FILE="/data/worldconfiguration.json"
+WORLD_SEED=""
+if [[ -f "$WORLD_CONFIG_FILE" ]] && [[ -n "$LEVEL_NAME" ]]; then
+  if ! WORLD_SEED=$(jq -r --arg world "$LEVEL_NAME" '.[$world].seed // empty' "$WORLD_CONFIG_FILE" 2>&1); then
+    echo "⚠️ Warning: Failed to parse $WORLD_CONFIG_FILE: $WORLD_SEED"
+    WORLD_SEED=""
+  fi
+fi
+
+# Use world-specific seed if available, otherwise fall back to config
+if [[ -n "$WORLD_SEED" ]]; then
+  export LEVEL_SEED="$WORLD_SEED"
+  echo "🌍 Using world-specific seed for '$LEVEL_NAME': $LEVEL_SEED"
+else
+  export LEVEL_SEED="${LEVEL_SEED:-$(first_nonempty "$(optn '.world.level_seed')" "$(optf 'level_seed')")}"
+fi
+
 export LEVEL_TYPE="${LEVEL_TYPE:-$(first_nonempty "$(optn '.world.level_type')" "$(optf 'level_type')")}"
 export GAMEMODE="${GAMEMODE:-$(first_nonempty "$(optn '.world.gamemode')" "$(optf 'gamemode')")}"
 export DIFFICULTY="${DIFFICULTY:-$(first_nonempty "$(optn '.world.difficulty')" "$(optf 'difficulty')")}"
@@ -343,6 +361,12 @@ if [ -f /etc/bds-property-definitions.json ]; then
 else
   echo "WARN: /etc/bds-property-definitions.json missing; skipping bulk apply"
 fi
+
+# ---------- Log world configuration ----------
+echo "🌍 World Configuration:"
+echo "   - Name: ${LEVEL_NAME:-<not set>}"
+echo "   - Seed: ${LEVEL_SEED:-<not set>}"
+echo "-------------------------------------------"
 
 # ---------- Pre-start info ----------
 echo "📜 server.properties (excerpt):"

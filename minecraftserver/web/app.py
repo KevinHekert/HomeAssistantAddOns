@@ -10,6 +10,35 @@ from flask import Flask, request, redirect, url_for, render_template_string, jso
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 
+
+def _configure_paths(data_dir: str) -> None:
+    """Update derived path constants based on the provided data directory."""
+
+    global DATA_DIR, CONFIG_DIR, CONFIG_FILE, WORLDS_DIR, WORLD_CONFIG_FILE
+    global RUNTIME_DIR, BEDROCK_PID_FILE, BEDROCK_STOP_MARKER
+
+    DATA_DIR = data_dir
+    CONFIG_DIR = os.path.join(DATA_DIR, "config")
+    CONFIG_FILE = os.path.join(CONFIG_DIR, "bedrock_for_ha_config.json")
+    WORLDS_DIR = os.path.join(DATA_DIR, "worlds")
+    WORLD_CONFIG_FILE = os.path.join(DATA_DIR, "worldconfiguration.json")
+    RUNTIME_DIR = os.path.join(DATA_DIR, "run")
+    BEDROCK_PID_FILE = os.path.join(RUNTIME_DIR, "bedrock_server.pid")
+    BEDROCK_STOP_MARKER = os.path.join(RUNTIME_DIR, "bedrock_server.stopped")
+
+
+def configure_data_dir(data_dir: str) -> None:
+    """Public helper to point runtime paths at a custom data directory.
+
+    Useful for tests where writing to the default ``/data`` path is not
+    permitted.
+    """
+
+    _configure_paths(data_dir)
+
+
+_configure_paths(DATA_DIR)
+
 app = Flask(
     __name__,
     static_folder=os.path.join(BASE_DIR, "static"),
@@ -19,16 +48,9 @@ SESSION_COOKIE_NAME="mcserver_ha_session"  # ⬅️ ander cookie-naampje
 
 
 PERMISSIONS_FILE = "/opt/bds/permissions.json"
-CONFIG_DIR = os.path.join(DATA_DIR, "config")
-CONFIG_FILE = os.path.join(CONFIG_DIR, "bedrock_for_ha_config.json")
-WORLDS_DIR = os.path.join(DATA_DIR, "worlds")
-WORLD_CONFIG_FILE = os.path.join(DATA_DIR, "worldconfiguration.json")
-RUNTIME_DIR = os.path.join(DATA_DIR, "run")
-BEDROCK_PID_FILE = os.path.join(RUNTIME_DIR, "bedrock_server.pid")
 BEDROCK_ENTRYPOINT = "/opt/bedrock-entry.sh"
 SEND_COMMAND_BIN = "/usr/local/bin/send-command"
 BEDROCK_DEFAULT_PORT = 19132
-BEDROCK_STOP_MARKER = os.path.join(RUNTIME_DIR, "bedrock_server.stopped")
 
 # ---- Default config (zelfde structuur als 'options' in config.yaml) ----
 DEFAULT_CONFIG = {

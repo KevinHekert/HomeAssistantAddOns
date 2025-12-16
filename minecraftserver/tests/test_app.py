@@ -9,11 +9,14 @@ from minecraftserver.web import app
 def temp_paths(tmp_path, monkeypatch):
     config_dir = tmp_path / "config"
     worlds_dir = tmp_path / "worlds"
+    runtime_dir = tmp_path / "run"
     config_file = config_dir / "bedrock_for_ha_config.json"
 
+    app.configure_data_dir(str(tmp_path))
     monkeypatch.setattr(app, "CONFIG_DIR", str(config_dir))
     monkeypatch.setattr(app, "WORLDS_DIR", str(worlds_dir))
     monkeypatch.setattr(app, "CONFIG_FILE", str(config_file))
+    monkeypatch.setattr(app, "RUNTIME_DIR", str(runtime_dir))
 
     return config_dir, worlds_dir, config_file
 

@@ -24,7 +24,11 @@ from sqlalchemy.orm import Session
 
 from db import FeatureStatistic, ResampledSample
 from db.core import engine, init_db_schema
-from db.feature_stats import StatType, get_feature_stats_config, sync_stats_config_with_features
+from db.feature_stats import (
+    StatType,
+    get_feature_stats_config,
+    sync_stats_config_with_features,
+)
 from db.sensor_category_config import get_sensor_category_config
 from db.virtual_sensors import get_virtual_sensors_config
 
@@ -230,16 +234,9 @@ def calculate_feature_statistics(
             sensors_skipped_no_data = 0
             
             for sensor_name in sensor_names:
-                # Check if sensor has explicit configuration
-                # Don't create defaults automatically
-                if sensor_name not in stats_config.sensor_configs:
-                    _Logger.debug("No configuration for sensor '%s', skipping", sensor_name)
-                    sensors_skipped_no_config += 1
-                    continue
-                
-                sensor_config = stats_config.sensor_configs[sensor_name]
+                sensor_config = stats_config.get_sensor_config(sensor_name)
                 enabled_stats = sensor_config.enabled_stats
-                
+
                 if not enabled_stats:
                     _Logger.debug("No statistics enabled for sensor '%s', skipping", sensor_name)
                     sensors_skipped_no_config += 1
@@ -374,6 +371,36 @@ def calculate_feature_statistics(
     except SQLAlchemyError as e:
         _Logger.error("Error calculating feature statistics: %s", e)
         raise
+
+
+def calculate_feature_stats_for_slot(
+    slot_start: datetime,
+    *,
+    sync_with_feature_config: bool = False,
+) -> FeatureStatsCalculationResult:
+    """Calculate feature statistics for a single time slot.
+
+    Args:
+        slot_start: The slot timestamp to calculate statistics for.
+        sync_with_feature_config: Whether to sync stats configuration with the ML
+            feature configuration before calculation. Defaults to False to allow
+            on-the-fly calculation in testing environments without feature
+            configuration present.
+
+    Returns:
+        FeatureStatsCalculationResult summarizing the calculation.
+    """
+
+    # Use the longest rolling window to ensure we include enough history for all
+    # stat types when calculating a specific slot.
+    max_window_minutes = max(STAT_TYPE_WINDOWS.values())
+    start_time = slot_start - timedelta(minutes=max_window_minutes)
+
+    return calculate_feature_statistics(
+        start_time=start_time,
+        end_time=slot_start,
+        sync_with_feature_config=sync_with_feature_config,
+    )
 
 
 def get_feature_statistic_value(

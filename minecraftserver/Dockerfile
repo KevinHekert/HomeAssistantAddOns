@@ -77,6 +77,7 @@ COPY bin/* /usr/local/bin/
 RUN chmod +x /opt/bedrock-entry.sh
 RUN chmod +x /opt/start.sh
 RUN chmod +x /opt/healthcheck.sh
+RUN chmod +x /usr/local/bin/send-command
 
 
 # (1) Downloaden Bedrock Server

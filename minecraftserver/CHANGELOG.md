@@ -1,3 +1,6 @@
+## 1.2.28 - 2025-12-21
+- Version bump for maintenance release.
+
 ## 1.2.27 - 2025-12-20
 - Fixed saving seeds for newly created and existing worlds without a stored seed.
 - Allow filling in missing seeds so they are persisted to the world configuration.

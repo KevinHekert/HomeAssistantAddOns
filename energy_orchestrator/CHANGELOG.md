@@ -2,9 +2,9 @@
 
 All notable changes to this add-on will be documented in this file.
 
-## [Unreleased]
+## [0.0.0.122] - 2025-12-16
 
-- No unreleased changes yet.
+- Version bump for release maintenance.
 
 ## [0.0.0.121] - 2025-12-16
 

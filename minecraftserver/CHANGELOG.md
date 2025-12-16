@@ -1,3 +1,6 @@
+## 1.2.31 - 2025-12-17
+- Allowed `/usr/bin/mkdir` in the AppArmor profile to prevent permission errors when creating the runtime directory during startup.
+
 ## 1.2.30 - 2025-12-16
 - Direct Bedrock runtime files (PID and stop markers) to the writable `/data/run` directory for reliable startup and control scripts.
 - Permit `/usr/bin/rm` in AppArmor profile so startup cleanup can run.

@@ -8,6 +8,20 @@ This add-on is designed for **simplicity**, **performance**, and **zero-maintena
 
 ---
 
+## Credits & acknowledgements
+
+This add-on builds upon several excellent open-source tools.  
+Full credit and appreciation go to the original authors and maintainers:
+
+| Tool | Purpose | Author / Project |
+|-----|--------|------------------|
+| **MC Monitor** | Health checks and server availability monitoring | itzg |
+| **Entrypoint Demoter** | Secure privilege dropping for container entrypoints | itzg |
+| **Set-property** | Safe and declarative configuration file updates | itzg |
+| **Restify** | Lightweight REST API helper for runtime control | itzg |
+| **Easy Add** | Simplified add-on runtime utilities | itzg |
+
+
 ## ✨ Features
 
 | Feature | Description |

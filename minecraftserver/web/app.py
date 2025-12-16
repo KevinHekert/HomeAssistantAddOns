@@ -255,6 +255,7 @@ def api_permissions():
 def index():
     config = load_config()
     worlds = list_worlds()
+    world_configs = load_world_configs()
     error = None
     message = None
 
@@ -299,18 +300,27 @@ def index():
 
             # World mapping:
             if new_world_name:
-                # New world: create directory and save world config
+                # New world: validate uniqueness, then create directory and save world config
                 world_dir = os.path.join(WORLDS_DIR, new_world_name)
-                if not os.path.exists(world_dir):
-                    os.makedirs(world_dir, exist_ok=True)
-                # Always attempt to save world configuration (handles case where directory exists but config doesn't)
+                world_exists = os.path.exists(world_dir) or new_world_name in world_configs
+                if world_exists:
+                    raise ValueError(
+                        f"World '{new_world_name}' already exists. Choose a unique name or select it from the list."
+                    )
+
+                os.makedirs(world_dir, exist_ok=True)
                 save_world_config(new_world_name, level_seed_input)
+                world_configs[new_world_name] = {"name": new_world_name, "seed": level_seed_input}
+                if new_world_name not in worlds:
+                    worlds.append(new_world_name)
+                    worlds.sort()
+
                 config["world"]["level_name"] = new_world_name
                 config["world"]["level_seed"] = level_seed_input
             elif selected_world:
                 # Existing world: use saved seed from world config
                 config["world"]["level_name"] = selected_world
-                world_cfg = get_world_config(selected_world)
+                world_cfg = world_configs.get(selected_world)
                 if world_cfg and "seed" in world_cfg:
                     config["world"]["level_seed"] = world_cfg["seed"]
                 else:
@@ -416,9 +426,6 @@ def index():
         worlds.append(current_world)
         worlds.sort()
 
-    # Load world configurations
-    world_configs = load_world_configs()
-    
     # Check if current world exists (has a directory)
     current_world_exists = current_world and os.path.exists(os.path.join(WORLDS_DIR, current_world))
 
@@ -535,37 +542,37 @@ TEMPLATE = r"""
           <strong>World</strong>
         </div>
         <div class="card-body">
-          <div class="mb-3">
-            <label for="selected_world" class="form-label">Existing world</label>
-            <select class="form-select form-select-sm bg-black text-light" id="selected_world" name="selected_world">
-              <option value="">-- Select world --</option>
-              {% for w in worlds %}
-                <option value="{{ w }}" {% if current_world == w %}selected{% endif %}>{{ w }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text text-muted">Select an existing world folder from /data/worlds.</div>
-          </div>
-          <div class="mb-3">
-            <label for="new_world_name" class="form-label">New world name</label>
-            <input type="text" class="form-control form-control-sm bg-black text-light" id="new_world_name" name="new_world_name"
-                   placeholder="Leave empty to use selected world">
-            <div class="form-text text-muted">
-              If you enter a new world name, a folder will be created under <code>/data/worlds/&lt;name&gt;</code> and used as level name.
+          <div class="d-flex align-items-end gap-3 mb-3">
+            <div class="flex-grow-1">
+              <label for="selected_world" class="form-label">Existing world</label>
+              <select class="form-select form-select-sm bg-black text-light" id="selected_world" name="selected_world">
+                <option value="">-- Select world --</option>
+                {% for w in worlds %}
+                  <option value="{{ w }}" {% if current_world == w %}selected{% endif %}>{{ w }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text text-muted">Select an existing world folder from /data/worlds.</div>
+            </div>
+            <div class="text-end">
+              <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#newWorldModal">
+                Create new world
+              </button>
+              <div class="form-text text-muted">Choose name & seed in popup.</div>
             </div>
           </div>
+
+          <div id="new_world_summary" class="alert alert-info py-2 px-3 small d-none"></div>
+
           <div class="mb-3">
-            <label for="level_seed" class="form-label">Level seed</label>
-            <input type="text" class="form-control form-control-sm bg-black text-light" id="level_seed" name="level_seed"
-                   value="{{ config.world.level_seed }}"
-                   {% if current_world_exists %}readonly{% endif %}>
-            {% if current_world_exists %}
+            <label for="current_world_seed" class="form-label">Current world seed</label>
+            <input type="text" class="form-control form-control-sm bg-black text-light" id="current_world_seed" value="{{ config.world.level_seed }}" data-default-seed="{{ config.world.level_seed }}" readonly>
             <div class="form-text text-warning">
-              <strong>Note:</strong> Seed is immutable for existing worlds. Create a new world to use a different seed.
+              Seed cannot be changed for an existing world. Use "Create new world" to start with a different seed.
             </div>
-            {% else %}
-            <div class="form-text text-muted">Leave empty for a random seed. Seed cannot be changed once world is created.</div>
-            {% endif %}
           </div>
+
+          <input type="hidden" id="new_world_name" name="new_world_name" value="">
+          <input type="hidden" id="level_seed" name="level_seed" value="">
           <div class="mb-3">
             <label for="level_type" class="form-label">Level type</label>
             <select class="form-select form-select-sm bg-black text-light" id="level_type" name="level_type">
@@ -774,6 +781,34 @@ TEMPLATE = r"""
   </form>
 </div>
 
+<!-- Modal: create new world -->
+<div class="modal fade" id="newWorldModal" tabindex="-1" aria-labelledby="newWorldModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-light border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="newWorldModalLabel">Create new world</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label for="new_world_name_modal" class="form-label">World name</label>
+          <input type="text" class="form-control form-control-sm bg-black text-light" id="new_world_name_modal" placeholder="e.g. MyNewWorld">
+          <div class="form-text text-muted">A folder will be created under <code>/data/worlds/&lt;name&gt;</code>.</div>
+        </div>
+        <div class="mb-3">
+          <label for="level_seed_modal" class="form-label">Seed (optional)</label>
+          <input type="text" class="form-control form-control-sm bg-black text-light" id="level_seed_modal" placeholder="Leave empty for a random seed">
+          <div class="form-text text-muted">Seed is stored when the world is created and cannot be changed later.</div>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success btn-sm" onclick="saveNewWorldFromModal()">Create world</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal voor toevoegen/bewerken van permissions -->
 <div class="modal fade" id="permissionsModal" tabindex="-1" aria-labelledby="permissionsModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -822,6 +857,62 @@ TEMPLATE = r"""
 
   // Startstatus uit de backend
   let roleAssignments = {{ role_assignments|tojson }};
+  const worldConfigs = {{ world_configs|tojson }};
+
+  // ---- World selection helpers ----
+
+  function clearNewWorldSelection() {
+    const summary = document.getElementById('new_world_summary');
+    const nameField = document.getElementById('new_world_name');
+    const seedField = document.getElementById('level_seed');
+    nameField.value = '';
+    seedField.value = '';
+    if (summary) {
+      summary.classList.add('d-none');
+      summary.textContent = '';
+    }
+  }
+
+  function updateCurrentSeedDisplay(worldName) {
+    const seedDisplay = document.getElementById('current_world_seed');
+    if (!seedDisplay) return;
+    const worldInfo = worldConfigs[worldName] || {};
+    seedDisplay.value = worldInfo.seed || seedDisplay.dataset.defaultSeed || '';
+  }
+
+  function saveNewWorldFromModal() {
+    const nameInput = document.getElementById('new_world_name_modal');
+    const seedInput = document.getElementById('level_seed_modal');
+    const summary = document.getElementById('new_world_summary');
+    const hiddenName = document.getElementById('new_world_name');
+    const hiddenSeed = document.getElementById('level_seed');
+    const select = document.getElementById('selected_world');
+
+    const newName = (nameInput.value || '').trim();
+    const newSeed = (seedInput.value || '').trim();
+
+    if (!newName) {
+      alert('Please provide a world name.');
+      return;
+    }
+
+    // Clear existing world selection when creating a new one
+    if (select) {
+      select.value = '';
+    }
+
+    if (hiddenName) hiddenName.value = newName;
+    if (hiddenSeed) hiddenSeed.value = newSeed;
+
+    if (summary) {
+      summary.textContent = `New world: "${newName}"${newSeed ? ` with seed "${newSeed}"` : ''}.`;
+      summary.classList.remove('d-none');
+    }
+
+    const modalEl = document.getElementById('newWorldModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) modal.hide();
+  }
 
   function syncHiddenField() {
     const hidden = document.getElementById('role_assignments_json');
@@ -1049,6 +1140,25 @@ TEMPLATE = r"""
     syncHiddenField();
     renderRoleAssignmentsTable();
     renderRuntimePermissions();
+
+    const select = document.getElementById('selected_world');
+    if (select) {
+      select.addEventListener('change', () => {
+        clearNewWorldSelection();
+        updateCurrentSeedDisplay(select.value);
+      });
+      updateCurrentSeedDisplay(select.value);
+    }
+
+    const newWorldModalEl = document.getElementById('newWorldModal');
+    if (newWorldModalEl) {
+      newWorldModalEl.addEventListener('show.bs.modal', () => {
+        const nameInput = document.getElementById('new_world_name_modal');
+        const seedInput = document.getElementById('level_seed_modal');
+        if (nameInput) nameInput.value = '';
+        if (seedInput) seedInput.value = '';
+      });
+    }
   });
 </script>
 

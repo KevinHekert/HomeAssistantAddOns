@@ -22,8 +22,6 @@ This add-on is designed for **simplicity**, **performance**, and **zero-maintena
 | 🌐 LAN visibility toggle | Enable/disable server broadcast on local network |
 | 🧑‍💻 Works with host network | No port mapping headaches — plug & play |
 
----
-
 ## 🏗 Installation
 
 1. Add this repository to Home Assistant Add-on Store: `https://github.com/KevinHekert/HomeAssistantAddOns/`

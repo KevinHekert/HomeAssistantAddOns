@@ -15,11 +15,11 @@ Full credit and appreciation go to the original authors and maintainers:
 
 | Tool | Purpose | Author / Project |
 |-----|--------|------------------|
-| **MC Monitor** | Health checks and server availability monitoring | itzg |
-| **Entrypoint Demoter** | Secure privilege dropping for container entrypoints | itzg |
-| **Set-property** | Safe and declarative configuration file updates | itzg |
-| **Restify** | Lightweight REST API helper for runtime control | itzg |
-| **Easy Add** | Simplified add-on runtime utilities | itzg |
+| **MC Monitor** | Health checks and server availability monitoring | [itzg](https://github.com/itzg/) |
+| **Entrypoint Demoter** | Secure privilege dropping for container entrypoints | [itzg](https://github.com/itzg/) |
+| **Set-property** | Safe and declarative configuration file updates | [itzg](https://github.com/itzg/) |
+| **Restify** | Lightweight REST API helper for runtime control | [itzg](https://github.com/itzg/) |
+| **Easy Add** | Simplified add-on runtime utilities | [itzg](https://github.com/itzg/) |
 
 
 ## ✨ Features

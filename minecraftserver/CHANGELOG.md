@@ -1,5 +1,6 @@
-## 1.3.9 - 2025-12-16
+## 1.3.10 - 2025-12-16
 - Make runtime scripts and health checks honor the configurable data directory instead of hardcoding /data.
+- Consolidated the changes from the 1.3.x line under this version number.
 
 ## 1.3.8 - 2025-12-16
 - Simplified web UI API calls to use direct relative paths and removed the unused ingress API helper.
@@ -10,7 +11,6 @@
 - Avoid LD_PRELOAD warnings when `stdbuf` support is unavailable by falling back to direct log filtering.
 - Allow additional helper binaries (e.g., `stdbuf`, `timeout`, `find`) in the AppArmor profile to prevent permission errors during logging and health checks.
 - Allowed `/usr/bin/sleep` in the AppArmor profile so the watchdog loop in `/opt/start.sh` can wait without permission errors.
-- Consolidated the changes from the 1.3.x line under this version number.
 - Allowed `/usr/bin/mkdir` in the AppArmor profile to prevent permission errors when creating the runtime directory during startup.
 - Direct Bedrock runtime files (PID and stop markers) to the writable `/data/run` directory for reliable startup and control scripts.
 - Permit `/usr/bin/rm` in AppArmor profile so startup cleanup can run.

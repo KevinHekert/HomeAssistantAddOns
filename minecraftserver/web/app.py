@@ -698,11 +698,6 @@ TEMPLATE = r"""
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <span id="server_status_badge" class="badge bg-secondary text-uppercase">Loading...</span>
-      <div class="btn-group btn-group-sm" role="group" aria-label="Server controls">
-        <button type="button" class="btn btn-success" id="btnServerStart" onclick="controlServer('start')">Start</button>
-        <button type="button" class="btn btn-outline-warning text-warning" id="btnServerRestart" onclick="controlServer('restart')">Restart</button>
-        <button type="button" class="btn btn-outline-light" id="btnServerStop" onclick="controlServer('stop')">Stop</button>
-      </div>
       <small id="server_status_text" class="text-muted"></small>
     </div>
   </div>
@@ -1111,12 +1106,7 @@ TEMPLATE = r"""
   let roleAssignments = {{ role_assignments|tojson }};
   const worldConfigs = {{ world_configs|tojson }};
 
-  // ---- Server control helpers ----
-  const serverButtons = {
-    start: document.getElementById('btnServerStart'),
-    stop: document.getElementById('btnServerStop'),
-    restart: document.getElementById('btnServerRestart'),
-  };
+  // ---- Server status helpers ----
   const serverStatusBadge = document.getElementById('server_status_badge');
   const serverStatusText = document.getElementById('server_status_text');
 
@@ -1126,14 +1116,6 @@ TEMPLATE = r"""
     if (serverStatusBadge) {
       serverStatusBadge.textContent = isRunning ? 'Running' : 'Stopped';
       serverStatusBadge.className = `badge text-uppercase ${isRunning ? 'bg-success' : 'bg-secondary'}`;
-    }
-
-    if (serverButtons.start && serverButtons.stop) {
-      serverButtons.start.disabled = isRunning;
-      serverButtons.stop.disabled = !isRunning;
-    }
-    if (serverButtons.restart) {
-      serverButtons.restart.disabled = false;
     }
 
     if (serverStatusText) {
@@ -1149,31 +1131,6 @@ TEMPLATE = r"""
     } catch (err) {
       console.error('Failed to load server status', err);
       setServerStatus('stopped', 'Unable to load server status');
-    }
-  }
-
-  async function controlServer(action) {
-    const targetButton = serverButtons[action];
-    if (targetButton) {
-      targetButton.disabled = true;
-    }
-    setServerStatus(null, `${action.charAt(0).toUpperCase() + action.slice(1)}ing server...`);
-
-    try {
-      const response = await fetch(`api/server/${action}`, { method: 'POST' });
-      const data = await response.json();
-      setServerStatus(data.status, data.message || '');
-
-      if (!response.ok) {
-        if (serverStatusText) {
-          serverStatusText.textContent = data.message || 'Action failed';
-        }
-      }
-    } catch (err) {
-      console.error(`Failed to ${action} server`, err);
-      setServerStatus('stopped', 'Action failed');
-    } finally {
-      fetchServerStatus();
     }
   }
 

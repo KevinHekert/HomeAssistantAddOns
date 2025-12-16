@@ -421,6 +421,89 @@ def compute_time_weighted_avg(
         return None, None
 
 
+def resample_category(
+    category: str,
+    slot_start: datetime,
+    slot_end: datetime,
+) -> bool:
+    """Resample a single category into a time slot.
+
+    This helper is tailored for integration testing and targeted resampling
+    scenarios. It finds the primary entity mapped to the category, computes a
+    time-weighted average for the slot, and stores/updates the corresponding
+    ``ResampledSample`` row.
+
+    Args:
+        category: Logical category name (e.g., "outdoor_temp").
+        slot_start: Inclusive start of the slot.
+        slot_end: Exclusive end of the slot.
+
+    Returns:
+        True if a resampled value was written, False otherwise.
+    """
+
+    init_db_schema()
+
+    try:
+        with Session(engine) as session:
+            mapping = (
+                session.query(SensorMapping)
+                .filter(
+                    SensorMapping.category == category,
+                    SensorMapping.is_active == True,  # noqa: E712
+                )
+                .order_by(
+                    SensorMapping.priority.asc(),
+                    SensorMapping.id.asc(),
+                )
+                .first()
+            )
+
+            if mapping is None:
+                _Logger.warning("No active sensor mapping found for category '%s'", category)
+                return False
+
+            avg, unit = compute_time_weighted_avg(session, mapping.entity_id, slot_start, slot_end)
+
+            # Ensure idempotence by removing existing row
+            session.query(ResampledSample).filter(
+                ResampledSample.slot_start == slot_start,
+                ResampledSample.category == category,
+            ).delete()
+
+            if avg is None:
+                session.commit()
+                _Logger.debug(
+                    "No samples available for category '%s' in slot starting %s",
+                    category,
+                    slot_start,
+                )
+                return False
+
+            resampled = ResampledSample(
+                slot_start=slot_start,
+                category=category,
+                value=avg,
+                unit=unit,
+                is_derived=False,
+            )
+            session.add(resampled)
+            session.commit()
+
+            _Logger.debug(
+                "Resampled category '%s' for slot %s: %.3f %s",
+                category,
+                slot_start,
+                avg,
+                unit,
+            )
+
+            return True
+    except SQLAlchemyError as e:
+        _Logger.error("Error resampling category '%s' for slot %s: %s", category, slot_start, e)
+        return False
+
+
 def _align_to_5min_boundary(dt: datetime) -> datetime:
     """
     Align a datetime downwards to the nearest 5-minute boundary.

@@ -1,3 +1,7 @@
+## 1.3.0 - 2025-12-18
+- Allowed `/usr/bin/sleep` in the AppArmor profile so the watchdog loop in `/opt/start.sh` can wait without permission errors.
+- Consolidated the changes from the 1.3.x line under this version number.
+
 ## 1.2.31 - 2025-12-17
 - Allowed `/usr/bin/mkdir` in the AppArmor profile to prevent permission errors when creating the runtime directory during startup.
 

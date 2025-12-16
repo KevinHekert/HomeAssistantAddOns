@@ -1,3 +1,13 @@
+## [Unreleased]
+- Added world-specific seed configuration
+- Seeds are now saved per world in /data/worldconfiguration.json
+- World names and seeds are immutable once created
+- Added logging of world name and seed on startup
+- Seed field is read-only for existing worlds in UI
+
+## 1.2.24 - 2025-12-09
+- Updated Bedrock Server from '1.21.124.2' to '1.21.130.4'
+
 ## 1.2.23 - 2025-11-25
 - Removed depricated code, adjusted comments in code.
 

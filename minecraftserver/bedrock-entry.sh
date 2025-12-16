@@ -402,13 +402,37 @@ echo "🚀 Starting Bedrock ${VERSION}"
 : "${SUPPRESS_NOISY_BEDROCK_LOGS:=true}"
 LOG_NOISE_PATTERN="${BEDROCK_LOG_NOISE_PATTERN:-attack_interval.*scan_interval}"
 
+has_stdbuf_support() {
+  command -v stdbuf >/dev/null 2>&1 || return 1
+
+  local candidates=(
+    "/usr/lib/coreutils/libstdbuf.so"
+    "/usr/libexec/coreutils/libstdbuf.so"
+    "/usr/lib/x86_64-linux-gnu/coreutils/libstdbuf.so"
+    "/usr/lib/aarch64-linux-gnu/coreutils/libstdbuf.so"
+  )
+
+  for lib in "${candidates[@]}"; do
+    [[ -f "$lib" ]] && return 0
+  done
+
+  return 1
+}
+
 run_bedrock() {
   local cmd=("$@")
 
   if [[ "${SUPPRESS_NOISY_BEDROCK_LOGS,,}" != "false" ]]; then
-    exec "${cmd[@]}" \
-      > >(stdbuf -oL -eL grep -v -E "${LOG_NOISE_PATTERN}") \
-      2> >(stdbuf -oL -eL grep -v -E "${LOG_NOISE_PATTERN}" >&2)
+    if has_stdbuf_support; then
+      exec "${cmd[@]}" \
+        > >(stdbuf -oL -eL grep -v -E "${LOG_NOISE_PATTERN}") \
+        2> >(stdbuf -oL -eL grep -v -E "${LOG_NOISE_PATTERN}" >&2)
+    else
+      echo "ℹ️ stdbuf not available; running without LD_PRELOAD tweaks"
+      exec "${cmd[@]}" \
+        > >(grep -v -E "${LOG_NOISE_PATTERN}") \
+        2> >(grep -v -E "${LOG_NOISE_PATTERN}" >&2)
+    fi
   else
     exec "${cmd[@]}"
   fi

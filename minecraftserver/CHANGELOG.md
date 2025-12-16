@@ -1,3 +1,21 @@
+## 1.3.7 - 2025-12-18
+- Simplified web UI API calls to use direct relative paths and removed the unused ingress API helper.
+
+## 1.3.6 - 2025-12-18
+- Use relative API URLs (without a leading slash) for server control requests so ingress keeps working without custom path handling.
+
+## 1.3.5 - 2025-12-18
+- Use relative ingress API paths for runtime permissions so permissions data loads inside Home Assistant.
+
+## 1.3.4 - 2025-12-18
+- Allow AppArmor to read libraries under `/usr/libexec` so the stdbuf detection logic can access alternate preload paths.
+
+## 1.3.3 - 2025-12-18
+- Fix ingress API calls so server status and control buttons work correctly in the web UI.
+
+## 1.3.2 - 2025-12-18
+- Avoid LD_PRELOAD warnings when `stdbuf` support is unavailable by falling back to direct log filtering.
+
 ## 1.3.1 - 2025-12-18
 - Allow additional helper binaries (e.g., `stdbuf`, `timeout`, `find`) in the AppArmor profile to prevent permission errors during logging and health checks.
 

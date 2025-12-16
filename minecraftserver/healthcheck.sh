@@ -2,6 +2,7 @@
 set -e
 
 CONFIG_FILE="/data/config/bedrock_for_ha_config.json"
+STOP_MARKER="/run/bedrock_server.stopped"
 
 # EULA Standaard niet geaccepteerd (vereiste)
 eula="false"
@@ -13,6 +14,9 @@ fi
 # UI werkt, gebruiker kan de EULA alsnog aanvinken.
 case "${eula,,}" in
   true|1|yes|on)
+    if [ -f "${STOP_MARKER}" ]; then
+      exit 0
+    fi
     # EULA geaccepteerd -> Bedrock hoort te draaien; healthcheck moet dat afdwingen
     echo ${eula}
     ;;

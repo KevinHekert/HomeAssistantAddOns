@@ -1,5 +1,8 @@
 import json
 import os
+import signal
+import subprocess
+import time
 from copy import deepcopy
 
 from flask import Flask, request, redirect, url_for, render_template_string, jsonify
@@ -19,6 +22,11 @@ CONFIG_DIR = "/data/config"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "bedrock_for_ha_config.json")
 WORLDS_DIR = "/data/worlds"
 WORLD_CONFIG_FILE = "/data/worldconfiguration.json"
+BEDROCK_PID_FILE = "/run/bedrock_server.pid"
+BEDROCK_ENTRYPOINT = "/opt/bedrock-entry.sh"
+SEND_COMMAND_BIN = "/usr/local/bin/send-command"
+BEDROCK_DEFAULT_PORT = 19132
+BEDROCK_STOP_MARKER = "/run/bedrock_server.stopped"
 
 # ---- Default config (zelfde structuur als 'options' in config.yaml) ----
 DEFAULT_CONFIG = {
@@ -217,7 +225,175 @@ def save_world_config(world_name, seed):
     return True
 
 
+def _read_bedrock_pid():
+    try:
+        with open(BEDROCK_PID_FILE, "r", encoding="utf-8") as f:
+            return int(f.read().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _write_bedrock_pid(pid: int):
+    try:
+        with open(BEDROCK_PID_FILE, "w", encoding="utf-8") as f:
+            f.write(str(pid))
+    except OSError:
+        pass
+
+
+def _write_stop_marker():
+    try:
+        with open(BEDROCK_STOP_MARKER, "w", encoding="utf-8") as f:
+            f.write("stopped")
+    except OSError:
+        pass
+
+
+def _clear_stop_marker():
+    try:
+        os.remove(BEDROCK_STOP_MARKER)
+    except FileNotFoundError:
+        pass
+
+
+def _pid_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _cleanup_pid_file() -> int | None:
+    pid = _read_bedrock_pid()
+    if pid is not None and not _pid_is_running(pid):
+        try:
+            os.remove(BEDROCK_PID_FILE)
+        except FileNotFoundError:
+            pass
+        return None
+    return pid
+
+
+def get_server_status() -> str:
+    if os.path.exists(BEDROCK_STOP_MARKER):
+        return "stopped"
+
+    pid = _cleanup_pid_file()
+    if pid is not None and _pid_is_running(pid):
+        return "running"
+
+    try:
+        result = subprocess.run(
+            [
+                "mc-monitor",
+                "status-bedrock",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(BEDROCK_DEFAULT_PORT),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if result.returncode == 0:
+            return "running"
+    except (FileNotFoundError, subprocess.SubprocessError):
+        pass
+
+    return "stopped"
+
+
+def start_bedrock_server() -> bool:
+    if get_server_status() == "running":
+        return False
+
+    try:
+        _clear_stop_marker()
+        process = subprocess.Popen([BEDROCK_ENTRYPOINT])
+        _write_bedrock_pid(process.pid)
+        return True
+    except OSError:
+        return False
+
+
+def stop_bedrock_server(timeout_seconds: int = 20) -> bool:
+    pid = _cleanup_pid_file()
+    if pid is None:
+        return False
+
+    try:
+        subprocess.run([SEND_COMMAND_BIN, "stop"], check=False)
+    except FileNotFoundError:
+        pass
+
+    end_time = time.time() + timeout_seconds
+    while time.time() < end_time:
+        if not _pid_is_running(pid):
+            _cleanup_pid_file()
+            return True
+        time.sleep(0.5)
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+
+    time.sleep(1)
+    stopped = not _pid_is_running(pid)
+    if stopped:
+        _cleanup_pid_file()
+        _write_stop_marker()
+    return stopped
+
+
+def restart_bedrock_server() -> bool:
+    stop_bedrock_server()
+    return start_bedrock_server()
+
 # ---- Routes ----
+@app.route("/api/server/status", methods=["GET"])
+def api_server_status():
+    return jsonify({"status": get_server_status()})
+
+
+@app.route("/api/server/start", methods=["POST"])
+def api_server_start():
+    started = start_bedrock_server()
+    status = get_server_status()
+    if started or status == "running":
+        return jsonify({"message": "Server started", "status": status})
+    return (
+        jsonify({"message": "Unable to start server", "status": status}),
+        500,
+    )
+
+
+@app.route("/api/server/stop", methods=["POST"])
+def api_server_stop():
+    stopped = stop_bedrock_server()
+    status = get_server_status()
+    if stopped or status == "stopped":
+        return jsonify({"message": "Server stopped", "status": status})
+    return (
+        jsonify({"message": "Unable to stop server", "status": status}),
+        500,
+    )
+
+
+@app.route("/api/server/restart", methods=["POST"])
+def api_server_restart():
+    restarted = restart_bedrock_server()
+    status = get_server_status()
+    if restarted or status == "running":
+        return jsonify({"message": "Server restarted", "status": status})
+    return (
+        jsonify({"message": "Unable to restart server", "status": status}),
+        500,
+    )
+
+
 @app.route("/api/permissions", methods=["GET"])
 def api_permissions():
     """
@@ -482,8 +658,19 @@ TEMPLATE = r"""
 <body class="bg-dark text-light">
 <nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-3">
   <div class="container-fluid">
-    <span class="navbar-brand mb-0 h1">Minecraft Server for Home Assistant</span>
-    <span class="text-muted small">Configure Bedrock server settings via Ingress</span>
+    <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-1 gap-lg-3">
+      <span class="navbar-brand mb-0 h1">Minecraft Server for Home Assistant</span>
+      <span class="text-muted small">Configure Bedrock server settings via Ingress</span>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span id="server_status_badge" class="badge bg-secondary text-uppercase">Loading...</span>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Server controls">
+        <button type="button" class="btn btn-success" id="btnServerStart" onclick="controlServer('start')">Start</button>
+        <button type="button" class="btn btn-outline-warning text-warning" id="btnServerRestart" onclick="controlServer('restart')">Restart</button>
+        <button type="button" class="btn btn-outline-light" id="btnServerStop" onclick="controlServer('stop')">Stop</button>
+      </div>
+      <small id="server_status_text" class="text-muted"></small>
+    </div>
   </div>
 </nav>
 
@@ -889,6 +1076,74 @@ TEMPLATE = r"""
   // Startstatus uit de backend
   let roleAssignments = {{ role_assignments|tojson }};
   const worldConfigs = {{ world_configs|tojson }};
+
+  // ---- Server control helpers ----
+  const serverButtons = {
+    start: document.getElementById('btnServerStart'),
+    stop: document.getElementById('btnServerStop'),
+    restart: document.getElementById('btnServerRestart'),
+  };
+  const serverStatusBadge = document.getElementById('server_status_badge');
+  const serverStatusText = document.getElementById('server_status_text');
+
+  function setServerStatus(status, message = '') {
+    const normalized = (status || '').toLowerCase();
+    const isRunning = normalized === 'running';
+    if (serverStatusBadge) {
+      serverStatusBadge.textContent = isRunning ? 'Running' : 'Stopped';
+      serverStatusBadge.className = `badge text-uppercase ${isRunning ? 'bg-success' : 'bg-secondary'}`;
+    }
+
+    if (serverButtons.start && serverButtons.stop) {
+      serverButtons.start.disabled = isRunning;
+      serverButtons.stop.disabled = !isRunning;
+    }
+    if (serverButtons.restart) {
+      serverButtons.restart.disabled = false;
+    }
+
+    if (serverStatusText) {
+      serverStatusText.textContent = message;
+    }
+  }
+
+  async function fetchServerStatus() {
+    try {
+      const response = await fetch('/api/server/status');
+      const data = await response.json();
+      setServerStatus(data.status, '');
+    } catch (err) {
+      console.error('Failed to load server status', err);
+      setServerStatus('stopped', 'Unable to load server status');
+    }
+  }
+
+  async function controlServer(action) {
+    const targetButton = serverButtons[action];
+    if (targetButton) {
+      targetButton.disabled = true;
+    }
+    setServerStatus(null, `${action.charAt(0).toUpperCase() + action.slice(1)}ing server...`);
+
+    try {
+      const response = await fetch(`/api/server/${action}`, { method: 'POST' });
+      const data = await response.json();
+      setServerStatus(data.status, data.message || '');
+
+      if (!response.ok) {
+        if (serverStatusText) {
+          serverStatusText.textContent = data.message || 'Action failed';
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to ${action} server`, err);
+      setServerStatus('stopped', 'Action failed');
+    } finally {
+      fetchServerStatus();
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', fetchServerStatus);
 
   // ---- World selection helpers ----
 

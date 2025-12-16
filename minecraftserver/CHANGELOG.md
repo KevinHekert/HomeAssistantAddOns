@@ -1,5 +1,7 @@
-## [Unreleased]
-- No unreleased changes yet.
+## 1.2.27 - 2025-12-20
+- Fixed saving seeds for newly created and existing worlds without a stored seed.
+- Allow filling in missing seeds so they are persisted to the world configuration.
+- Ensure new worlds and their seeds become available immediately in the selection list.
 
 ## 1.2.26 - 2025-12-16
 - Updated Bedrock Server from '1.21.130.4' to preview build '1.26.0.25' (bin-linux-preview)

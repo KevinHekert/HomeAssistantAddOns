@@ -94,6 +94,7 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   /usr/lib/**                  mr,
   /usr/lib64/**                mr,
   /usr/local/lib/**            mr,
+  /usr/libexec/**              mr,
   /usr/share/**                r,
 
   # ====== Temp & logs ======

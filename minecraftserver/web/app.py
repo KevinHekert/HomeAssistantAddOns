@@ -22,11 +22,12 @@ CONFIG_DIR = "/data/config"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "bedrock_for_ha_config.json")
 WORLDS_DIR = "/data/worlds"
 WORLD_CONFIG_FILE = "/data/worldconfiguration.json"
-BEDROCK_PID_FILE = "/run/bedrock_server.pid"
+RUNTIME_DIR = "/data/run"
+BEDROCK_PID_FILE = os.path.join(RUNTIME_DIR, "bedrock_server.pid")
 BEDROCK_ENTRYPOINT = "/opt/bedrock-entry.sh"
 SEND_COMMAND_BIN = "/usr/local/bin/send-command"
 BEDROCK_DEFAULT_PORT = 19132
-BEDROCK_STOP_MARKER = "/run/bedrock_server.stopped"
+BEDROCK_STOP_MARKER = os.path.join(RUNTIME_DIR, "bedrock_server.stopped")
 
 # ---- Default config (zelfde structuur als 'options' in config.yaml) ----
 DEFAULT_CONFIG = {
@@ -88,6 +89,7 @@ def deep_merge(defaults, overrides):
 def ensure_dirs():
     os.makedirs(CONFIG_DIR, exist_ok=True)
     os.makedirs(WORLDS_DIR, exist_ok=True)
+    os.makedirs(RUNTIME_DIR, exist_ok=True)
 
 
 def ensure_config_file():
@@ -235,6 +237,7 @@ def _read_bedrock_pid():
 
 def _write_bedrock_pid(pid: int):
     try:
+        os.makedirs(RUNTIME_DIR, exist_ok=True)
         with open(BEDROCK_PID_FILE, "w", encoding="utf-8") as f:
             f.write(str(pid))
     except OSError:
@@ -243,6 +246,7 @@ def _write_bedrock_pid(pid: int):
 
 def _write_stop_marker():
     try:
+        os.makedirs(RUNTIME_DIR, exist_ok=True)
         with open(BEDROCK_STOP_MARKER, "w", encoding="utf-8") as f:
             f.write("stopped")
     except OSError:

@@ -2,11 +2,14 @@
 set -e
 
 FLASK_PORT="${FLASK_PORT:-8789}"
-BEDROCK_PID_FILE="/run/bedrock_server.pid"
+RUNTIME_DIR="/data/run"
+BEDROCK_PID_FILE="${RUNTIME_DIR}/bedrock_server.pid"
+STOP_MARKER="${RUNTIME_DIR}/bedrock_server.stopped"
 
 start_bedrock_server() {
   echo "🎮 Starting Bedrock server..."
-  rm -f /run/bedrock_server.stopped
+  mkdir -p "${RUNTIME_DIR}"
+  rm -f "${STOP_MARKER}"
   /opt/bedrock-entry.sh "$@" &
   local bedrock_pid=$!
   echo "${bedrock_pid}" >"${BEDROCK_PID_FILE}"

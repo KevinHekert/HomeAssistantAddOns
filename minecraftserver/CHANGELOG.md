@@ -1,13 +1,9 @@
-## 1.2.29 - 2025-12-22
+## 1.2.30 - 2025-12-16
+- Direct Bedrock runtime files (PID and stop markers) to the writable `/data/run` directory for reliable startup and control scripts.
 - Permit `/usr/bin/rm` in AppArmor profile so startup cleanup can run.
-
-## 1.2.28 - 2025-12-21
-- Version bump for maintenance release.
-
-## 1.2.27 - 2025-12-20
-- Fixed saving seeds for newly created and existing worlds without a stored seed.
-- Allow filling in missing seeds so they are persisted to the world configuration.
+- Fixed saving seeds for newly created and existing worlds without a stored seed, allowing missing seeds to be persisted to the world configuration.
 - Ensure new worlds and their seeds become available immediately in the selection list.
+- Version bump for maintenance release.
 
 ## 1.2.26 - 2025-12-16
 - Updated Bedrock Server from '1.21.130.4' to preview build '1.26.0.25' (bin-linux-preview)

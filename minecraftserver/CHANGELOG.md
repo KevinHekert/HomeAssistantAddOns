@@ -1,3 +1,6 @@
+## 1.3.1 - 2025-12-18
+- Allow additional helper binaries (e.g., `stdbuf`, `timeout`, `find`) in the AppArmor profile to prevent permission errors during logging and health checks.
+
 ## 1.3.0 - 2025-12-18
 - Allowed `/usr/bin/sleep` in the AppArmor profile so the watchdog loop in `/opt/start.sh` can wait without permission errors.
 - Consolidated the changes from the 1.3.x line under this version number.

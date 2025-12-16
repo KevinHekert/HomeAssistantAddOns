@@ -48,6 +48,7 @@ profile hassio-addons-minecraft_server_for_ha flags=(attach_disconnected,mediate
   /usr/bin/curl                ixr,
   /usr/bin/unzip               ixr,
   /usr/bin/tail                ixr,
+  /usr/bin/sleep               ixr,
 
   # ====== Add-on root & scripts ======
   # Alles onder /opt mag gelezen/geschreven/uitgevoerd worden

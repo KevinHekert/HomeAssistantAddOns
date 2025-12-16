@@ -396,8 +396,26 @@ export LD_LIBRARY_PATH="${BIN_DIR}"
 echo Library path: ${LD_LIBRARY_PATH:-"(not set)"}
 
 echo "🚀 Starting Bedrock ${VERSION}"
+
+# Filter extremely noisy Bedrock AI warnings (attack_interval disabled -> scan_interval)
+# so Home Assistant logs stay readable. Set SUPPRESS_NOISY_BEDROCK_LOGS=false to allow all logs.
+: "${SUPPRESS_NOISY_BEDROCK_LOGS:=true}"
+LOG_NOISE_PATTERN="${BEDROCK_LOG_NOISE_PATTERN:-attack_interval.*scan_interval}"
+
+run_bedrock() {
+  local cmd=("$@")
+
+  if [[ "${SUPPRESS_NOISY_BEDROCK_LOGS,,}" != "false" ]]; then
+    exec "${cmd[@]}" \
+      > >(stdbuf -oL -eL grep -v -E "${LOG_NOISE_PATTERN}") \
+      2> >(stdbuf -oL -eL grep -v -E "${LOG_NOISE_PATTERN}" >&2)
+  else
+    exec "${cmd[@]}"
+  fi
+}
+
 if [ -f /usr/local/bin/box64 ] ; then
-  exec box64 "${BIN_PATH}"
+  run_bedrock box64 "${BIN_PATH}"
 else
-  exec "${BIN_PATH}"
+  run_bedrock "${BIN_PATH}"
 fi

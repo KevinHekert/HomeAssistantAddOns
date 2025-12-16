@@ -180,28 +180,41 @@ def get_world_config(world_name):
 
 
 def save_world_config(world_name, seed):
-    """Save configuration for a specific world (name and seed are immutable)
-    
+    """Save configuration for a specific world.
+
+    A world always stores exactly one seed. If the world already exists but
+    does not have a seed yet, the provided seed will be written. Existing
+    non-empty seeds are left untouched.
+
     Args:
         world_name (str): Unique name for the world
-        seed (str): World generation seed
-    
+        seed (str): World generation seed (may be empty)
+
     Returns:
-        bool: True if world config was saved (new world), False if world already exists
-    
-    Note: The 'name' field is stored alongside the key for data integrity
-    and to meet the requirement that "name should be unique and not changeable".
+        bool: True if world config was created or updated with a new seed,
+            False if no changes were made.
     """
     world_configs = load_world_configs()
-    if world_name not in world_configs:
-        world_configs[world_name] = {
-            "name": world_name,
-            "seed": seed
-        }
+    existing = world_configs.get(world_name)
+    normalized_seed = seed if seed is not None else ""
+
+    if existing is None:
+        world_configs[world_name] = {"name": world_name, "seed": normalized_seed}
         save_world_configs(world_configs)
-        app.logger.info(f"World created: name='{world_name}', seed='{seed}'")
+        app.logger.info(f"World created: name='{world_name}', seed='{normalized_seed}'")
         return True
-    return False
+
+    current_seed = (existing.get("seed") or "").strip()
+    if current_seed:
+        return False
+
+    existing["name"] = existing.get("name") or world_name
+    existing["seed"] = normalized_seed
+    save_world_configs(world_configs)
+    app.logger.info(
+        "World seed filled: name='%s', seed='%s'", world_name, normalized_seed
+    )
+    return True
 
 
 # ---- Routes ----
@@ -300,9 +313,9 @@ def index():
 
             # World mapping:
             if new_world_name:
-                # New world: validate uniqueness, then create directory and save world config
+                # New world: validate uniqueness (folder decides existence), then create directory and save world config
                 world_dir = os.path.join(WORLDS_DIR, new_world_name)
-                world_exists = os.path.exists(world_dir) or new_world_name in world_configs
+                world_exists = os.path.exists(world_dir)
                 if world_exists:
                     raise ValueError(
                         f"World '{new_world_name}' already exists. Choose a unique name or select it from the list."
@@ -321,11 +334,18 @@ def index():
                 # Existing world: use saved seed from world config
                 config["world"]["level_name"] = selected_world
                 world_cfg = world_configs.get(selected_world)
-                if world_cfg and "seed" in world_cfg:
-                    config["world"]["level_seed"] = world_cfg["seed"]
-                else:
-                    # Fallback to current config seed if world config doesn't exist
-                    config["world"]["level_seed"] = config["world"].get("level_seed", "")
+                existing_seed = ""
+                if world_cfg:
+                    existing_seed = world_cfg.get("seed", "") or ""
+
+                # Allow filling in a missing seed exactly once
+                filled_seed_input = form.get("existing_world_seed", "").strip()
+                seed_to_use = existing_seed or filled_seed_input or config["world"].get("level_seed", "")
+
+                if seed_to_use or existing_seed:
+                    if save_world_config(selected_world, seed_to_use):
+                        world_configs[selected_world] = {"name": selected_world, "seed": seed_to_use}
+                config["world"]["level_seed"] = seed_to_use
             else:
                 # No selection, fall back to current config or default
                 if not config["world"].get("level_name"):
@@ -428,6 +448,12 @@ def index():
 
     # Check if current world exists (has a directory)
     current_world_exists = current_world and os.path.exists(os.path.join(WORLDS_DIR, current_world))
+
+    # Ensure the current world's seed is stored in world configuration when possible
+    if current_world_exists and current_world not in world_configs:
+        current_seed = config["world"].get("level_seed", "")
+        if save_world_config(current_world, current_seed):
+            world_configs[current_world] = {"name": current_world, "seed": current_seed}
 
     return render_template_string(
         TEMPLATE,
@@ -563,11 +589,16 @@ TEMPLATE = r"""
 
           <div id="new_world_summary" class="alert alert-info py-2 px-3 small d-none"></div>
 
+          {% set current_world_has_seed = world_configs.get(current_world, {}).get('seed') or config.world.level_seed %}
           <div class="mb-3">
             <label for="current_world_seed" class="form-label">Current world seed</label>
-            <input type="text" class="form-control form-control-sm bg-black text-light" id="current_world_seed" value="{{ config.world.level_seed }}" data-default-seed="{{ config.world.level_seed }}" readonly>
-            <div class="form-text text-warning">
-              Seed cannot be changed for an existing world. Use "Create new world" to start with a different seed.
+            <input type="text" class="form-control form-control-sm bg-black text-light" id="current_world_seed" name="existing_world_seed" value="{{ config.world.level_seed }}" data-default-seed="{{ config.world.level_seed }}" {% if current_world_has_seed %}readonly{% endif %}>
+            <div id="current_world_seed_help" class="form-text {% if current_world_has_seed %}text-muted{% else %}text-warning{% endif %}">
+              {% if current_world_has_seed %}
+                Seed is stored for this world and cannot be changed. Create a new world to use a different seed.
+              {% else %}
+                No seed stored yet. Enter a seed to save it for this world (one seed per world).
+              {% endif %}
             </div>
           </div>
 
@@ -875,9 +906,31 @@ TEMPLATE = r"""
 
   function updateCurrentSeedDisplay(worldName) {
     const seedDisplay = document.getElementById('current_world_seed');
+    const seedHelp = document.getElementById('current_world_seed_help');
     if (!seedDisplay) return;
     const worldInfo = worldConfigs[worldName] || {};
-    seedDisplay.value = worldInfo.seed || seedDisplay.dataset.defaultSeed || '';
+    const seedValue = worldInfo.seed || '';
+    const hasSeed = seedValue.length > 0;
+
+    if (hasSeed) {
+      seedDisplay.value = seedValue;
+      seedDisplay.readOnly = true;
+      seedDisplay.classList.remove('text-warning');
+      if (seedHelp) {
+        seedHelp.textContent = 'Seed is stored for this world and cannot be changed. Create a new world to use a different seed.';
+        seedHelp.classList.remove('text-warning');
+        seedHelp.classList.add('text-muted');
+      }
+      return;
+    }
+
+    seedDisplay.readOnly = false;
+    seedDisplay.value = '';
+    if (seedHelp) {
+      seedHelp.textContent = 'No seed stored yet. Enter a seed to save it for this world (one seed per world).';
+      seedHelp.classList.add('text-warning');
+      seedHelp.classList.remove('text-muted');
+    }
   }
 
   function saveNewWorldFromModal() {

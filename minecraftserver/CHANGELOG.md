@@ -1,4 +1,4 @@
-## 1.3.7 - 2025-12-16
+## 1.3.8 - 2025-12-16
 - Simplified web UI API calls to use direct relative paths and removed the unused ingress API helper.
 - Use relative API URLs (without a leading slash) for server control requests so ingress keeps working without custom path handling.
 - Use relative ingress API paths for runtime permissions so permissions data loads inside Home Assistant.

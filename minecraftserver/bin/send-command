@@ -1,16 +1,63 @@
 #!/bin/bash
+set -euo pipefail
 
-if [[ $* ]]; then
-  if proc=$(find /proc -mindepth 2 -maxdepth 2 -name exe -lname '/data/bedrock_server-*' -printf '%h' -quit); then
-    if [[ $proc ]]; then
-      echo "$@" > "$proc/fd/0"
-    else
-      echo "ERROR: unable to find bedrock server process"
-      exit 2
+# Send commands to the Bedrock server by writing to its STDIN. The server PID is
+# recorded in /data/run/bedrock_server.pid by the start script, so prefer that
+# over scanning the entire /proc tree (which can fail due to AppArmor
+# restrictions in Home Assistant).
+
+DATA_DIR=${DATA_DIR:-/data}
+RUNTIME_DIR=${RUNTIME_DIR:-"${DATA_DIR}/run"}
+PID_FILE=${PID_FILE:-"${RUNTIME_DIR}/bedrock_server.pid"}
+
+send_with_pidfile() {
+  local cmd="$1"
+
+  if [[ -f "${PID_FILE}" ]]; then
+    local pid
+    pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+
+    if [[ -n "${pid}" && -d "/proc/${pid}" ]]; then
+      printf '%s\n' "${cmd}" >"/proc/${pid}/fd/0"
+      return 0
     fi
-  else
-    echo "ERROR: failed to search for bedrock server process"
-    exit 2
   fi
-fi
+
+  return 1
+}
+
+send_with_proc_scan() {
+  local cmd="$1"
+  local proc
+
+  proc=$(find /proc -mindepth 2 -maxdepth 2 -name exe -lname '/data/bedrock_server-*' -printf '%h' -quit 2>/dev/null || true)
+
+  if [[ -n "${proc:-}" ]]; then
+    printf '%s\n' "${cmd}" >"${proc}/fd/0"
+    return 0
+  fi
+
+  return 1
+}
+
+main() {
+  if [[ $# -eq 0 ]]; then
+    exit 0
+  fi
+
+  local cmd="$*"
+
+  if send_with_pidfile "${cmd}"; then
+    exit 0
+  fi
+
+  if send_with_proc_scan "${cmd}"; then
+    exit 0
+  fi
+
+  echo "ERROR: unable to find bedrock server process" >&2
+  exit 2
+}
+
+main "$@"
 

@@ -2,7 +2,7 @@
 set -e
 
 CONFIG_FILE="/data/config/bedrock_for_ha_config.json"
-STOP_MARKER="/run/bedrock_server.stopped"
+STOP_MARKER="/data/run/bedrock_server.stopped"
 
 # EULA Standaard niet geaccepteerd (vereiste)
 eula="false"

@@ -1,3 +1,7 @@
+## 1.3.11 - 2025-12-17
+- Fix start and restart actions in the web UI by launching the Bedrock entrypoint from the correct working directory and with the configured data path.
+- Add regression test to ensure the server start command uses the expected entrypoint, working directory, and data directory environment variable.
+
 ## 1.3.10 - 2025-12-16
 - Make runtime scripts and health checks honor the configurable data directory instead of hardcoding /data.
 - Consolidated the changes from the 1.3.x line under this version number.

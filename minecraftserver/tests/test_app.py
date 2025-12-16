@@ -1,6 +1,7 @@
 import json
 
 import pytest
+import subprocess
 
 from minecraftserver.web import app
 
@@ -131,3 +132,32 @@ def test_api_permissions_handles_invalid_json(tmp_path, monkeypatch):
     assert payload["ok"] is False
     assert payload["data"] == []
     assert "Invalid JSON" in payload["error"]
+
+
+def test_start_bedrock_server_uses_bedrock_entrypoint(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_popen(cmd, cwd=None, env=None):
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        captured["env"] = env
+
+        class FakeProc:
+            pid = 123
+
+        return FakeProc()
+
+    monkeypatch.setattr(app, "get_server_status", lambda: "stopped")
+    monkeypatch.setattr(app, "_clear_stop_marker", lambda: None)
+    monkeypatch.setattr(app, "_write_bedrock_pid", lambda pid: captured.setdefault("pid", pid))
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    app.configure_data_dir(str(tmp_path))
+
+    started = app.start_bedrock_server()
+
+    assert started is True
+    assert captured["cmd"] == [app.BEDROCK_ENTRYPOINT]
+    assert captured["cwd"] == app.BEDROCK_WORKDIR
+    assert captured["env"].get("DATA_DIR") == str(tmp_path)
+    assert captured["pid"] == 123

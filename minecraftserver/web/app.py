@@ -49,6 +49,7 @@ SESSION_COOKIE_NAME="mcserver_ha_session"  # ⬅️ ander cookie-naampje
 
 PERMISSIONS_FILE = "/opt/bds/permissions.json"
 BEDROCK_ENTRYPOINT = "/opt/bedrock-entry.sh"
+BEDROCK_WORKDIR = "/opt/bds"
 SEND_COMMAND_BIN = "/usr/local/bin/send-command"
 BEDROCK_DEFAULT_PORT = 19132
 
@@ -338,7 +339,13 @@ def start_bedrock_server() -> bool:
 
     try:
         _clear_stop_marker()
-        process = subprocess.Popen([BEDROCK_ENTRYPOINT])
+        env = os.environ.copy()
+        env.setdefault("DATA_DIR", DATA_DIR)
+        process = subprocess.Popen(
+            [BEDROCK_ENTRYPOINT],
+            cwd=BEDROCK_WORKDIR,
+            env=env,
+        )
         _write_bedrock_pid(process.pid)
         return True
     except OSError:

@@ -1,3 +1,6 @@
+## 1.2.29 - 2025-12-22
+- Permit `/usr/bin/rm` in AppArmor profile so startup cleanup can run.
+
 ## 1.2.28 - 2025-12-21
 - Version bump for maintenance release.
 

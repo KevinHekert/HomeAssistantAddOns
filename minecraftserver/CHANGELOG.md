@@ -1,3 +1,6 @@
+## 1.3.3 - 2025-12-18
+- Fix ingress API calls so server status and control buttons work correctly in the web UI.
+
 ## 1.3.2 - 2025-12-18
 - Avoid LD_PRELOAD warnings when `stdbuf` support is unavailable by falling back to direct log filtering.
 

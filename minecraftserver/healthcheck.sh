@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-CONFIG_FILE="/data/config/bedrock_for_ha_config.json"
-STOP_MARKER="/data/run/bedrock_server.stopped"
+DATA_DIR="${DATA_DIR:-/data}"
+CONFIG_FILE="${DATA_DIR}/config/bedrock_for_ha_config.json"
+STOP_MARKER="${DATA_DIR}/run/bedrock_server.stopped"
 
 # EULA Standaard niet geaccepteerd (vereiste)
 eula="false"

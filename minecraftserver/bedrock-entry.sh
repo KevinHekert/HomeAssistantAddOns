@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eo pipefail
 
+DATA_DIR="${DATA_DIR:-/data}"
+
 # =========================
 #  Bedrock Server entry door Kevin Hekert
 #  - Applies server.properties via set-property (thanks to itzg!)
@@ -11,10 +13,10 @@ set -eo pipefail
 #(Re)set symlinks (blijft niet altijd bewaard vanuit Dockerfile build)
 
 LINKS=(
-  "/opt/bds/worlds:/data/worlds"
-  "/opt/bds/server.properties:/data/server.properties"
-  "/opt/bds/allowlist.json:/data/allowlist.json"
-  "/opt/bds/permissions.json:/data/permissions.json"
+  "/opt/bds/worlds:${DATA_DIR}/worlds"
+  "/opt/bds/server.properties:${DATA_DIR}/server.properties"
+  "/opt/bds/allowlist.json:${DATA_DIR}/allowlist.json"
+  "/opt/bds/permissions.json:${DATA_DIR}/permissions.json"
 )
 
 echo "🔗 Checking Bedrock symlinks..."
@@ -28,11 +30,11 @@ done
 
 echo "✨ Symlink check and update complete..."
 
-# --- Ensure /data/worlds exists ---
-if [ ! -d /data/worlds ]; then
-  echo "📁 Creating /data/worlds..."
-  mkdir -p /data/worlds
-  chmod 0777 /data/worlds
+# --- Ensure data/worlds exists ---
+if [ ! -d "${DATA_DIR}/worlds" ]; then
+  echo "📁 Creating ${DATA_DIR}/worlds..."
+  mkdir -p "${DATA_DIR}/worlds"
+  chmod 0777 "${DATA_DIR}/worlds"
 fi
 
 
@@ -41,7 +43,7 @@ isTrue() { case "${1,,}" in true|on|1|yes) return 0 ;; *) return 1 ;; esac; }
 lower_bool() { case "${1,,}" in true|1|on|yes) echo "true" ;; *) echo "false" ;; esac; }
 
 # JSON helpers
-OPT_FILE="/data/config/bedrock_for_ha_config.json"
+OPT_FILE="${DATA_DIR}/config/bedrock_for_ha_config.json"
 CONFIG_FILE="$OPT_FILE"
 optn() { jq -r "$1 // empty" "$OPT_FILE" 2>/dev/null; }
 optf() { jq -r --arg k "$1" '.[$k] // empty' "$OPT_FILE" 2>/dev/null; }
@@ -59,7 +61,8 @@ jq_safe_array_file() {
 # ---------- debug ----------
 if [[ ${DEBUG^^} = TRUE ]]; then
   set -x
-  echo "DEBUG: running as $(id -a) with $(ls -ld /data)"
+  debug_dir_listing="$(ls -ld "${DATA_DIR}")"
+  echo "DEBUG: running as $(id -a) with ${debug_dir_listing}"
   echo "       cwd=$(pwd)"
 fi
 
@@ -106,8 +109,8 @@ export EULA="$(lower_bool "${EULA:-$(first_nonempty "$(optn '.general.eula')" "$
 # WORLD
 export LEVEL_NAME="${LEVEL_NAME:-$(first_nonempty "$(optn '.world.level_name')" "$(optf 'level_name')")}"
 
-# Check world-specific seed from /data/worldconfiguration.json
-WORLD_CONFIG_FILE="/data/worldconfiguration.json"
+# Check world-specific seed from data/worldconfiguration.json
+WORLD_CONFIG_FILE="${DATA_DIR}/worldconfiguration.json"
 WORLD_SEED=""
 if [[ -f "$WORLD_CONFIG_FILE" ]] && [[ -n "$LEVEL_NAME" ]]; then
   if ! WORLD_SEED=$(jq -r --arg world "$LEVEL_NAME" '.[$world].seed // empty' "$WORLD_CONFIG_FILE" 2>&1); then
@@ -217,7 +220,7 @@ sync_permissions_and_config() {
 
 # ---------- Bidirectionele sync: config <-> permissions.json ----------
 
-PERM_FILE="/data/permissions.json"   # Zie ook symlinks
+PERM_FILE="${DATA_DIR}/permissions.json"   # Zie ook symlinks
 
 # Safe lees helpers: geef altijd geldige JSON terug
 config_ra_json="$(jq -c '.players.role_assignments // []' "$OPT_FILE" 2>/dev/null || echo '[]')"
@@ -333,7 +336,7 @@ ensure_permissions_file
 echo "✅ permissions.json generated"
 
 # ---------- Build allowlist.json vanuit config.players.role_assignments ----------
-ALLOWLIST_FILE="/data/allowlist.json"
+ALLOWLIST_FILE="${DATA_DIR}/allowlist.json"
 
 if [[ -f "$OPT_FILE" ]]; then
   tmp_allow="$(mktemp)"
@@ -353,7 +356,7 @@ fi
 
 
 # ---------- Apply server.properties from ENV via definitions ----------
-PROP_FILE="/data/server.properties"
+PROP_FILE="${DATA_DIR}/server.properties"
 touch "$PROP_FILE"
 
 if [ -f /etc/bds-property-definitions.json ]; then

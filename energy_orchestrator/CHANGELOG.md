@@ -2,6 +2,66 @@
 
 All notable changes to this add-on will be documented in this file.
 
+## [Unreleased]
+
+- **Feature: Complete Integration Test Environment with MariaDB**
+  - **Added**: Full integration testing infrastructure with MariaDB 10.6+ for production-parity testing
+  - **Added**: Docker Compose test environment with MariaDB, mock Home Assistant API, and Energy Orchestrator containers
+  - **Added**: Mock Home Assistant API server (Flask) for testing API interactions
+  - **Added**: Comprehensive integration test suite with 50+ tests covering:
+    - Database connectivity and schema validation
+    - Sample data CRUD operations
+    - Data resampling workflows
+    - Feature statistics calculation
+    - End-to-end workflows
+  - **Added**: GitHub Actions workflow for automated integration testing in CI/CD
+  - **Added**: Convenience scripts:
+    - `scripts/run-integration-tests.sh` - Main test runner with options
+    - `scripts/setup-test-db.sh` - Database setup and verification
+  - **Added**: `INTEGRATION_TESTING.md` - Comprehensive documentation for integration testing
+  - **Added**: `pytest.ini` - Pytest configuration with markers and coverage settings
+  - **Added**: `requirements-test.txt` - Test-specific dependencies
+  - **Added**: `.env.test.example` - Environment variable template
+  - **Impact**: Developers can now run full integration tests locally and in CI/CD to catch database-specific issues early
+  - **Files Added**:
+    - `docker-compose.test.yml`
+    - `tests/mock_homeassistant/` (app.py, Dockerfile, README.md)
+    - `energy_orchestrator/app/tests/integration/` (5 test files + conftest)
+    - `.github/workflows/integration-tests.yml`
+    - `scripts/init-test-db.sql`
+    - `scripts/run-integration-tests.sh`
+    - `scripts/setup-test-db.sh`
+    - `INTEGRATION_TESTING.md`
+    - `energy_orchestrator/app/pytest.ini`
+    - `energy_orchestrator/requirements-test.txt`
+    - `.env.test.example`
+  - **Files Modified**:
+    - `README.md` - Added testing documentation
+    - `.gitignore` - Added test artifacts and environment files
+  - **Testing**: Not executed per agent instructions - complete environment ready for use
+
+## [0.0.0.120] - 2025-12-03
+
+- **Fix: Check Resample Status Button Not Working**
+  - **Fix**: Corrected API fetch path in `checkResampleStatus()` function
+  - **Issue**: The "Check Status" button for resampling was returning 404 errors when clicked
+  - **Root Cause**: The fetch call used `/api/resample/status` (with leading slash) while all other API calls (49 instances) use relative paths like `api/sample_rate` (without leading slash). This inconsistency caused path resolution issues, especially when running through Home Assistant ingress.
+  - **Impact**: Users can now successfully check resampling progress by clicking the "Check Status" button
+  - **Files Changed**: `energy_orchestrator/app/templates/index.html` (line 1503)
+  - **Pattern**: Changed from `fetch('/api/resample/status')` to `fetch('api/resample/status')` to match all other API calls in the application
+
+## [0.0.0.119] - 2025-12-03
+
+- **Critical Fix: Python 3.9 Compatibility for Type Hints**
+  - **Fix**: Changed `callable | None` to `Optional[Callable]` in function parameter default values
+  - **Issue**: Python 3.9 (used in Alpine base image) doesn't support union type syntax (`Type | None`) in default parameter values, causing `TypeError: unsupported operand type(s) for |` at module import time
+  - **Root Cause**: While `from __future__ import annotations` allows `Type | None` in annotations, default parameter values are evaluated at runtime and require `Optional[Type]` syntax for Python 3.9 compatibility
+  - **Impact**: Fixes startup crash where the add-on would fail to start with incomplete traceback at line 20 of app.py
+  - **Files Changed**: 
+    - `energy_orchestrator/app/db/resample.py`: Added `from typing import Callable, Optional` and changed `progress_callback: callable | None = None` to `progress_callback: Optional[Callable] = None`
+    - `energy_orchestrator/run.sh`: Added `-u` flag to Python command for unbuffered output to ensure complete error messages in logs
+  - **Testing**: All 64 resample tests pass successfully
+
 ## [0.0.0.118] - 2025-12-03
 
 - **Python Type Hint Compatibility Fix**

@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # MariaDB test database - matches production version
+  mariadb:
+    image: mariadb:10.6
+    container_name: ha_test_mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: test_root_password
+      MYSQL_DATABASE: energy_orchestrator_test
+      MYSQL_USER: energy_orchestrator
+      MYSQL_PASSWORD: test_password
+    ports:
+      - "3307:3306"  # Map to 3307 to avoid conflicts with local MySQL
+    volumes:
+      - mariadb_test_data:/var/lib/mysql
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest_root_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    networks:
+      - test_network
+
+  # Mock Home Assistant API for integration testing
+  mock_homeassistant:
+    build:
+      context: ./tests/mock_homeassistant
+      dockerfile: Dockerfile
+    container_name: ha_test_mock_api
+    environment:
+      - FLASK_ENV=testing
+      - PORT=8123
+    ports:
+      - "8123:8123"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8123/api/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - test_network
+
+  # Energy Orchestrator application for integration testing
+  energy_orchestrator:
+    build:
+      context: ./energy_orchestrator
+      dockerfile: Dockerfile
+      args:
+        BUILD_FROM: ghcr.io/home-assistant/amd64-base:3.22
+    container_name: ha_test_energy_orchestrator
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      mock_homeassistant:
+        condition: service_healthy
+    environment:
+      - DB_HOST=mariadb
+      - DB_USER=energy_orchestrator
+      - DB_PASSWORD=test_password
+      - DB_NAME=energy_orchestrator_test
+      - HA_API_URL=http://mock_homeassistant:8123
+      - HA_TOKEN=test_token_12345
+      - FLASK_ENV=testing
+    ports:
+      - "8099:8099"
+    volumes:
+      - ./energy_orchestrator/app:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8099/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - test_network
+
+volumes:
+  mariadb_test_data:
+    driver: local
+
+networks:
+  test_network:
+    driver: bridge

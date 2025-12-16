@@ -29,4 +29,4 @@ export TARGET_TEMP_ENTITY_ID="$(bashio::config 'target_temp_entity_id')"
 export DHW_ACTIVE_ENTITY_ID="$(bashio::config 'dhw_active_entity_id')"
 
 cd /app
-exec python app.py
+exec python -u app.py

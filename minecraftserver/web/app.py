@@ -1113,7 +1113,7 @@ TEMPLATE = r"""
 
   async function fetchServerStatus() {
     try {
-      const response = await fetch('/api/server/status');
+      const response = await fetch('api/server/status');
       const data = await response.json();
       setServerStatus(data.status, '');
     } catch (err) {
@@ -1130,7 +1130,7 @@ TEMPLATE = r"""
     setServerStatus(null, `${action.charAt(0).toUpperCase() + action.slice(1)}ing server...`);
 
     try {
-      const response = await fetch(`/api/server/${action}`, { method: 'POST' });
+      const response = await fetch(`api/server/${action}`, { method: 'POST' });
       const data = await response.json();
       setServerStatus(data.status, data.message || '');
 
@@ -1382,7 +1382,7 @@ TEMPLATE = r"""
 
     tbody.innerHTML = '';
 
-    fetch("api/permissions")
+    fetch('api/permissions')
       .then(resp => resp.json())
       .then(payload => {
         if (!payload || !payload.data || !Array.isArray(payload.data)) {

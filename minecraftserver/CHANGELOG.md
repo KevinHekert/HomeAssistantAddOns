@@ -1,3 +1,6 @@
+## 1.0.1 - 2026-01-08
+- Updated Bedrock Server from '1.21.131.1' to '1.21.132.1'
+
 ### Functionaliteit (toegevoegd na 1.0.0)
 - Addon met Minecraft Bedrock Dedicated Server
 - Correcte runtime-afhandeling met juiste working directory en data path

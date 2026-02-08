@@ -1,3 +1,6 @@
+## 1.0.3 - 2026-02-08
+- Updated RESTIFY from '1.7.11' to '1.7.12'
+
 ## 1.0.2 - 2026-01-09
 - Updated Bedrock Server from '1.21.132.1' to '1.21.132.3'
 

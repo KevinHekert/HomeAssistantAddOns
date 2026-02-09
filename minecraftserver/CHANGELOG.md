@@ -1,3 +1,6 @@
+## 1.0.4 - 2026-02-09
+- Updated MC_MONITOR from '0.16.0' to '0.16.1'
+
 ## 1.0.3 - 2026-02-08
 - Updated RESTIFY from '1.7.11' to '1.7.12'
 

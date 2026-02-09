@@ -8,7 +8,7 @@ args:
   ENTRYPOINT_DEMOTER_VERSION: "0.4.9"
   SET_PROPERTY_VERSION: "0.1.5"
   RESTIFY_VERSION: "1.7.12"
-  MC_MONITOR_VERSION: "0.16.0"
+  MC_MONITOR_VERSION: "0.16.1"
 labels:
   org.opencontainers.image.title: "Minecraft Bedrock Beta (HA Add-on)"
   org.opencontainers.image.description: "Bedrock server gebundeld"

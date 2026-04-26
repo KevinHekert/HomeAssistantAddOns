@@ -1,3 +1,7 @@
+## 1.0.14 - 2026-04-26
+- Updated RESTIFY from '1.7.12' to '1.7.13'
+- Updated MC_MONITOR from '0.16.1' to '0.16.2'
+
 ## 1.0.13 - 2026-04-10
 - Updated Bedrock Server from '1.26.13.1' to '1.26.14.1'
 

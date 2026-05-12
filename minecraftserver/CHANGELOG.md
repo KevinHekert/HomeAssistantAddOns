@@ -1,3 +1,6 @@
+## 1.0.16 - 2026-05-12
+- Updated EASY_ADD from '0.8.11' to '0.8.12'%0A- Updated SET_PROPERTY from '0.1.5' to '0.1.6'%0A- Updated ENTRYPOINT_DEMOTER from '0.4.9' to '0.4.10'%0A
+
 ## 1.0.15 - 2026-05-05
 - Updated Bedrock Server from '1.26.14.1' to '1.26.20.5'
 

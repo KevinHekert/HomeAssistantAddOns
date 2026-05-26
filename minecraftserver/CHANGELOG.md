@@ -1,3 +1,7 @@
+## 1.0.22 - 2026-05-26
+- Updated Bedrock Server from '1.26.21.1' to '1.26.23.1'
+
+
 ## 1.0.21 - 2026-05-18
 - Updated EASY_ADD from '0.8.12' to '0.8.13'%0A- Updated RESTIFY from '1.7.13' to '1.7.14'%0A
 

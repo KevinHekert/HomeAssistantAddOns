@@ -1,3 +1,6 @@
+## 1.0.25 - 2026-06-14
+- Updated EASY_ADD from '0.8.13' to '0.8.14'%0A- Updated RESTIFY from '1.7.14' to '1.7.15'%0A- Updated MC_MONITOR from '0.16.6' to '0.16.7'%0A
+
 ## 1.0.24 - 2026-06-09
 - Updated ENTRYPOINT_DEMOTER from '0.4.10' to '0.5.0'%0A
 

@@ -4,11 +4,11 @@ build_from:
 args:
   BDS_VERSION: "1.26.23.1"
   BDS_URL: "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.23.1.zip"
-  EASY_ADD_VERSION: "0.8.13"
+  EASY_ADD_VERSION: "0.8.14"
   ENTRYPOINT_DEMOTER_VERSION: "0.5.0"
   SET_PROPERTY_VERSION: "0.1.6"
-  RESTIFY_VERSION: "1.7.14"
-  MC_MONITOR_VERSION: "0.16.6"
+  RESTIFY_VERSION: "1.7.15"
+  MC_MONITOR_VERSION: "0.16.7"
 labels:
   org.opencontainers.image.title: "Minecraft Bedrock Beta (HA Add-on)"
   org.opencontainers.image.description: "Bedrock server gebundeld"

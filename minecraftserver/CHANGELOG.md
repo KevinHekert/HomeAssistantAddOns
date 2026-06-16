@@ -1,3 +1,6 @@
+## 1.0.26 - 2026-06-16
+- Updated RESTIFY from '1.7.15' to '1.7.16'%0A
+
 ## 1.0.25 - 2026-06-14
 - Updated EASY_ADD from '0.8.13' to '0.8.14'%0A- Updated RESTIFY from '1.7.14' to '1.7.15'%0A- Updated MC_MONITOR from '0.16.6' to '0.16.7'%0A
 

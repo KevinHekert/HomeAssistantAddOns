@@ -2,8 +2,8 @@ build_from:
   amd64: ghcr.io/home-assistant/amd64-base-debian:trixie
   aarch64: ghcr.io/home-assistant/aarch64-base-debian:trixie
 args:
-  BDS_VERSION: "1.26.31.1"
-  BDS_URL: "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.31.1.zip"
+  BDS_VERSION: "1.26.32.2"
+  BDS_URL: "https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.32.2.zip"
   EASY_ADD_VERSION: "0.8.14"
   ENTRYPOINT_DEMOTER_VERSION: "0.5.0"
   SET_PROPERTY_VERSION: "0.1.6"

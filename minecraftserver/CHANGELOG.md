@@ -1,3 +1,6 @@
+## 1.0.31 - 2026-07-07
+- Updated MC_MONITOR from '0.16.8' to '0.16.9'%0A
+
 ## 1.0.30 - 2026-06-30
 - Updated MC_MONITOR from '0.16.7' to '0.16.8'%0A
 

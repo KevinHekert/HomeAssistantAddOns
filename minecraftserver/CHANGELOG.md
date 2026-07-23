@@ -1,3 +1,7 @@
+## 1.0.37 - 2026-07-23
+- Updated Bedrock Server from '1.26.33.2' to '1.26.34.3'
+
+
 ## 1.0.36 - 2026-07-13
 - Updated ENTRYPOINT_DEMOTER from '0.5.0' to '0.5.1'%0A
 

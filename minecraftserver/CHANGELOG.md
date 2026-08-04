@@ -1,3 +1,7 @@
+## 1.0.40 - 2026-08-04
+- Updated Bedrock Server from '1.26.36.1' to '1.26.40.8'
+
+
 ## 1.0.39 - 2026-08-02
 - Updated MC_MONITOR from '0.16.11' to '0.17.0'%0A
 

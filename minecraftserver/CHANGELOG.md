@@ -1,3 +1,7 @@
+## 1.0.42 - 2026-08-07
+- Updated Bedrock Server from '1.26.40.8' to '1.26.42.1'
+
+
 ## 1.0.41 - 2026-08-06
 - Updated EASY_ADD from '0.8.15' to '0.8.16'%0A
 

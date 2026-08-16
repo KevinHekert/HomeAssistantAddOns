@@ -1,3 +1,6 @@
+## 1.0.46 - 2026-08-16
+- Updated MC_MONITOR from '0.17.0' to '0.17.1'%0A
+
 ## 1.0.45 - 2026-08-16
 - Updated EASY_ADD from '0.8.16' to '0.8.17'%0A
 

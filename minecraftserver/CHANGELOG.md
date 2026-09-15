@@ -1,3 +1,7 @@
+## 1.0.48 - 2026-09-15
+- Updated Bedrock Server from '1.26.45.1' to '1.26.50.5'
+
+
 ## 1.0.47 - 2026-08-28
 - Updated Bedrock Server from '1.26.44.3' to '1.26.45.1'
 

@@ -100,6 +100,10 @@ fi
 export SERVER_NAME="${SERVER_NAME:-$(first_nonempty "$(optn '.general.server_name')" "$(optf 'server_name')")}"
 export SERVER_PORT="${SERVER_PORT:-$(first_nonempty "$(optn '.general.server_port')" "$(optf 'server_port')")}"
 export SERVER_PORT_V6="${SERVER_PORT_V6:-$(first_nonempty "$(optn '.general.server_port_v6')" "$(optf 'server_port_v6')")}"
+# Bedrock 1.26.51.1+ only accepts NetherNet; RakNet stays selectable for older builds.
+TRANSPORT="${TRANSPORT:-$(first_nonempty "$(optn '.general.transport')" "$(optf 'transport')")}"
+export TRANSPORT="${TRANSPORT:-nethernet}"
+export TRANSPORT="${TRANSPORT,,}"
 export ONLINE_MODE="$(lower_bool "${ONLINE_MODE:-$(first_nonempty "$(optn '.general.online_mode')" "$(optf 'online_mode')")}")"
 export EMIT_SERVER_TELEMETRY="$(lower_bool "${EMIT_SERVER_TELEMETRY:-$(first_nonempty "$(optn '.general.emit_server_telemetry')" "$(optf 'emit_server_telemetry')")}")"
 export ENABLE_LAN_VISIBILITY="$(lower_bool "${ENABLE_LAN_VISIBILITY:-$(first_nonempty "$(optn '.general.enable_lan_visibility')" "$(optf 'enable_lan_visibility')")}")"
@@ -375,7 +379,7 @@ echo "-------------------------------------------"
 echo "📜 server.properties (excerpt):"
 echo "-------------------------------------------"
 if [ -f "$PROP_FILE" ]; then
-  grep -E '^(server-name|gamemode|difficulty|level-name|default-player-permission-level|view-distance|tick-distance|online-mode|server-port|max-players)' "$PROP_FILE" || echo "⚠️ Geen properties gevonden"
+  grep -E '^(server-name|gamemode|difficulty|level-name|default-player-permission-level|view-distance|tick-distance|online-mode|server-port|transport|max-players)' "$PROP_FILE" || echo "⚠️ Geen properties gevonden"
 else
   echo "⚠️ $PROP_FILE bestaat nog niet!"
 fi

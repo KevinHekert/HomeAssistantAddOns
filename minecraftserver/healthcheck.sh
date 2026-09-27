@@ -28,6 +28,22 @@ case "${eula,,}" in
 esac
 
 # Als Eula geaccepteerd is, controleren of de server draait
-timeout 3s /usr/local/bin/mc-monitor status-bedrock \
-  --host 127.0.0.1 \
-  --port "${SERVER_PORT:-19132}" >/dev/null 2>&1 || exit 1
+transport="nethernet"
+if [ -f "$CONFIG_FILE" ]; then
+  transport="$(jq -r '.general.transport // "nethernet"' "$CONFIG_FILE" 2>/dev/null || echo "nethernet")"
+fi
+
+port="${SERVER_PORT:-19132}"
+
+case "${transport,,}" in
+  nethernet)
+    # mc-monitor only speaks RakNet. Under NetherNet the same port carries the
+    # TCP signalling socket instead, so probe that.
+    timeout 3s bash -c "exec 3<>/dev/tcp/127.0.0.1/${port}" >/dev/null 2>&1 || exit 1
+    ;;
+  *)
+    timeout 3s /usr/local/bin/mc-monitor status-bedrock \
+      --host 127.0.0.1 \
+      --port "${port}" >/dev/null 2>&1 || exit 1
+    ;;
+esac

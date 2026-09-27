@@ -1,4 +1,5 @@
 import json
+import socket
 
 import pytest
 import subprocess
@@ -161,3 +162,54 @@ def test_start_bedrock_server_uses_bedrock_entrypoint(monkeypatch, tmp_path):
     assert captured["cwd"] == app.BEDROCK_WORKDIR
     assert captured["env"].get("DATA_DIR") == str(tmp_path)
     assert captured["pid"] == 123
+
+
+def test_to_transport_normalises_and_falls_back():
+    assert app.to_transport("NetherNet") == "nethernet"
+    assert app.to_transport("  raknet ") == "raknet"
+    assert app.to_transport("carrier-pigeon") == "nethernet"
+    assert app.to_transport(None) == "nethernet"
+
+
+def test_default_config_uses_nethernet():
+    assert app.DEFAULT_CONFIG["general"]["transport"] == "nethernet"
+
+
+def test_port_is_free_detects_bound_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as bound:
+        bound.bind(("", 0))
+        bound.listen(1)
+        port = bound.getsockname()[1]
+
+        assert app._port_is_free(port) is False
+
+    assert app._port_is_free(port) is True
+
+
+def test_wait_for_port_release_gives_up_and_reports_false(monkeypatch):
+    monkeypatch.setattr(app, "_port_is_free", lambda port: False)
+
+    assert app.wait_for_port_release(1234, timeout_seconds=0) is False
+
+
+def test_start_bedrock_server_waits_for_port_release(monkeypatch, tmp_path):
+    calls = []
+
+    monkeypatch.setattr(app, "get_server_status", lambda: "stopped")
+    monkeypatch.setattr(app, "_clear_stop_marker", lambda: None)
+    monkeypatch.setattr(app, "_write_bedrock_pid", lambda pid: None)
+    monkeypatch.setattr(app, "_configured_server_port", lambda: 19132)
+    monkeypatch.setattr(
+        app,
+        "wait_for_port_release",
+        lambda port, **kwargs: calls.append(port) or True,
+    )
+
+    class FakeProc:
+        pid = 321
+
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, cwd=None, env=None: FakeProc())
+    app.configure_data_dir(str(tmp_path))
+
+    assert app.start_bedrock_server() is True
+    assert calls == [19132]

@@ -1,6 +1,7 @@
 import json
 import os
 import signal
+import socket
 import subprocess
 import time
 from copy import deepcopy
@@ -52,6 +53,7 @@ BEDROCK_ENTRYPOINT = "/opt/bedrock-entry.sh"
 BEDROCK_WORKDIR = "/opt/bds"
 SEND_COMMAND_BIN = "/usr/local/bin/send-command"
 BEDROCK_DEFAULT_PORT = 19132
+SUPPORTED_TRANSPORTS = ("nethernet", "raknet")
 
 # ---- Default config (zelfde structuur als 'options' in config.yaml) ----
 DEFAULT_CONFIG = {
@@ -59,6 +61,7 @@ DEFAULT_CONFIG = {
         "server_name": "HomeAssistantMinecraftServer",
         "server_port": 19132,
         "server_port_v6": 19133,
+        "transport": "nethernet",
         "online_mode": True,
         "emit_server_telemetry": False,
         "enable_lan_visibility": True,
@@ -169,6 +172,13 @@ def to_float(value, default=None):
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def to_transport(value):
+    candidate = str(value or "").strip().lower()
+    if candidate in SUPPORTED_TRANSPORTS:
+        return candidate
+    return DEFAULT_CONFIG["general"]["transport"]
 
 
 def load_world_configs():
@@ -333,9 +343,48 @@ def get_server_status() -> str:
     return "stopped"
 
 
+def _configured_server_port() -> int:
+    try:
+        return int(load_config()["general"]["server_port"])
+    except (KeyError, TypeError, ValueError, OSError):
+        return BEDROCK_DEFAULT_PORT
+
+
+def _port_is_free(port: int) -> bool:
+    """A previous bedrock_server still holding the port makes the next bind fail.
+
+    NetherNet listens on TCP, RakNet on UDP, so check both. SO_REUSEADDR is set for
+    the TCP probe only: it skips lingering TIME_WAIT sockets, which a server would
+    also be able to bind over, while a live listener still refuses the bind.
+    """
+    for sock_type, reuse in ((socket.SOCK_STREAM, True), (socket.SOCK_DGRAM, False)):
+        try:
+            with socket.socket(socket.AF_INET, sock_type) as sock:
+                if reuse:
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind(("", port))
+        except OSError:
+            return False
+    return True
+
+
+def wait_for_port_release(port: int, timeout_seconds: int = 15) -> bool:
+    end_time = time.time() + timeout_seconds
+    while time.time() < end_time:
+        if _port_is_free(port):
+            return True
+        time.sleep(0.5)
+    return _port_is_free(port)
+
+
 def start_bedrock_server() -> bool:
     if get_server_status() == "running":
         return False
+
+    # Bedrock logs nothing when its bind fails, so it would sit there accepting
+    # nobody while the add-on still reports "running".
+    if not wait_for_port_release(_configured_server_port()):
+        print("⚠️ Port still in use after waiting; starting Bedrock anyway", flush=True)
 
     try:
         _clear_stop_marker()
@@ -389,7 +438,12 @@ def restart_bedrock_server() -> bool:
 # ---- Routes ----
 @app.route("/api/server/status", methods=["GET"])
 def api_server_status():
-    return jsonify({"status": get_server_status()})
+    status = get_server_status()
+    payload = {"status": status}
+    if status == "running":
+        # Additive: lets callers tell a live process apart from one that failed to bind.
+        payload["listening"] = not _port_is_free(_configured_server_port())
+    return jsonify(payload)
 
 
 @app.route("/api/server/start", methods=["POST"])
@@ -494,6 +548,7 @@ def index():
             config["general"]["server_port_v6"] = to_int(
                 form.get("server_port_v6"), DEFAULT_CONFIG["general"]["server_port_v6"]
             )
+            config["general"]["transport"] = to_transport(form.get("transport"))
             config["general"]["online_mode"] = to_bool(form.get("online_mode"))
             config["general"]["emit_server_telemetry"] = to_bool(
                 form.get("emit_server_telemetry")
@@ -747,6 +802,17 @@ TEMPLATE = r"""
             <label for="server_port_v6" class="form-label">Server port (IPv6)</label>
             <input type="number" class="form-control form-control-sm bg-black text-light" id="server_port_v6" name="server_port_v6"
                    value="{{ config.general.server_port_v6 }}">
+          </div>
+          <div class="mb-3">
+            <label for="transport" class="form-label">Transport</label>
+            <select class="form-select form-select-sm bg-black text-light" id="transport" name="transport">
+              <option value="nethernet" {% if config.general.transport == 'nethernet' %}selected{% endif %}>NetherNet (required for Bedrock 1.26.51.1+)</option>
+              <option value="raknet" {% if config.general.transport == 'raknet' %}selected{% endif %}>RakNet (legacy builds only)</option>
+            </select>
+            <div class="form-text">
+              NetherNet turns the IPv4 port into a TCP signalling socket and negotiates gameplay over UDP per client.
+              Newer Bedrock builds refuse to accept players on RakNet.
+            </div>
           </div>
           <div class="form-check form-switch mb-2">
             <input class="form-check-input" type="checkbox" id="online_mode" name="online_mode"

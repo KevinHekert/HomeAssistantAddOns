@@ -61,9 +61,16 @@ Core server behavior such as name, ports, online mode, and LAN visibility.
 |:--------|:------------|
 | Display name | Name shown in the Minecraft server list |
 | Port (IPv4/IPv6) | Ports used for Bedrock server |
+| Transport | `nethernet` (default) or `raknet` |
 | Online verification | Require Microsoft/Xbox authentication |
 | LAN visibility | Broadcast server on LAN |
 | Send telemetry | Allow usage analytics to Microsoft |
+
+> **Transport:** Bedrock 1.26.51.1 and newer only accept players over NetherNet.
+> On `raknet` the server still starts and answers pings, but every join attempt
+> fails and the log prints `TRANSPORT TYPE ERROR`. NetherNet turns the IPv4 port
+> into a TCP signalling socket and negotiates gameplay over UDP per client, so
+> LAN auto-discovery may not list the server — add it by address instead.
 
 ---
 

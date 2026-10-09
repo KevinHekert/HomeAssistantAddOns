@@ -1,3 +1,6 @@
+## 1.0.54 - 2026-10-09
+- Updated MC_MONITOR from '1.18.2' to '1.18.3'%0A
+
 ## 1.0.53 - 2026-09-26
 - Updated MC_MONITOR from '0.18.1' to '1.18.2'%0A
 

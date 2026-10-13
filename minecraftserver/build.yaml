@@ -7,7 +7,7 @@ args:
   EASY_ADD_VERSION: "0.8.18"
   ENTRYPOINT_DEMOTER_VERSION: "0.5.1"
   SET_PROPERTY_VERSION: "0.1.6"
-  RESTIFY_VERSION: "1.7.19"
+  RESTIFY_VERSION: "1.7.20"
   MC_MONITOR_VERSION: "1.18.3"
 labels:
   org.opencontainers.image.title: "Minecraft Bedrock Beta (HA Add-on)"

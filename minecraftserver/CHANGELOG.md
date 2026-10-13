@@ -1,3 +1,6 @@
+## 1.0.55 - 2026-10-13
+- Updated RESTIFY from '1.7.17' to '1.7.18'%0A
+
 ## 1.0.54 - 2026-10-09
 - Updated MC_MONITOR from '1.18.2' to '1.18.3'%0A
 

@@ -1,3 +1,6 @@
+## 1.0.58 - 2026-10-20
+- Updated RESTIFY from '1.7.20' to '1.7.21'%0A
+
 ## 1.0.57 - 2026-10-13
 - Updated RESTIFY from '1.7.19' to '1.7.20'%0A
 

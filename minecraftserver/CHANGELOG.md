@@ -1,3 +1,6 @@
+## 1.0.59 - 2026-10-21
+- Updated EASY_ADD from '0.8.18' to '0.8.19'%0A
+
 ## 1.0.58 - 2026-10-20
 - Updated RESTIFY from '1.7.20' to '1.7.21'%0A
 

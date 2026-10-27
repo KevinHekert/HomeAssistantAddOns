@@ -1,3 +1,6 @@
+## 1.0.61 - 2026-10-27
+- Updated ENTRYPOINT_DEMOTER from '0.5.2' to '0.5.3'%0A
+
 ## 1.0.60 - 2026-10-27
 - Updated ENTRYPOINT_DEMOTER from '0.5.1' to '0.5.2'%0A
 

@@ -1,3 +1,7 @@
+## 1.0.64 - 2026-11-04
+- Updated Bedrock Server from '1.26.61.1' to '1.26.62.1'
+
+
 ## 1.0.63 - 2026-10-29
 - Updated Bedrock Server from '1.26.60.6' to '1.26.61.1'
 

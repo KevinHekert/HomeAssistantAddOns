@@ -1,3 +1,6 @@
+## 1.0.69 - 2026-11-15
+- Updated MC_MONITOR from '1.20.1' to '1.21.0'%0A
+
 ## 1.0.68 - 2026-11-13
 - Updated ENTRYPOINT_DEMOTER from '0.5.3' to '0.5.4'%0A
 

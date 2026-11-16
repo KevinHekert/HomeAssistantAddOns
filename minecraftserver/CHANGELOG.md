@@ -1,3 +1,6 @@
+## 1.0.70 - 2026-11-16
+- Updated SET_PROPERTY from '0.1.6' to '0.2.0'%0A
+
 ## 1.0.69 - 2026-11-15
 - Updated MC_MONITOR from '1.20.1' to '1.21.0'%0A
 

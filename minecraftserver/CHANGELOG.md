@@ -1,3 +1,7 @@
+## 1.0.71 - 2026-11-17
+- Updated Bedrock Server from '1.26.63.1' to '1.26.65.1'
+
+
 ## 1.0.70 - 2026-11-16
 - Updated SET_PROPERTY from '0.1.6' to '0.2.0'%0A
 
